@@ -1,12 +1,35 @@
-import { areJidsSameUser, type WASocket } from "@whiskeysockets/baileys";
+import { areJidsSameUser, extractMessageContent, getContentType, proto, type WASocket } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
-import { safeSendMessage } from "../services/sendMessage.js";
+import { parseCommand } from "../commands/parser.js";
+import type { CommandRegistry } from "../commands/registry.js";
+import type { CommandContext } from "../commands/types.js";
+import { replyTo } from "../services/sendMessage.js";
 import type { Stores } from "../store.js";
+
+function getMessageText(message: proto.IMessage | null | undefined): string | undefined {
+  if (!message) {
+    return undefined;
+  }
+
+  const content = extractMessageContent(message);
+  const type = getContentType(content);
+
+  if (type === "conversation") {
+    return content?.conversation ?? undefined;
+  }
+
+  if (type === "extendedTextMessage") {
+    return content?.extendedTextMessage?.text ?? undefined;
+  }
+
+  return undefined;
+}
 
 export function registerMessageHandlers(
   socket: WASocket,
   logger: ILogger,
   stores: Stores,
+  registry: CommandRegistry,
 ) {
   socket.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
@@ -25,11 +48,43 @@ export function registerMessageHandlers(
         continue;
       }
 
-      const sentMsg = await safeSendMessage(socket, msg.key.remoteJid!, { text: "testing with baileys. ignore it." });
-      if (sentMsg?.key.id) {
-        stores.sentMessageIDs.add(sentMsg?.key.id);
-      } else {
-        logger.warn("Message sent, but id not found. Unable to add it to sent messages list.");
+      const jid = msg.key.remoteJid!;
+      const text = getMessageText(msg.message);
+
+      if (!text) {
+        continue;
+      }
+
+      const parsed = parseCommand(text);
+
+      if (!parsed) {
+        continue;
+      }
+
+      const command = registry.get(parsed.name);
+
+      if (!command) {
+        logger.debug(`Unknown command: ${parsed.name}`);
+        continue;
+      }
+
+      const ctx: CommandContext = {
+        socket,
+        logger,
+        stores,
+        registry,
+        msg,
+        jid,
+        name: parsed.name,
+        args: parsed.args,
+        text: parsed.text,
+        reply: (content, options) => replyTo(socket, logger, stores, jid, content, options),
+      };
+
+      try {
+        await command.execute(ctx);
+      } catch (error) {
+        logger.error({ error, command: parsed.name }, "Command execution failed");
       }
     }
   })

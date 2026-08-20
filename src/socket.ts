@@ -1,6 +1,7 @@
 import makeWASocket, { Browsers, fetchLatestBaileysVersion, isJidBroadcast, isJidNewsletter, makeCacheableSignalKeyStore, useMultiFileAuthState, type WASocket } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
 import { AUTH_DIR } from "./config.js";
+import { createCommands } from "./commands/index.js";
 import { registerConnectionHandlers } from "./handlers/connection.js";
 import { registerGroupHandlers } from "./handlers/groups.js";
 import { registerMessageHandlers } from "./handlers/messages.js";
@@ -41,7 +42,7 @@ export async function startSock(logger: ILogger, stores: Stores): Promise<WASock
   registerConnectionHandlers(socket, logger, () => {
     void startSock(logger, stores)
   })
-  registerMessageHandlers(socket, logger, stores)
+  registerMessageHandlers(socket, logger, stores, createCommands())
   registerGroupHandlers(socket, stores)
 
   return socket
