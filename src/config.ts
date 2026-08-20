@@ -12,6 +12,15 @@ export const AI_SITE_URL = process.env.AI_SITE_URL;
 
 export const AI_SITE_NAME = process.env.AI_SITE_NAME;
 
+export const ADMIN_JIDS = new Set<string>(
+  (process.env.ADMIN_JIDS ?? "")
+    .split(",")
+    .map((jid) => jid.trim())
+    .filter(Boolean),
+);
+
+export const COUNTRY_CODE = process.env.COUNTRY_CODE ?? "";
+
 export const ALLOWED_JIDS = new Set<string>(
   (process.env.ALLOWED_JIDS ?? "")
     .split(",")

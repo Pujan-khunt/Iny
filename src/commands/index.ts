@@ -1,3 +1,4 @@
+import { allowCommand, allowlistCommand, disallowCommand } from "./admin.js";
 import { askCommand, forgetCommand, memoryCommand, rememberCommand } from "./ask.js";
 import { echoCommand } from "./echo.js";
 import { helpCommand } from "./help.js";
@@ -15,6 +16,9 @@ export function createCommands(): CommandRegistry {
   registry.register(rememberCommand);
   registry.register(memoryCommand);
   registry.register(forgetCommand);
+  registry.register(allowCommand);
+  registry.register(disallowCommand);
+  registry.register(allowlistCommand);
 
   return registry;
 }

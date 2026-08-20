@@ -10,6 +10,7 @@ export interface CommandContext {
   registry: CommandRegistry;
   msg: WAMessage;
   jid: string;
+  altJid?: string | undefined;
   name: string;
   args: string[];
   text: string;
@@ -21,5 +22,6 @@ export interface Command {
   aliases?: string[];
   description?: string;
   usage?: string;
+  adminOnly?: boolean;
   execute: (ctx: CommandContext) => Promise<void>;
 }

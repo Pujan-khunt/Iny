@@ -1,11 +1,15 @@
-import { areJidsSameUser, extractMessageContent, getContentType, proto, type WASocket } from "@whiskeysockets/baileys";
+import { extractMessageContent, getContentType, isJidGroup, proto, type WASocket } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
 import { parseCommand } from "../commands/parser.js";
 import type { CommandRegistry } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
+import { isAllowlisted } from "../repositories/allowlist.js";
 import { saveMessage } from "../repositories/messages.js";
 import { replyTo } from "../services/sendMessage.js";
+import { createRateLimiter } from "../services/rateLimit.js";
 import type { Stores } from "../store.js";
+
+const COMMAND_RATE_LIMITER = createRateLimiter(15, 60_000);
 
 function getMessageText(message: proto.IMessage | null | undefined): string | undefined {
   if (!message) {
@@ -45,15 +49,22 @@ export function registerMessageHandlers(
 
       logger.info({ msg });
 
-      const isMsgMadeByMe = msg.key.fromMe && type === "notify";
-      const isSelfChat = areJidsSameUser(socket.user?.id, msg.key.remoteJid!) || areJidsSameUser(socket.user?.lid, msg.key.remoteJid!);
+      const remoteJid = msg.key.remoteJid!;
+      const isGroup = isJidGroup(remoteJid);
       const isBotReply = stores.sentMessageIDs.has(msg.key.id!);
 
-      if (!isMsgMadeByMe || !isSelfChat || isBotReply) {
+      if (isGroup || isBotReply || type !== "notify") {
         continue;
       }
 
-      const jid = msg.key.remoteJid!;
+      const altJid = msg.key.remoteJidAlt;
+
+      if (!isAllowlisted(remoteJid, altJid)) {
+        logger.warn({ remoteJid, remoteJidAlt: altJid }, "Ignored non-allowlisted message");
+        continue;
+      }
+
+      const jid = remoteJid;
       const text = getMessageText(msg.message);
 
       if (!text) {
@@ -73,6 +84,11 @@ export function registerMessageHandlers(
         continue;
       }
 
+      if (!COMMAND_RATE_LIMITER.check(jid)) {
+        logger.warn(`Rate limited user: ${jid}`);
+        continue;
+      }
+
       const ctx: CommandContext = {
         socket,
         logger,
@@ -80,10 +96,11 @@ export function registerMessageHandlers(
         registry,
         msg,
         jid,
+        altJid,
         name: parsed.name,
         args: parsed.args,
         text: parsed.text,
-        reply: (content, options) => replyTo(socket, logger, stores, jid, content, options),
+        reply: (content, options) => replyTo(socket, logger, stores, jid, content, options, altJid),
       };
 
       try {

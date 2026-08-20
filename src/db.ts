@@ -28,5 +28,11 @@ export async function initDb(): Promise<void> {
       content    TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    CREATE TABLE IF NOT EXISTS allowed_jids (
+      jid        TEXT PRIMARY KEY,
+      added_by   TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
   `);
 }

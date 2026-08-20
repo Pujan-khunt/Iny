@@ -1,6 +1,6 @@
 import type { AnyMessageContent, MiscMessageGenerationOptions, WAMessage, WASocket } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
-import { ALLOWED_JIDS } from "../config.js";
+import { isAllowlisted } from "../repositories/allowlist.js";
 import type { Stores } from "../store.js";
 
 export function safeSendMessage(
@@ -8,8 +8,9 @@ export function safeSendMessage(
   jid: string,
   content: AnyMessageContent,
   options?: MiscMessageGenerationOptions,
+  altJid?: string | null,
 ): Promise<WAMessage | undefined> {
-  if (!ALLOWED_JIDS.has(jid)) {
+  if (!isAllowlisted(jid, altJid)) {
     throw new Error(`JID is not allowlisted: ${jid}`);
   }
 
@@ -23,8 +24,9 @@ export async function replyTo(
   jid: string,
   content: AnyMessageContent,
   options?: MiscMessageGenerationOptions,
+  altJid?: string | null,
 ): Promise<void> {
-  const sentMsg = await safeSendMessage(socket, jid, content, options);
+  const sentMsg = await safeSendMessage(socket, jid, content, options, altJid);
 
   if (sentMsg?.key.id) {
     stores.sentMessageIDs.add(sentMsg.key.id);
