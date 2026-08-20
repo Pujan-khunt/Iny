@@ -1,10 +1,11 @@
 import makeWASocket, { Browsers, fetchLatestBaileysVersion, isJidBroadcast, isJidNewsletter, makeCacheableSignalKeyStore, useMultiFileAuthState, type WASocket } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
-import { AUTH_DIR } from "./config.js";
 import { createCommands } from "./commands/index.js";
+import { AUTH_DIR } from "./config.js";
 import { registerConnectionHandlers } from "./handlers/connection.js";
 import { registerGroupHandlers } from "./handlers/groups.js";
 import { registerMessageHandlers } from "./handlers/messages.js";
+import { getMessage as getMessageFromDb } from "./repositories/messages.js";
 import type { Stores } from "./store.js";
 
 export async function startSock(logger: ILogger, stores: Stores): Promise<WASocket> {
@@ -31,8 +32,16 @@ export async function startSock(logger: ILogger, stores: Stores): Promise<WASock
     keepAliveIntervalMs: 30_000,
     shouldIgnoreJid: (jid) => isJidBroadcast(jid) || isJidNewsletter(jid),
     getMessage: async (key) => {
-      const id = `${key.remoteJid}:${key.id}`
-      return stores.messageStore.get(id)
+      if (!key.remoteJid || !key.id) {
+        return undefined;
+      }
+
+      try {
+        return await getMessageFromDb(key.remoteJid, key.id)
+      } catch (error) {
+        logger.error({ error, key }, "getMessage lookup failed")
+        return undefined
+      }
     },
     cachedGroupMetadata: async (jid) => stores.groupCache.get(jid)
   })

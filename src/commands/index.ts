@@ -1,3 +1,4 @@
+import { askCommand, forgetCommand, memoryCommand, rememberCommand } from "./ask.js";
 import { echoCommand } from "./echo.js";
 import { helpCommand } from "./help.js";
 import { pingCommand } from "./ping.js";
@@ -10,6 +11,10 @@ export function createCommands(): CommandRegistry {
   registry.register(pingCommand);
   registry.register(echoCommand);
   registry.register(helpCommand);
+  registry.register(askCommand);
+  registry.register(rememberCommand);
+  registry.register(memoryCommand);
+  registry.register(forgetCommand);
 
   return registry;
 }

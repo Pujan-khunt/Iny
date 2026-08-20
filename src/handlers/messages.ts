@@ -3,6 +3,7 @@ import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
 import { parseCommand } from "../commands/parser.js";
 import type { CommandRegistry } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
+import { saveMessage } from "../repositories/messages.js";
 import { replyTo } from "../services/sendMessage.js";
 import type { Stores } from "../store.js";
 
@@ -33,9 +34,13 @@ export function registerMessageHandlers(
 ) {
   socket.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
-      // Preserve the existing cache behavior
-      if (msg.key.id && msg.message) {
-        stores.messageStore.set(`${msg.key.remoteJid}:${msg.key.id}`, msg.message)
+      // Persist the message to the database for retries / decryption lookups.
+      if (msg.key.id && msg.message && msg.key.remoteJid) {
+        try {
+          await saveMessage(msg.key.remoteJid, msg.key.id, msg.message);
+        } catch (error) {
+          logger.error({ error }, "Failed to persist message");
+        }
       }
 
       logger.info({ msg });
