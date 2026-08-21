@@ -1,6 +1,6 @@
-import type { CommandContext } from "./types.js";
+import type { Command, CommandContext } from "./types.js";
 
-export const pingCommand = {
+export const pingCommand: Command = {
   name: "ping",
   description: "Replies with pong",
   execute: async (ctx: CommandContext) => {

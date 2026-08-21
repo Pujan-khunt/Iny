@@ -1,7 +1,7 @@
 import { isAdmin } from "../services/admin.js";
-import type { CommandContext } from "./types.js";
+import type { Command, CommandContext } from "./types.js";
 
-export const helpCommand = {
+export const helpCommand: Command = {
   name: "help",
   aliases: ["commands"],
   description: "Lists all available commands",

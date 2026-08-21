@@ -53,6 +53,7 @@ export function registerMessageHandlers(
       const isGroup = isJidGroup(remoteJid);
       const isBotReply = stores.sentMessageIDs.has(msg.key.id!);
 
+      // Ignore group chats, own replies and past messages.
       if (isGroup || isBotReply || type !== "notify") {
         continue;
       }

@@ -1,6 +1,7 @@
 import type { WASocket } from "@whiskeysockets/baileys";
 import type { Stores } from "../store.js";
 
+// GroupMetadata cache warmers
 export function registerGroupHandlers(
   socket: WASocket,
   stores: Stores,

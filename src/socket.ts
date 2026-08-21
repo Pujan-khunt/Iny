@@ -19,18 +19,23 @@ export async function startSock(logger: ILogger, stores: Stores): Promise<WASock
     logger,
     auth: {
       creds: state.creds,
+      // When storing auth on disk, every single Signal key lookup leads to a disk hit.
+      // To minimize disk IO, this in-memory cache is introduced.
       keys: makeCacheableSignalKeyStore(state.keys, logger)
     },
     browser: Browsers.macOS("Chrome"),
     markOnlineOnConnect: false,
     syncFullHistory: false,
     generateHighQualityLinkPreview: true,
+    // In-memory cache to store per-user retry counts of failed messages.
     msgRetryCounterCache: stores.msgRetryCounterCache,
     maxMsgRetryCount: 5,
     connectTimeoutMs: 20_000,
     defaultQueryTimeoutMs: 60_000,
     keepAliveIntervalMs: 30_000,
+    // Firewall against specific kinds of messages.
     shouldIgnoreJid: (jid) => isJidBroadcast(jid) || isJidNewsletter(jid),
+    // Way for baileys to retrieve messages for retrying.
     getMessage: async (key) => {
       if (!key.remoteJid || !key.id) {
         return undefined;
@@ -43,6 +48,9 @@ export async function startSock(logger: ILogger, stores: Stores): Promise<WASock
         return undefined
       }
     },
+    // In-memory cache for storing group metadata mainly for fetching
+    // participants of a WA group to distribute Sender keys for encryption, so
+    // only group participants can decrypt it.
     cachedGroupMetadata: async (jid) => stores.groupCache.get(jid)
   })
 

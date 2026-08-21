@@ -1,6 +1,7 @@
 import { ALLOWED_JIDS } from "../config.js";
 import { pool } from "../db.js";
 
+// Write through cache (db and cache are synced together) for storing allowed JIDs.
 const cache = new Set<string>();
 
 export async function initAllowlist(): Promise<void> {

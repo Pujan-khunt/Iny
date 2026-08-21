@@ -1,7 +1,7 @@
 import { COUNTRY_CODE } from "../config.js";
 import { isAdmin } from "../services/admin.js";
 import { addToAllowlist, listAllowlist, removeFromAllowlist } from "../repositories/allowlist.js";
-import type { CommandContext } from "./types.js";
+import type { Command, CommandContext } from "./types.js";
 
 function normalizeJidInput(input: string): string | null {
   const trimmed = input.trim();
@@ -27,7 +27,7 @@ function normalizeJidInput(input: string): string | null {
   return `${digits}@s.whatsapp.net`;
 }
 
-export const allowCommand = {
+export const allowCommand: Command = {
   name: "allow",
   description: "Allowlist a user by phone number or JID (admin only)",
   usage: "/allow <10-digit-phone-number>",
@@ -50,7 +50,7 @@ export const allowCommand = {
   },
 };
 
-export const disallowCommand = {
+export const disallowCommand: Command = {
   name: "disallow",
   description: "Remove a user from the allowlist (admin only)",
   usage: "/disallow <phone-or-jid>",
@@ -73,7 +73,7 @@ export const disallowCommand = {
   },
 };
 
-export const allowlistCommand = {
+export const allowlistCommand: Command = {
   name: "allowlist",
   description: "List all allowlisted users (admin only)",
   adminOnly: true,

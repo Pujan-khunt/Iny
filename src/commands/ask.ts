@@ -1,13 +1,13 @@
 import { addHistory, forgetFact, getHistory, listFacts, rememberFact } from "../repositories/aiMemory.js";
 import { askQuestion } from "../services/ai.js";
 import { createRateLimiter } from "../services/rateLimit.js";
-import type { CommandContext } from "./types.js";
+import type { Command, CommandContext } from "./types.js";
 
 const ASK_RATE_LIMITER = createRateLimiter(5, 60_000);
 const MAX_QUESTION_LENGTH = 2000;
 const MAX_FACT_LENGTH = 500;
 
-export const askCommand = {
+export const askCommand: Command = {
   name: "ask",
   description: "Ask the assistant a question",
   usage: "/ask <question>",
@@ -45,7 +45,7 @@ export const askCommand = {
   },
 };
 
-export const rememberCommand = {
+export const rememberCommand: Command = {
   name: "remember",
   description: "Store a fact about yourself",
   usage: "/remember <fact>",
@@ -67,7 +67,7 @@ export const rememberCommand = {
   },
 };
 
-export const memoryCommand = {
+export const memoryCommand: Command = {
   name: "memory",
   description: "Show the facts stored about you",
   execute: async (ctx: CommandContext) => {
@@ -82,7 +82,7 @@ export const memoryCommand = {
   },
 };
 
-export const forgetCommand = {
+export const forgetCommand: Command = {
   name: "forget",
   description: "Remove a stored fact",
   usage: "/forget <fact>",
