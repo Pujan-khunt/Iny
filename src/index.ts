@@ -1,4 +1,4 @@
-import { initDb } from "./db.js";
+import { initDb } from "./db/index.js";
 import { createLogger } from "./logger.js";
 import { initAllowlist } from "./repositories/allowlist.js";
 import { startSock } from "./socket.js";

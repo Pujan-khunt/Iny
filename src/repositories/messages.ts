@@ -1,5 +1,7 @@
+import { and, eq } from "drizzle-orm";
 import { proto } from "@whiskeysockets/baileys";
-import { pool } from "../db.js";
+import { db } from "../db/index.js";
+import { messages } from "../db/schema.js";
 
 export async function saveMessage(
   remoteJid: string,
@@ -8,24 +10,22 @@ export async function saveMessage(
 ): Promise<void> {
   const bytes = Buffer.from(proto.Message.encode(message).finish());
 
-  await pool.query(
-    `INSERT INTO messages (remote_jid, message_id, message)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (remote_jid, message_id) DO NOTHING`,
-    [remoteJid, messageId, bytes],
-  );
+  await db
+    .insert(messages)
+    .values({ remoteJid, messageId, message: bytes })
+    .onConflictDoNothing();
 }
 
 export async function getMessage(
   remoteJid: string,
   messageId: string,
 ): Promise<proto.IMessage | undefined> {
-  const result = await pool.query<{ message: Buffer }>(
-    `SELECT message FROM messages WHERE remote_jid = $1 AND message_id = $2`,
-    [remoteJid, messageId],
-  );
+  const rows = await db
+    .select({ message: messages.message })
+    .from(messages)
+    .where(and(eq(messages.remoteJid, remoteJid), eq(messages.messageId, messageId)));
 
-  const row = result.rows[0];
+  const row = rows[0];
 
   if (!row) {
     return undefined;

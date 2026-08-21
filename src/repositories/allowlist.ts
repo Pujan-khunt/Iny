@@ -1,26 +1,23 @@
+import { eq, asc } from "drizzle-orm";
 import { ALLOWED_JIDS } from "../config.js";
-import { pool } from "../db.js";
+import { db } from "../db/index.js";
+import { allowedJids } from "../db/schema.js";
 
-// Write through cache (db and cache are synced together) for storing allowed JIDs.
 const cache = new Set<string>();
 
 export async function initAllowlist(): Promise<void> {
-  const count = await pool.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM allowed_jids`);
-  const existing = Number(count.rows[0]?.count ?? 0);
+  const rows = await db.select({ jid: allowedJids.jid }).from(allowedJids);
 
-  if (existing === 0) {
+  if (rows.length === 0) {
     for (const jid of ALLOWED_JIDS) {
-      await pool.query(
-        `INSERT INTO allowed_jids (jid, added_by) VALUES ($1, $2) ON CONFLICT (jid) DO NOTHING`,
-        [jid, "bootstrap"],
-      );
+      await db.insert(allowedJids).values({ jid, addedBy: "bootstrap" }).onConflictDoNothing();
     }
   }
 
-  const result = await pool.query<{ jid: string }>(`SELECT jid FROM allowed_jids`);
+  const allRows = await db.select({ jid: allowedJids.jid }).from(allowedJids);
   cache.clear();
 
-  for (const row of result.rows) {
+  for (const row of allRows) {
     cache.add(row.jid);
   }
 }
@@ -38,26 +35,30 @@ export function isAllowlisted(jid: string, altJid?: string | null): boolean {
 }
 
 export async function addToAllowlist(jid: string, addedBy: string): Promise<boolean> {
-  const result = await pool.query(
-    `INSERT INTO allowed_jids (jid, added_by) VALUES ($1, $2) ON CONFLICT (jid) DO NOTHING`,
-    [jid, addedBy],
-  );
+  const result = await db
+    .insert(allowedJids)
+    .values({ jid, addedBy })
+    .onConflictDoNothing();
 
-  const added = result.rowCount !== null && result.rowCount > 0;
+  const added = (result.rowCount ?? 0) > 0;
   cache.add(jid);
   return added;
 }
 
 export async function removeFromAllowlist(jid: string): Promise<boolean> {
-  const result = await pool.query(`DELETE FROM allowed_jids WHERE jid = $1`, [jid]);
+  const result = await db
+    .delete(allowedJids)
+    .where(eq(allowedJids.jid, jid));
+
   cache.delete(jid);
-  return result.rowCount !== null && result.rowCount > 0;
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function listAllowlist(): Promise<string[]> {
-  const result = await pool.query<{ jid: string }>(
-    `SELECT jid FROM allowed_jids ORDER BY created_at ASC`,
-  );
+  const rows = await db
+    .select({ jid: allowedJids.jid })
+    .from(allowedJids)
+    .orderBy(asc(allowedJids.createdAt));
 
-  return result.rows.map((row) => row.jid);
+  return rows.map((row) => row.jid);
 }
