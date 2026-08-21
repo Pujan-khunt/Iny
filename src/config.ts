@@ -12,6 +12,10 @@ export const AI_SITE_URL = process.env.AI_SITE_URL;
 
 export const AI_SITE_NAME = process.env.AI_SITE_NAME;
 
+export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL ?? "text-embedding-3-small";
+
 export const ADMIN_JIDS = new Set<string>(
   (process.env.ADMIN_JIDS ?? "")
     .split(",")
