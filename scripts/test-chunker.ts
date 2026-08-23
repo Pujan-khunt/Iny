@@ -10,13 +10,15 @@ if (!filePath) {
 }
 
 const buffer = await readFile(filePath);
-const text = await parsePdf(buffer);
+const doc = await parsePdf(buffer);
 
 console.log(`File: ${filePath}`);
-console.log(`Extracted: ${text.length} chars, ${text.split(/\s+/).length} words`);
-console.log(`Preview (first 500 chars):\n${text.slice(0, 500)}\n${"-".repeat(60)}\n`);
+console.log(`Title: ${doc.title}`);
+console.log(`Pages: ${doc.pages.length}`);
+console.log(`Extracted: ${doc.fullText.length} chars, ${doc.fullText.split(/\s+/).length} words`);
+console.log(`Preview (first 500 chars):\n${doc.fullText.slice(0, 500)}\n${"-".repeat(60)}\n`);
 
-const chunks = chunkText(text, { maxTokens: 500, overlapTokens: 50 });
+const chunks = chunkText(doc.pages, { maxTokens: 500, overlapTokens: 50 });
 
 console.log(`Chunks: ${chunks.length}`);
 let totalTokens = 0;
@@ -25,7 +27,7 @@ console.log(`Total tokens: ${totalTokens}, avg: ${(totalTokens / Math.max(1, chu
 
 for (let i = 0; i < Math.min(chunks.length, 3); i++) {
   const c = chunks[i]!;
-  console.log(`--- Chunk ${c.chunkIndex} | tokens=${c.tokenCount} | headings=[${c.headings.join(" > ") || "none"}] ---`);
+  console.log(`--- Chunk ${c.chunkIndex} | tokens=${c.tokenCount} | pages=${c.pageStart}-${c.pageEnd} | headings=[${c.headings.join(" > ") || "none"}] ---`);
   console.log(c.content.slice(0, 800));
   console.log();
 }

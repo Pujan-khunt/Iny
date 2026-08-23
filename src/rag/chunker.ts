@@ -1,4 +1,5 @@
 import { getEncoding } from "js-tiktoken";
+import type { ParsedPage } from "./parser.js";
 
 const enc = getEncoding("cl100k_base");
 
@@ -10,6 +11,8 @@ export interface Chunk {
   tokenCount: number;
   chunkIndex: number;
   headings: string[];
+  pageStart: number;
+  pageEnd: number;
 }
 
 export interface ChunkOptions {
@@ -38,14 +41,73 @@ function extractHeadingText(line: string): string {
     .trim();
 }
 
-export function chunkText(rawText: string, opts: ChunkOptions = {}): Chunk[] {
+function breadcrumb(headings: string[]): string {
+  return headings.join(" > ");
+}
+
+function decodeLastTokens(text: string, n: number): string {
+  if (n <= 0) return "";
+  const tokens = enc.encode(text);
+  if (tokens.length <= n) return text;
+  const slice = tokens.slice(tokens.length - n);
+  return enc.decode(slice);
+}
+
+function findPageRange(text: string, pages: ParsedPage[]): { pageStart: number; pageEnd: number } {
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+  if (sentences.length === 0) return { pageStart: 1, pageEnd: 1 };
+
+  const firstSentence = sentences[0]!.trim();
+  const lastSentence = sentences[sentences.length - 1]!.trim();
+
+  let pageStart = 1;
+  let pageEnd = 1;
+
+  for (const page of pages) {
+    if (page.text.includes(firstSentence)) {
+      pageStart = page.pageNumber;
+      break;
+    }
+  }
+
+  for (let i = pages.length - 1; i >= 0; i--) {
+    if (pages[i]!.text.includes(lastSentence)) {
+      pageEnd = pages[i]!.pageNumber;
+      break;
+    }
+  }
+
+  if (pageStart > pageEnd) {
+    const temp = pageStart;
+    pageStart = pageEnd;
+    pageEnd = temp;
+  }
+
+  return { pageStart, pageEnd };
+}
+
+export interface ChunkOptions {
+  maxTokens?: number;
+  overlapTokens?: number;
+}
+
+export interface Chunk {
+  content: string;
+  tokenCount: number;
+  chunkIndex: number;
+  headings: string[];
+  pageStart: number;
+  pageEnd: number;
+}
+
+export function chunkText(pages: ParsedPage[], opts: ChunkOptions = {}): Chunk[] {
   const maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
   const overlapTokens = opts.overlapTokens ?? DEFAULT_OVERLAP_TOKENS;
 
-  const normalized = rawText.replace(/\r\n/g, "\n").trim();
-  if (!normalized) return [];
+  const fullText = pages.map((p) => p.text).join("\n\n").trim();
+  if (!fullText) return [];
 
-  const blocks = normalized
+  const blocks = fullText
     .split(/\n\s*\n/)
     .map((b) => b.trim())
     .filter(Boolean);
@@ -94,21 +156,20 @@ export function chunkText(rawText: string, opts: ChunkOptions = {}): Chunk[] {
   let currentTokens = 0;
   let headingsForChunk: string[] = [];
 
-  function breadcrumb(headings: string[]): string {
-    return headings.join(" > ");
-  }
-
   function flush(): void {
     if (currentParts.length === 0) return;
     const body = currentParts.join("\n\n");
     const prefix = headingsForChunk.length > 0 ? `${breadcrumb(headingsForChunk)}\n\n` : "";
     const content = prefix ? `${prefix}${body}` : body;
     const tokenCount = countTokens(content);
+    const { pageStart, pageEnd } = findPageRange(content, pages);
     chunks.push({
       content,
       tokenCount,
       chunkIndex: chunks.length,
       headings: [...headingsForChunk],
+      pageStart,
+      pageEnd,
     });
   }
 
@@ -131,11 +192,14 @@ export function chunkText(rawText: string, opts: ChunkOptions = {}): Chunk[] {
           const body = sentenceBuffer.join(" ");
           const prefix = headingsForChunk.length > 0 ? `${breadcrumb(headingsForChunk)}\n\n` : "";
           const content = prefix ? `${prefix}${body}` : body;
+          const { pageStart, pageEnd } = findPageRange(content, pages);
           chunks.push({
             content,
             tokenCount: countTokens(content),
             chunkIndex: chunks.length,
             headings: [...headingsForChunk],
+            pageStart,
+            pageEnd,
           });
           const overlapText = decodeLastTokens(body, overlapTokens);
           sentenceBuffer = overlapText ? [overlapText, sentence] : [sentence];
@@ -150,11 +214,14 @@ export function chunkText(rawText: string, opts: ChunkOptions = {}): Chunk[] {
         const body = sentenceBuffer.join(" ");
         const prefix = headingsForChunk.length > 0 ? `${breadcrumb(headingsForChunk)}\n\n` : "";
         const content = prefix ? `${prefix}${body}` : body;
+        const { pageStart, pageEnd } = findPageRange(content, pages);
         chunks.push({
           content,
           tokenCount: countTokens(content),
           chunkIndex: chunks.length,
           headings: [...headingsForChunk],
+          pageStart,
+          pageEnd,
         });
       }
 
@@ -190,12 +257,70 @@ export function chunkText(rawText: string, opts: ChunkOptions = {}): Chunk[] {
 
   flush();
   return chunks;
-}
 
-function decodeLastTokens(text: string, n: number): string {
-  if (n <= 0) return "";
-  const tokens = enc.encode(text);
-  if (tokens.length <= n) return text;
-  const slice = tokens.slice(tokens.length - n);
-  return enc.decode(slice);
+  function countTokens(text: string): number {
+    return enc.encode(text).length;
+  }
+
+  function isHeading(line: string): boolean {
+    const t = line.trim();
+    if (!t || t.length > 120) return false;
+    if (/^#{1,6}\s+/.test(t)) return true;
+    if (/^\d+(\.\d+)*[\.\)]\s+\S/.test(t)) return true;
+    if (t === t.toUpperCase() && /[A-Z]/.test(t) && t.split(/\s+/).length <= 10 && t.length >= 4) return true;
+    if (/^[A-Z][A-Za-z\s]+:$/.test(t) && t.length < 80) return true;
+    return false;
+  }
+
+  function extractHeadingText(line: string): string {
+    return line
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/:$/, "")
+      .trim();
+  }
+
+  function breadcrumb(headings: string[]): string {
+    return headings.join(" > ");
+  }
+
+  function decodeLastTokens(text: string, n: number): string {
+    if (n <= 0) return "";
+    const tokens = enc.encode(text);
+    if (tokens.length <= n) return text;
+    const slice = tokens.slice(tokens.length - n);
+    return enc.decode(slice);
+  }
+
+  function findPageRange(text: string, pages: ParsedPage[]): { pageStart: number; pageEnd: number } {
+    const sentences = text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+    if (sentences.length === 0) return { pageStart: 1, pageEnd: 1 };
+
+    const firstSentence = sentences[0]!.trim();
+    const lastSentence = sentences[sentences.length - 1]!.trim();
+
+    let pageStart = 1;
+    let pageEnd = 1;
+
+    for (const page of pages) {
+      if (page.text.includes(firstSentence)) {
+        pageStart = page.pageNumber;
+        break;
+      }
+    }
+
+    for (let i = pages.length - 1; i >= 0; i--) {
+      if (pages[i]!.text.includes(lastSentence)) {
+        pageEnd = pages[i]!.pageNumber;
+        break;
+      }
+    }
+
+    if (pageStart > pageEnd) {
+      const temp = pageStart;
+      pageStart = pageEnd;
+      pageEnd = temp;
+    }
+
+    return { pageStart, pageEnd };
+  }
 }

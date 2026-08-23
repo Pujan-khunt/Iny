@@ -10,7 +10,8 @@
     "dev": "tsx --env-file=.env src/index.ts | pino-pretty",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "ingest": "tsx --env-file=.env scripts/ingest-docs.ts"
   },
   "keywords": [],
   "author": "Pujan Khunt",
@@ -20,12 +21,13 @@
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "drizzle-orm": "^0.45.2",
+    "glob": "^13.0.6",
     "js-tiktoken": "^1.0.21",
     "openai": "^7.5.0",
+    "pdf-parse": "^2.4.5",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
-    "qrcode-terminal": "^0.12.0",
-    "unpdf": "^1.8.1"
+    "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

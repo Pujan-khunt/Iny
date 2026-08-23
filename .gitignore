@@ -2,3 +2,5 @@
 auth_info_baileys/
 node_modules/
 dist/
+*.pdf
+docs/
