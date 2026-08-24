@@ -16,6 +16,18 @@ export const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 export const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL ?? "text-embedding-3-small";
 
+export const SIMILARITY_THRESHOLD = Number(process.env.SIMILARITY_THRESHOLD ?? 0.35);
+
+export const TOP_K = Number(process.env.TOP_K ?? 5);
+
+export const MAX_CONTEXT_TOKENS = Number(process.env.MAX_CONTEXT_TOKENS ?? 2000);
+
+export const WELCOME_TRIGGER_PATTERN = process.env.WELCOME_TRIGGER_PATTERN ?? "^(iny|hi iny)$";
+
+export const FALLBACK_MESSAGE = process.env.FALLBACK_MESSAGE ?? "Couldn't find that in the database. Try rephrasing?";
+
+export const WELCOME_MESSAGE = process.env.WELCOME_MESSAGE ?? "Hi! I'm Iny, your assistant. Ask me anything related to SST.";
+
 export const ADMIN_JIDS = new Set<string>(
   (process.env.ADMIN_JIDS ?? "")
     .split(",")

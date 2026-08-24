@@ -61,16 +61,15 @@ function runPdftotext(filePath: string): Promise<string> {
 }
 
 function extractTitle(text: string): string | null {
-  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const lines = text.split("\n").map(l => l.trim()).filter((l): l is string => Boolean(l));
   if (lines.length > 0) {
-    // Try to find a title-like line in first few lines
     for (let i = 0; i < Math.min(5, lines.length); i++) {
-      const line = lines[i];
+      const line = lines[i]!;
       if (line.length > 5 && line.length < 100) {
         return line;
       }
     }
-    return lines[0];
+    return lines[0]!;
   }
   return null;
 }
