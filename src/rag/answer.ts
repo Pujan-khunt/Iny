@@ -5,17 +5,18 @@ import { buildPrompt, formatCitations } from "./format.js";
 
 const client = AI_API_KEY
   ? new OpenAI({
-      apiKey: AI_API_KEY,
-      ...(AI_BASE_URL ? { baseURL: AI_BASE_URL } : {}),
-      ...(AI_SITE_URL || AI_SITE_NAME
-        ? {
-            defaultHeaders: {
-              ...(AI_SITE_URL ? { "HTTP-Referer": AI_SITE_URL } : {}),
-              ...(AI_SITE_NAME ? { "X-OpenRouter-Title": AI_SITE_NAME } : {}),
-            },
-          }
-        : {}),
-    })
+    apiKey: AI_API_KEY,
+    ...(AI_BASE_URL ? { baseURL: AI_BASE_URL } : {}),
+    // Used only with OpenRouter
+    // ...(AI_SITE_URL || AI_SITE_NAME
+    //   ? {
+    //       defaultHeaders: {
+    //         ...(AI_SITE_URL ? { "HTTP-Referer": AI_SITE_URL } : {}),
+    //         ...(AI_SITE_NAME ? { "X-OpenRouter-Title": AI_SITE_NAME } : {}),
+    //       },
+    //     }
+    //   : {}),
+  })
   : null;
 
 export interface AskOptions {
