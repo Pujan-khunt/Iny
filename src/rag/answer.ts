@@ -11,6 +11,29 @@ const client = AI_API_KEY
     })
   : null;
 
+/**
+ * Convert Markdown formatting to WhatsApp-compatible formatting
+ * This handles cases where the LLM outputs Markdown despite prompt instructions
+ */
+function convertMarkdownToWhatsApp(text: string): string {
+  // Convert **text** (bold) to *text* (single asterisk)
+  text = text.replace(/\*\*(.+?)\*\*/g, "*$1*");
+
+  // Convert __text__ (bold) to *text*
+  text = text.replace(/__(.+?)__/g, "*$1*");
+
+  // Convert ~~text~~ (strikethrough) to ~text~
+  text = text.replace(/~~(.+?)~~/g, "~$1~");
+
+  // Remove # headings (they don't work in WhatsApp)
+  // Convert "# Heading" to "*Heading*" for emphasis
+  text = text.replace(/^### (.+)$/gm, "*$1*");
+  text = text.replace(/^## (.+)$/gm, "*$1*");
+  text = text.replace(/^# (.+)$/gm, "*$1*");
+
+  return text;
+}
+
 export interface AskOptions {
   threshold?: number;
   topK?: number;
@@ -44,19 +67,17 @@ export async function askWithContext(query: string, opts: AskOptions = {}): Prom
     max_tokens: 1024,
   });
 
-  const answer = completion.choices[0]?.message?.content?.trim();
+  let answer = completion.choices[0]?.message?.content?.trim();
 
   if (!answer) {
     throw new Error("LLM returned an empty response");
   }
 
+  // Convert Markdown formatting to WhatsApp-compatible format
+  answer = convertMarkdownToWhatsApp(answer);
+
   const limitedChunks = chunks.slice(0, MAX_CITATIONS);
   const citations = formatCitations(limitedChunks);
 
   return `${answer}\n\n${citations}`;
-}
-
-export interface AskOptions {
-  threshold?: number;
-  topK?: number;
 }

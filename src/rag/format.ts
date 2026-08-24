@@ -7,26 +7,26 @@ const UNICODE_NUMBERS = ["¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "�
 export function formatCitations(chunks: RetrievedChunk[]): string {
   // Group chunks by title, collecting unique page numbers
   const titleToPages = new Map<string, Set<number>>();
-  
+
   for (const chunk of chunks) {
     const pages = titleToPages.get(chunk.title) ?? new Set<number>();
     pages.add(chunk.pageStart);
     titleToPages.set(chunk.title, pages);
   }
-  
+
   // Convert to array of [title, sortedPages] and limit to MAX_CITATIONS
   const entries = Array.from(titleToPages.entries())
     .map(([title, pages]) => [title, Array.from(pages).sort((a, b) => a - b)] as const)
     .slice(0, MAX_CITATIONS);
-  
+
   if (entries.length === 0) return "";
-  
+
   const lines = entries.map(([title, pages], i) => {
     const num = UNICODE_NUMBERS[i] ?? `[${i + 1}]`;
     const pagesStr = pages.map(p => `p.${p}`).join(", ");
     return `${num} ${title} ${pagesStr}`;
   });
-  
+
   return "Sources:\n" + lines.join("\n");
 }
 
@@ -61,7 +61,6 @@ Link Handling:
 - Example: "Check the policy\nhttps://sst.edu.in/policy.pdf"
 
 Citation Format:
-- Use Unicode numbers: ¹, ², ³ (max 3 sources)
 - Format: ¹ Document Title p.X
 - One citation per line, no "Sources:" header
 
@@ -73,7 +72,7 @@ You are Iny, a helpful assistant for SST students on WhatsApp.
 
 export function buildPrompt(query: string, chunks: RetrievedChunk[]): ChatCompletionMessageParam[] {
   const contextBlock = buildContextBlock(chunks);
-  
+
   return [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "system", content: `Context:\n${contextBlock}` },

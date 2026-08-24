@@ -45,3 +45,19 @@ export const ALLOWED_JIDS = new Set<string>(
     .map((jid) => jid.trim())
     .filter(Boolean),
 );
+
+export const ALLOWED_JIDS_WITH_NAMES = (() => {
+  const jids = (process.env.ALLOWED_JIDS ?? "")
+    .split(",")
+    .map((jid) => jid.trim())
+    .filter(Boolean);
+  
+  const names = (process.env.ALLOWED_JIDS_NAMES ?? "")
+    .split(",")
+    .map((name) => name.trim());
+
+  return jids.map((jid, index) => ({
+    jid,
+    name: names[index] || `default user ${index + 1}`,
+  }));
+})();
