@@ -1,22 +1,14 @@
 import OpenAI from "openai";
-import { AI_API_KEY, AI_BASE_URL, AI_MODEL, AI_SITE_URL, AI_SITE_NAME, FALLBACK_MESSAGE, SIMILARITY_THRESHOLD, TOP_K } from "../config.js";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { AI_API_KEY, AI_BASE_URL, AI_MODEL, FALLBACK_MESSAGE, SIMILARITY_THRESHOLD, TOP_K, MAX_CITATIONS } from "../config.js";
 import { retrieveTopK } from "./retrieve.js";
-import { buildPrompt, formatCitations } from "./format.js";
+import { formatCitations, SYSTEM_PROMPT } from "./format.js";
 
 const client = AI_API_KEY
   ? new OpenAI({
-    apiKey: AI_API_KEY,
-    ...(AI_BASE_URL ? { baseURL: AI_BASE_URL } : {}),
-    // Used only with OpenRouter
-    // ...(AI_SITE_URL || AI_SITE_NAME
-    //   ? {
-    //       defaultHeaders: {
-    //         ...(AI_SITE_URL ? { "HTTP-Referer": AI_SITE_URL } : {}),
-    //         ...(AI_SITE_NAME ? { "X-OpenRouter-Title": AI_SITE_NAME } : {}),
-    //       },
-    //     }
-    //   : {}),
-  })
+      apiKey: AI_API_KEY,
+      ...(AI_BASE_URL ? { baseURL: AI_BASE_URL } : {}),
+    })
   : null;
 
 export interface AskOptions {
@@ -36,10 +28,17 @@ export async function askWithContext(query: string, opts: AskOptions = {}): Prom
     return FALLBACK_MESSAGE;
   }
 
-  const { buildPrompt, formatCitations } = await import("./format.js");
-  const messages = buildPrompt(query, chunks);
+  const contextBlock = chunks
+    .map((c, i) => `[${i + 1}] ${c.content}`)
+    .join("\n\n");
 
-  const completion = await client.chat.completions.create({
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: `Context:\n${chunks.map((c, i) => `[${i + 1}] ${c.content}`).join("\n\n")}` },
+    { role: "user", content: query },
+  ];
+
+  const completion = await client!.chat.completions.create({
     model: AI_MODEL,
     messages,
     max_tokens: 1024,
@@ -51,9 +50,13 @@ export async function askWithContext(query: string, opts: AskOptions = {}): Prom
     throw new Error("LLM returned an empty response");
   }
 
-  const citations = chunks
-    .map((c, i) => `[${i + 1}] ${c.title} p.${c.pageStart}`)
-    .join("\n");
+  const limitedChunks = chunks.slice(0, MAX_CITATIONS);
+  const citations = formatCitations(limitedChunks);
 
-  return `${answer}\n\nSources:\n${citations}`;
+  return `${answer}\n\n${citations}`;
+}
+
+export interface AskOptions {
+  threshold?: number;
+  topK?: number;
 }

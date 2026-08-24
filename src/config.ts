@@ -20,11 +20,13 @@ export const SIMILARITY_THRESHOLD = Number(process.env.SIMILARITY_THRESHOLD ?? 0
 
 export const TOP_K = Number(process.env.TOP_K ?? 5);
 
+export const MAX_CITATIONS = Number(process.env.MAX_CITATIONS ?? 3);
+
 export const MAX_CONTEXT_TOKENS = Number(process.env.MAX_CONTEXT_TOKENS ?? 2000);
 
 export const WELCOME_TRIGGER_PATTERN = process.env.WELCOME_TRIGGER_PATTERN ?? "^(iny|hi iny)$";
 
-export const FALLBACK_MESSAGE = process.env.FALLBACK_MESSAGE ?? "Couldn't find that in the database. Try rephrasing?";
+export const FALLBACK_MESSAGE = process.env.FALLBACK_MESSAGE ?? "I don't have that information. Try rephrasing or ask something else.";
 
 export const WELCOME_MESSAGE = process.env.WELCOME_MESSAGE ?? "Hi! I'm Iny, your assistant. Ask me anything related to SST.";
 
