@@ -5,10 +5,29 @@ import { MAX_CITATIONS } from "../config.js";
 const UNICODE_NUMBERS = ["¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹", "⁰"];
 
 export function formatCitations(chunks: RetrievedChunk[]): string {
-  const limited = chunks.slice(0, MAX_CITATIONS);
-  return limited
-    .map((c, i) => `${UNICODE_NUMBERS[i] ?? `[${i + 1}]`} ${c.title} p.${c.pageStart}`)
-    .join("\n");
+  // Group chunks by title, collecting unique page numbers
+  const titleToPages = new Map<string, Set<number>>();
+  
+  for (const chunk of chunks) {
+    const pages = titleToPages.get(chunk.title) ?? new Set<number>();
+    pages.add(chunk.pageStart);
+    titleToPages.set(chunk.title, pages);
+  }
+  
+  // Convert to array of [title, sortedPages] and limit to MAX_CITATIONS
+  const entries = Array.from(titleToPages.entries())
+    .map(([title, pages]) => [title, Array.from(pages).sort((a, b) => a - b)] as const)
+    .slice(0, MAX_CITATIONS);
+  
+  if (entries.length === 0) return "";
+  
+  const lines = entries.map(([title, pages], i) => {
+    const num = UNICODE_NUMBERS[i] ?? `[${i + 1}]`;
+    const pagesStr = pages.map(p => `p.${p}`).join(", ");
+    return `${num} ${title} ${pagesStr}`;
+  });
+  
+  return "Sources:\n" + lines.join("\n");
 }
 
 export function buildContextBlock(chunks: RetrievedChunk[]): string {
