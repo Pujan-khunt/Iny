@@ -30,7 +30,7 @@ function normalizeJidInput(input: string): string | null {
 export const allowCommand: Command = {
   name: "allow",
   description: "Allowlist a user by phone number or JID (admin only)",
-  usage: "/allow <10-digit-phone-number>",
+  usage: "/allow <phone-or-jid> [name]",
   adminOnly: true,
   execute: async (ctx: CommandContext) => {
     if (!isAdmin(ctx.jid, ctx.altJid)) {
@@ -38,15 +38,34 @@ export const allowCommand: Command = {
       return;
     }
 
-    const jid = normalizeJidInput(ctx.text);
-
-    if (!jid) {
-      await ctx.reply({ text: "Usage: /allow <phone number or JID>" });
+    // Parse text to extract JID and optional name
+    const parts = ctx.text.trim().split(/\s+/);
+    if (parts.length === 0) {
+      await ctx.reply({ text: "Usage: /allow <phone-or-jid> [name]" });
       return;
     }
 
-    const added = await addToAllowlist(jid, ctx.jid);
-    await ctx.reply({ text: added ? `Allowlisted ${jid}` : `Already allowlisted: ${jid}` });
+    const jidInput = parts[0]!;
+    const name = parts.length > 1 ? parts.slice(1).join(" ") : undefined;
+
+    const jid = normalizeJidInput(jidInput);
+
+    if (!jid) {
+      await ctx.reply({ text: "Usage: /allow <phone number or JID> [name]" });
+      return;
+    }
+
+    const result = await addToAllowlist(jid, ctx.jid, name || "");
+    if (result.added) {
+      await ctx.reply({ text: `Allowlisted ${result.actualName} (${jid})` });
+    } else {
+      // Already exists, fetch and show current name
+      const { listAllowlist } = await import("../repositories/allowlist.js");
+      const list = await listAllowlist();
+      const entry = list.find((e) => e.jid === jid);
+      const currentName = entry?.name || "Unknown";
+      await ctx.reply({ text: `Already allowlisted: ${currentName} (${jid})` });
+    }
   },
 };
 
@@ -83,15 +102,16 @@ export const allowlistCommand: Command = {
       return;
     }
 
-    const jids = await listAllowlist();
+    const entries = await listAllowlist();
 
-    if (jids.length === 0) {
+    if (entries.length === 0) {
       await ctx.reply({ text: "Allowlist is empty." });
       return;
     }
 
-    const lines = jids.map((jid, index) => `${index + 1}. ${jid}`);
-    await ctx.reply({ text: lines.join("\n") });
+    const lines = entries.map((entry, index) => `${index + 1}. ${entry.name} (${entry.jid})`);
+    const text = `Allowlist (${entries.length} entries):\n${lines.join("\n")}`;
+    await ctx.reply({ text });
   },
 };
 
@@ -104,7 +124,7 @@ export const helpCommand: Command = {
     const admin = isAdmin(ctx.jid, ctx.altJid);
 
     if (admin) {
-      await ctx.reply({ text: "Admin commands:\n/allow <number> — add user to allowlist\n/disallow <number> — remove from allowlist\n/allowlist — list allowlisted users" });
+      await ctx.reply({ text: "Admin commands:\n/allow <jid> [name] — add user to allowlist\n/disallow <jid> — remove from allowlist\n/allowlist — list allowlisted users" });
     } else {
       await ctx.reply({ text: "I'm Iny, your SST assistant. Ask me anything about policies, events etc. Just type your question naturally." });
     }

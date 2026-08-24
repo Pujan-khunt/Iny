@@ -5,12 +5,23 @@ import { allowedJids } from "../db/schema.js";
 
 const cache = new Set<string>();
 
+function generateDefaultName(existingNames: string[]): string {
+  // Count how many "default user N" entries exist
+  const defaultCount = existingNames.filter((name) =>
+    /^default user \d+$/.test(name)
+  ).length;
+  return `default user ${defaultCount + 1}`;
+}
+
 export async function initAllowlist(): Promise<void> {
-  const rows = await db.select({ jid: allowedJids.jid }).from(allowedJids);
+  const rows = await db.select({ jid: allowedJids.jid, name: allowedJids.name }).from(allowedJids);
 
   if (rows.length === 0) {
+    let index = 1;
     for (const jid of ALLOWED_JIDS) {
-      await db.insert(allowedJids).values({ jid, addedBy: "bootstrap" }).onConflictDoNothing();
+      const defaultName = `default user ${index}`;
+      await db.insert(allowedJids).values({ jid, name: defaultName, addedBy: "bootstrap" }).onConflictDoNothing();
+      index++;
     }
   }
 
@@ -34,15 +45,29 @@ export function isAllowlisted(jid: string, altJid?: string | null): boolean {
   return false;
 }
 
-export async function addToAllowlist(jid: string, addedBy: string): Promise<boolean> {
+export async function addToAllowlist(
+  jid: string,
+  addedBy: string,
+  name?: string
+): Promise<{ added: boolean; actualName: string }> {
+  // If no name provided, generate default name
+  let finalName = name;
+  if (!finalName || finalName.trim().length === 0) {
+    const allRows = await db.select({ name: allowedJids.name }).from(allowedJids);
+    const existingNames = allRows.map((row) => row.name);
+    finalName = generateDefaultName(existingNames);
+  } else {
+    finalName = finalName.trim();
+  }
+
   const result = await db
     .insert(allowedJids)
-    .values({ jid, addedBy })
+    .values({ jid, name: finalName, addedBy })
     .onConflictDoNothing();
 
   const added = (result.rowCount ?? 0) > 0;
   cache.add(jid);
-  return added;
+  return { added, actualName: finalName };
 }
 
 export async function removeFromAllowlist(jid: string): Promise<boolean> {
@@ -54,11 +79,16 @@ export async function removeFromAllowlist(jid: string): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
-export async function listAllowlist(): Promise<string[]> {
+export interface AllowlistEntry {
+  jid: string;
+  name: string;
+}
+
+export async function listAllowlist(): Promise<AllowlistEntry[]> {
   const rows = await db
-    .select({ jid: allowedJids.jid })
+    .select({ jid: allowedJids.jid, name: allowedJids.name })
     .from(allowedJids)
     .orderBy(asc(allowedJids.createdAt));
 
-  return rows.map((row) => row.jid);
+  return rows;
 }

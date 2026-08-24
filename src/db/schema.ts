@@ -19,6 +19,7 @@ export const messages = pgTable(
 
 export const allowedJids = pgTable("allowed_jids", {
   jid: text("jid").primaryKey(),
+  name: text("name").notNull(),
   addedBy: text("added_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

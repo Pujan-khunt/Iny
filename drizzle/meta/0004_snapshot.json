@@ -1,6 +1,6 @@
 {
-  "id": "00020000-0000-0000-0000-000000000002",
-  "prevId": "a5e3416b-1ad2-4b7b-8e2b-20475037ea2b",
+  "id": "acc937d2-6fe6-40c9-b714-d79a894fa941",
+  "prevId": "00030000-0000-0000-0000-000000000003",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12,6 +12,12 @@
           "name": "jid",
           "type": "text",
           "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true
         },
         "added_by": {
@@ -76,6 +82,27 @@
           "primaryKey": false,
           "notNull": false
         },
+        "source_type": {
+          "name": "source_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'document'"
+        },
+        "page_start": {
+          "name": "page_start",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "page_end": {
+          "name": "page_end",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -90,6 +117,42 @@
           "columns": [
             {
               "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chunks_source_type_idx": {
+          "name": "chunks_source_type_idx",
+          "columns": [
+            {
+              "expression": "source_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chunks_page_idx": {
+          "name": "chunks_page_idx",
+          "columns": [
+            {
+              "expression": "page_start",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "page_end",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -165,6 +228,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "source_type": {
+          "name": "source_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'document'"
         },
         "created_at": {
           "name": "created_at",
