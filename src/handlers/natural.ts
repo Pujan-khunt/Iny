@@ -2,21 +2,17 @@ import { isJidGroup, proto, type WASocket } from "@whiskeysockets/baileys";
 import { extractMessageContent, getContentType } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
 import type { Stores } from "../store.js";
-import { askWithContext } from "../rag/answer.js";
+import { runAgent } from "../services/agent.js";
 import { isAllowlisted } from "../repositories/allowlist.js";
 import { replyTo } from "../services/sendMessage.js";
 import { createRateLimiter } from "../services/rateLimit.js";
-import { WELCOME_TRIGGER_PATTERN, WELCOME_MESSAGE, FALLBACK_MESSAGE } from "../config.js";
-import { createCommands } from "../commands/index.js";
+import { FALLBACK_MESSAGE } from "../config.js";
 import type { CommandRegistry } from "../commands/registry.js";
-import type { CommandContext } from "../commands/types.js";
 
 const MENTION_RATE_LIMITER = createRateLimiter(10, 60_000);
 const REPLY_RATE_LIMITER = createRateLimiter(10, 60_000);
 const DM_RATE_LIMITER = createRateLimiter(20, 60_000);
 const COMMAND_RATE_LIMITER = createRateLimiter(15, 60_000);
-
-const welcomeRegex = new RegExp(WELCOME_TRIGGER_PATTERN, "i");
 
 function getMessageText(message: proto.IMessage | null | undefined): string | undefined {
   if (!message) return undefined;
@@ -25,13 +21,6 @@ function getMessageText(message: proto.IMessage | null | undefined): string | un
   if (type === "conversation") return content?.conversation ?? undefined;
   if (type === "extendedTextMessage") return content?.extendedTextMessage?.text ?? undefined;
   return undefined;
-}
-
-function getRateLimiter(isDM: boolean, isMention: boolean, isReply: boolean) {
-  if (isDM) return DM_RATE_LIMITER;
-  if (isMention) return MENTION_RATE_LIMITER;
-  if (isReply) return REPLY_RATE_LIMITER;
-  return DM_RATE_LIMITER;
 }
 
 function parseCommand(text: string): { name: string; args: string[]; text: string } | null {
@@ -85,7 +74,6 @@ export async function handleNaturalMessage(
     return;
   }
 
-  const jid = remoteJid;
   const altJidVal = (msg.key as any).remoteJidAlt;
 
   const ctx = {
@@ -139,19 +127,12 @@ export async function handleNaturalMessage(
     }
   }
 
-  // Handle welcome trigger
-  const isWelcomeTrigger = !isGroup && welcomeRegex.test(text.trim().toLowerCase());
-  if (isWelcomeTrigger) {
-    await ctx.reply({ text: WELCOME_MESSAGE });
-    return;
-  }
-
-  // RAG for all other messages
+  // Agent handles all messages: greetings, policy questions, and conversation
   try {
-    const answer = await askWithContext(text.trim());
+    const answer = await runAgent(text.trim());
     await ctx.reply({ text: answer });
   } catch (error) {
-    logger.error({ error }, "Natural message handling failed");
+    logger.error({ error }, "Agent handling failed");
     await ctx.reply({ text: FALLBACK_MESSAGE });
   }
 }
