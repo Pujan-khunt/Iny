@@ -6,9 +6,9 @@ import { formatCitations, SYSTEM_PROMPT } from "./format.js";
 
 const client = AI_API_KEY
   ? new OpenAI({
-      apiKey: AI_API_KEY,
-      ...(AI_BASE_URL ? { baseURL: AI_BASE_URL } : {}),
-    })
+    apiKey: AI_API_KEY,
+    ...(AI_BASE_URL ? { baseURL: AI_BASE_URL } : {}),
+  })
   : null;
 
 /**
@@ -24,12 +24,6 @@ function convertMarkdownToWhatsApp(text: string): string {
 
   // Convert ~~text~~ (strikethrough) to ~text~
   text = text.replace(/~~(.+?)~~/g, "~$1~");
-
-  // Remove # headings (they don't work in WhatsApp)
-  // Convert "# Heading" to "*Heading*" for emphasis
-  text = text.replace(/^### (.+)$/gm, "*$1*");
-  text = text.replace(/^## (.+)$/gm, "*$1*");
-  text = text.replace(/^# (.+)$/gm, "*$1*");
 
   return text;
 }
@@ -50,10 +44,6 @@ export async function askWithContext(query: string, opts: AskOptions = {}): Prom
   if (chunks.length === 0) {
     return FALLBACK_MESSAGE;
   }
-
-  const contextBlock = chunks
-    .map((c, i) => `[${i + 1}] ${c.content}`)
-    .join("\n\n");
 
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
