@@ -8,6 +8,8 @@ import { replyTo } from "../services/sendMessage.js";
 import { createRateLimiter } from "../services/rateLimit.js";
 import { FALLBACK_MESSAGE } from "../config.js";
 import type { CommandRegistry } from "../commands/registry.js";
+import { getSourcesForUser } from "../services/sourceCache.js";
+import { isAskingForSources, formatSourcesForWhatsApp } from "../rag/formatSources.js";
 
 const MENTION_RATE_LIMITER = createRateLimiter(10, 60_000);
 const REPLY_RATE_LIMITER = createRateLimiter(10, 60_000);
@@ -127,9 +129,24 @@ export async function handleNaturalMessage(
     }
   }
 
+  // Check if user is asking for sources in a reply
+  if (isReply && isAskingForSources(text)) {
+    const cached = getSourcesForUser(remoteJid);
+    if (cached && cached.chunks.length > 0) {
+      const sourcesText = formatSourcesForWhatsApp(cached.chunks);
+      await ctx.reply({ text: sourcesText });
+      return;
+    } else {
+      await ctx.reply({
+        text: "No sources available for the previous response. This might be because the previous response didn't use any documents or the cache has expired.",
+      });
+      return;
+    }
+  }
+
   // Agent handles all messages: greetings, policy questions, and conversation
   try {
-    const answer = await runAgent(text.trim());
+    const answer = await runAgent(text.trim(), remoteJid);
     await ctx.reply({ text: answer });
   } catch (error) {
     logger.error({ error }, "Agent handling failed");

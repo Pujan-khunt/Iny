@@ -21,7 +21,8 @@ import {
 import { SYSTEM_PROMPT } from "../rag/systemPrompt.js";
 import { TOOL_SCHEMAS } from "../rag/tools.js";
 import type { ToolCall, ToolResult } from "../rag/tools.js";
-import { TOOL_EXECUTORS } from "../rag/toolExecutors.js";
+import { TOOL_EXECUTORS, getLastToolExecutionChunks, clearLastToolExecutionChunks } from "../rag/toolExecutors.js";
+import { cacheSourcesForUser } from "./sourceCache.js";
 
 const logger = pino();
 
@@ -142,9 +143,10 @@ async function executeToolCallWithRetry(
  * Implements the agentic RAG pattern with automatic tool calling
  *
  * @param userMessage - The user's query
+ * @param userJid - Optional: User JID for source caching
  * @returns The agent's final response
  */
-export async function runAgent(userMessage: string): Promise<string> {
+export async function runAgent(userMessage: string, userJid?: string): Promise<string> {
   if (!client) {
     throw new Error("AI_API_KEY is not configured");
   }
@@ -155,7 +157,7 @@ export async function runAgent(userMessage: string): Promise<string> {
   ];
 
   logger.info(
-    { userMessage, maxIterations: AGENT_CONFIG.maxIterations },
+    { userMessage, userJid, maxIterations: AGENT_CONFIG.maxIterations },
     "Agent started"
   );
 
@@ -227,46 +229,63 @@ export async function runAgent(userMessage: string): Promise<string> {
       // Step 3: Add assistant response to messages (contains tool call requests)
       messages.push(responseMessage);
 
-      // Step 4: Execute each tool call
-      for (const toolCall of functionToolCalls) {
-        const functionCall = toolCall as { function: { name: string; arguments: string } };
-        logger.debug(
-          {
-            toolName: functionCall.function.name,
-            toolCallId: toolCall.id,
-            arguments: functionCall.function.arguments,
-            timestamp: new Date().toISOString(),
-          },
-          "Executing tool call"
-        );
+       // Step 4: Execute each tool call
+       for (const toolCall of functionToolCalls) {
+         const functionCall = toolCall as { function: { name: string; arguments: string } };
+         logger.debug(
+           {
+             toolName: functionCall.function.name,
+             toolCallId: toolCall.id,
+             arguments: functionCall.function.arguments,
+             timestamp: new Date().toISOString(),
+           },
+           "Executing tool call"
+         );
 
-        const toolResult = await executeToolCallWithRetry(
-          {
-            id: toolCall.id,
-            type: "function",
-            function: functionCall.function,
-          },
-          AGENT_CONFIG.retryAttempts,
-          AGENT_CONFIG.retryBaseDelay
-        );
+         const toolResult = await executeToolCallWithRetry(
+           {
+             id: toolCall.id,
+             type: "function",
+             function: functionCall.function,
+           },
+           AGENT_CONFIG.retryAttempts,
+           AGENT_CONFIG.retryBaseDelay
+         );
 
-        // Step 5: Add tool result to messages so LLM can see it
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCall.id,
-          name: toolCall.function.name,
-          content: toolResult,
-        } as ToolResult);
+         // Step 4b: Cache sources if tool was search_policy_database
+         if (functionCall.function.name === "search_policy_database" && userJid) {
+           const chunks = getLastToolExecutionChunks();
+           if (chunks.length > 0) {
+             cacheSourcesForUser(userJid, chunks);
+             logger.debug(
+               {
+                 userJid,
+                 chunkCount: chunks.length,
+                 timestamp: new Date().toISOString(),
+               },
+               "Sources cached after tool execution"
+             );
+           }
+           clearLastToolExecutionChunks();
+         }
 
-        logger.debug(
-          {
-            toolName: toolCall.function.name,
-            resultLength: toolResult.length,
-            timestamp: new Date().toISOString(),
-          },
-          "Tool result added to messages"
-        );
-      }
+         // Step 5: Add tool result to messages so LLM can see it
+         messages.push({
+           role: "tool",
+           tool_call_id: toolCall.id,
+           name: toolCall.function.name,
+           content: toolResult,
+         } as ToolResult);
+
+         logger.debug(
+           {
+             toolName: toolCall.function.name,
+             resultLength: toolResult.length,
+             timestamp: new Date().toISOString(),
+           },
+           "Tool result added to messages"
+         );
+       }
 
       // Loop continues: LLM will see tool results and decide next step
     } catch (error) {

@@ -5,11 +5,32 @@
 
 import pino from "pino";
 import { retrieveTopK } from "./retrieve.js";
+import type { RetrievedChunk } from "../services/sourceCache.js";
 
 const logger = pino();
 
 export interface ToolExecutor {
   (args: Record<string, unknown>): Promise<string>;
+}
+
+/**
+ * Temporary storage for raw chunks during tool execution
+ * The agent will extract these after tool execution
+ */
+let lastToolExecutionChunks: RetrievedChunk[] = [];
+
+/**
+ * Get chunks from last tool execution
+ */
+export function getLastToolExecutionChunks(): RetrievedChunk[] {
+  return lastToolExecutionChunks;
+}
+
+/**
+ * Clear chunks after retrieval
+ */
+export function clearLastToolExecutionChunks(): void {
+  lastToolExecutionChunks = [];
 }
 
 /**
@@ -28,12 +49,16 @@ export async function search_policy_database(
     });
 
     if (chunks.length === 0) {
+      lastToolExecutionChunks = [];
       return JSON.stringify({
         success: false,
         message: "No matching documents found",
         results: [],
       });
     }
+
+    // Store raw chunks for agent to retrieve
+    lastToolExecutionChunks = chunks;
 
     // Format results for LLM consumption
     const formattedResults = chunks.map((chunk, index) => ({
@@ -45,18 +70,19 @@ export async function search_policy_database(
       }`,
     }));
 
-    // Also keep raw chunks for citation generation later
+    // Also keep raw chunks in response (for documentation)
     const response = {
       success: true,
       message: `Found ${chunks.length} matching document(s)`,
       results: formattedResults,
-      _raw_chunks: chunks, // Internal use for citations (LLM will ignore)
     };
 
     return JSON.stringify(response);
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
+
+    lastToolExecutionChunks = [];
 
     logger.error(
       { error: errorMessage, query },
