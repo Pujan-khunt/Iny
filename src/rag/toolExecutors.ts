@@ -13,88 +13,128 @@ export interface ToolExecutor {
   (args: Record<string, unknown>): Promise<string>;
 }
 
-/**
- * Temporary storage for raw chunks during tool execution
- * The agent will extract these after tool execution
- */
-let lastToolExecutionChunks: RetrievedChunk[] = [];
-
-/**
- * Get chunks from last tool execution
- */
-export function getLastToolExecutionChunks(): RetrievedChunk[] {
-  return lastToolExecutionChunks;
+export interface ToolExecutorContext {
+  getLastToolExecutionChunks: () => RetrievedChunk[];
+  clearLastToolExecutionChunks: () => void;
+  search_policy_database: (query: string, threshold?: number) => Promise<string>;
 }
 
 /**
- * Clear chunks after retrieval
+ * Create a request-scoped tool executor context
+ * This ensures no race conditions between concurrent requests
  */
-export function clearLastToolExecutionChunks(): void {
-  lastToolExecutionChunks = [];
+export function createToolExecutors(): ToolExecutorContext {
+  let lastToolExecutionChunks: RetrievedChunk[] = [];
+
+  function getLastToolExecutionChunks(): RetrievedChunk[] {
+    return lastToolExecutionChunks;
+  }
+
+  function clearLastToolExecutionChunks(): void {
+    lastToolExecutionChunks = [];
+  }
+
+  async function search_policy_database(
+    query: string,
+    threshold?: number
+  ): Promise<string> {
+    try {
+      const chunks = await retrieveTopK(query, {
+        threshold: threshold ?? 0.35,
+        topK: 5,
+      });
+
+      if (chunks.length === 0) {
+        lastToolExecutionChunks = [];
+        return JSON.stringify({
+          success: false,
+          message: "No matching documents found",
+          results: [],
+        });
+      }
+
+      // Store raw chunks for agent to retrieve
+      lastToolExecutionChunks = chunks;
+
+      // Format results for LLM consumption
+      const formattedResults = chunks.map((chunk, index) => ({
+        index: index + 1,
+        content: chunk.content,
+        source: chunk.title,
+        pages: `p.${chunk.pageStart}${chunk.pageEnd !== chunk.pageStart ? `-${chunk.pageEnd}` : ""
+          }`,
+      }));
+
+      // Also keep raw chunks in response (for documentation)
+      const response = {
+        success: true,
+        message: `Found ${chunks.length} matching document(s)`,
+        results: formattedResults,
+      };
+
+      return JSON.stringify(response);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      lastToolExecutionChunks = [];
+
+      logger.error(
+        { error: errorMessage, query },
+        "Tool executor error: search_policy_database"
+      );
+
+      return JSON.stringify({
+        success: false,
+        message: `Error searching database: ${errorMessage}`,
+        results: [],
+      });
+    }
+  }
+
+  return {
+    getLastToolExecutionChunks,
+    clearLastToolExecutionChunks,
+    search_policy_database,
+  };
+}
+
+// Default singleton for backward compatibility
+let defaultToolExecutors: ToolExecutorContext | null = null;
+
+function getDefaultToolExecutors(): ToolExecutorContext {
+  if (!defaultToolExecutors) {
+    defaultToolExecutors = createToolExecutors();
+  }
+  return defaultToolExecutors;
 }
 
 /**
- * Search policy database tool executor
- * Retrieves relevant policy documents based on user query
- * Returns JSON string with results or error for LLM consumption
+ * Legacy search_policy_database function for backward compatibility
+ * This uses the default singleton context
  */
 export async function search_policy_database(
   query: string,
   threshold?: number
 ): Promise<string> {
-  try {
-    const chunks = await retrieveTopK(query, {
-      threshold: threshold ?? 0.35,
-      topK: 5,
-    });
+  const executors = getDefaultToolExecutors();
+  return executors.search_policy_database(query, threshold);
+}
 
-    if (chunks.length === 0) {
-      lastToolExecutionChunks = [];
-      return JSON.stringify({
-        success: false,
-        message: "No matching documents found",
-        results: [],
-      });
-    }
+/**
+ * Get chunks from last tool execution (legacy)
+ */
+export function getLastToolExecutionChunks(): RetrievedChunk[] {
+  const executors = getDefaultToolExecutors();
+  return executors.getLastToolExecutionChunks();
+}
 
-    // Store raw chunks for agent to retrieve
-    lastToolExecutionChunks = chunks;
-
-    // Format results for LLM consumption
-    const formattedResults = chunks.map((chunk, index) => ({
-      index: index + 1,
-      content: chunk.content,
-      source: chunk.title,
-      pages: `p.${chunk.pageStart}${
-        chunk.pageEnd !== chunk.pageStart ? `-${chunk.pageEnd}` : ""
-      }`,
-    }));
-
-    // Also keep raw chunks in response (for documentation)
-    const response = {
-      success: true,
-      message: `Found ${chunks.length} matching document(s)`,
-      results: formattedResults,
-    };
-
-    return JSON.stringify(response);
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-
-    lastToolExecutionChunks = [];
-
-    logger.error(
-      { error: errorMessage, query },
-      "Tool executor error: search_policy_database"
-    );
-
-    return JSON.stringify({
-      success: false,
-      message: `Error searching database: ${errorMessage}`,
-      results: [],
-    });
-  }
+/**
+ * Clear chunks after retrieval (legacy)
+ */
+export function clearLastToolExecutionChunks(): void {
+  const executors = getDefaultToolExecutors();
+  executors.clearLastToolExecutionChunks();
 }
 
 /**

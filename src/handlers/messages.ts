@@ -1,5 +1,6 @@
-import { extractMessageContent, getContentType, isJidGroup, proto, type WASocket } from "@whiskeysockets/baileys";
+import { type WASocket } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
+import { getMessageText } from "../utils/messageText.js";
 import { isAllowlisted } from "../repositories/allowlist.js";
 import { saveMessage } from "../repositories/messages.js";
 import { handleNaturalMessage } from "./natural.js";
@@ -7,32 +8,13 @@ import { createCommands } from "../commands/index.js";
 import type { CommandRegistry } from "../commands/registry.js";
 import type { Stores } from "../store.js";
 
-function getMessageText(message: proto.IMessage | null | undefined): string | undefined {
-  if (!message) {
-    return undefined;
-  }
-
-  const content = extractMessageContent(message);
-  const type = getContentType(content);
-
-  if (type === "conversation") {
-    return content?.conversation ?? undefined;
-  }
-
-  if (type === "extendedTextMessage") {
-    return content?.extendedTextMessage?.text ?? undefined;
-  }
-
-  return undefined;
-}
-
 export function registerMessageHandlers(
   socket: WASocket,
   logger: ILogger,
   stores: Stores,
   botJid: string,
 ) {
-  const commandRegistry = createCommands();
+  const commandRegistry: CommandRegistry = createCommands();
 
   socket.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
@@ -66,7 +48,7 @@ export function registerMessageHandlers(
         continue;
       }
 
-      await handleNaturalMessage(socket, logger, stores, msg, botJid, stores.sentMessageIDs, commandRegistry);
+      await handleNaturalMessage(socket, logger, stores, msg, botJid, commandRegistry);
     }
   });
 }

@@ -1,16 +1,24 @@
 import { eq, asc } from "drizzle-orm";
-import { ALLOWED_JIDS_WITH_NAMES } from "../config.js";
+import { ALLOWED_JIDS_WITH_NAMES, ALLOWLIST_CACHE_TTL_MS } from "../config.js";
 import { db } from "../db/index.js";
 import { allowedJids } from "../db/schema.js";
 
-const cache = new Set<string>();
+interface CacheEntry {
+  expiresAt: number;
+}
 
-function generateDefaultName(existingNames: string[]): string {
-  // Count how many "default user N" entries exist
-  const defaultCount = existingNames.filter((name) =>
-    /^default user \d+$/.test(name)
-  ).length;
-  return `default user ${defaultCount + 1}`;
+const cache = new Map<string, CacheEntry>();
+
+function isCacheValid(jid: string): boolean {
+  const entry = cache.get(jid);
+  if (!entry) return false;
+
+  if (Date.now() > entry.expiresAt) {
+    cache.delete(jid);
+    return false;
+  }
+
+  return true;
 }
 
 export async function initAllowlist(): Promise<void> {
@@ -25,17 +33,18 @@ export async function initAllowlist(): Promise<void> {
   const allRows = await db.select({ jid: allowedJids.jid }).from(allowedJids);
   cache.clear();
 
+  const expiresAt = Date.now() + ALLOWLIST_CACHE_TTL_MS;
   for (const row of allRows) {
-    cache.add(row.jid);
+    cache.set(row.jid, { expiresAt });
   }
 }
 
 export function isAllowlisted(jid: string, altJid?: string | null): boolean {
-  if (cache.has(jid)) {
+  if (isCacheValid(jid)) {
     return true;
   }
 
-  if (altJid && cache.has(altJid)) {
+  if (altJid && isCacheValid(altJid)) {
     return true;
   }
 
@@ -63,7 +72,8 @@ export async function addToAllowlist(
     .onConflictDoNothing();
 
   const added = (result.rowCount ?? 0) > 0;
-  cache.add(jid);
+  const expiresAt = Date.now() + ALLOWLIST_CACHE_TTL_MS;
+  cache.set(jid, { expiresAt });
   return { added, actualName: finalName };
 }
 
@@ -88,4 +98,12 @@ export async function listAllowlist(): Promise<AllowlistEntry[]> {
     .orderBy(asc(allowedJids.createdAt));
 
   return rows;
+}
+
+function generateDefaultName(existingNames: string[]): string {
+  // Count how many "default user N" entries exist
+  const defaultCount = existingNames.filter((name) =>
+    /^default user \d+$/.test(name)
+  ).length;
+  return `default user ${defaultCount + 1}`;
 }

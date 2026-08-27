@@ -6,6 +6,7 @@
  */
 
 import pino from "pino";
+import { SOURCE_CACHE_TTL_MS } from "../config.js";
 
 const logger = pino();
 
@@ -20,6 +21,7 @@ export interface CachedSources {
   userJid: string;
   chunks: RetrievedChunk[];
   timestamp: number;
+  expiresAt: number;
 }
 
 /**
@@ -36,14 +38,16 @@ export function cacheSourcesForUser(
   userJid: string,
   chunks: RetrievedChunk[]
 ): void {
+  const now = Date.now();
   sourceCache.set(userJid, {
     userJid,
     chunks,
-    timestamp: Date.now(),
+    timestamp: now,
+    expiresAt: now + SOURCE_CACHE_TTL_MS,
   });
 
   logger.debug(
-    { userJid, chunkCount: chunks.length, timestamp: new Date().toISOString() },
+    { userJid, chunkCount: chunks.length, expiresAt: new Date(now + SOURCE_CACHE_TTL_MS).toISOString() },
     "Sources cached for user"
   );
 }
@@ -60,7 +64,13 @@ export function getSourcesForUser(userJid: string): CachedSources | null {
     return null;
   }
 
-  // Cache is valid (no expiration in MVP, but tracked)
+  // Check if cache has expired
+  if (Date.now() > cached.expiresAt) {
+    sourceCache.delete(userJid);
+    logger.debug({ userJid }, "Cached sources expired and removed");
+    return null;
+  }
+
   logger.debug(
     {
       userJid,
@@ -87,9 +97,25 @@ export function clearSourcesForUser(userJid: string): void {
 export function getCacheStats(): {
   totalUsers: number;
   cacheSize: number;
+  activeEntries: number;
+  expiredEntries: number;
 } {
+  const now = Date.now();
+  let activeEntries = 0;
+  let expiredEntries = 0;
+
+  for (const entry of sourceCache.values()) {
+    if (now > entry.expiresAt) {
+      expiredEntries++;
+    } else {
+      activeEntries++;
+    }
+  }
+
   return {
     totalUsers: sourceCache.size,
     cacheSize: sourceCache.size,
+    activeEntries,
+    expiredEntries,
   };
 }

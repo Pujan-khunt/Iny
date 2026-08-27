@@ -17,12 +17,14 @@ import {
   AI_BASE_URL,
   AI_MODEL,
   FALLBACK_MESSAGE,
+  AGENT_CONFIG,
 } from "../config.js";
 import { SYSTEM_PROMPT } from "../rag/systemPrompt.js";
 import { TOOL_SCHEMAS } from "../rag/tools.js";
 import type { ToolCall, ToolResult } from "../rag/tools.js";
 import { TOOL_EXECUTORS, getLastToolExecutionChunks, clearLastToolExecutionChunks } from "../rag/toolExecutors.js";
 import { cacheSourcesForUser } from "./sourceCache.js";
+import { convertMarkdownToWhatsApp } from "../utils/markdown.js";
 
 const logger = pino();
 
@@ -32,32 +34,6 @@ const client = AI_API_KEY
       ...(AI_BASE_URL ? { baseURL: AI_BASE_URL } : {}),
     })
   : null;
-
-/**
- * Configuration for agent behavior
- */
-const AGENT_CONFIG = {
-  maxIterations: 5,
-  retryAttempts: 3,
-  retryBaseDelay: 500, // milliseconds - linear backoff: 500ms, 1000ms, 1500ms
-};
-
-/**
- * Convert Markdown formatting to WhatsApp-compatible formatting
- * Handles cases where LLM outputs Markdown despite prompt instructions
- */
-function convertMarkdownToWhatsApp(text: string): string {
-  // Convert **text** (bold) to *text*
-  text = text.replace(/\*\*(.+?)\*\*/g, "*$1*");
-
-  // Convert __text__ (bold) to *text*
-  text = text.replace(/__(.+?)__/g, "*$1*");
-
-  // Convert ~~text~~ (strikethrough) to ~text~
-  text = text.replace(/~~(.+?)~~/g, "~$1~");
-
-  return text;
-}
 
 /**
  * Sleep utility for retry delays with linear backoff
@@ -157,7 +133,7 @@ export async function runAgent(userMessage: string, userJid?: string): Promise<s
   ];
 
   logger.info(
-    { userMessage, userJid, maxIterations: AGENT_CONFIG.maxIterations },
+    { userMessage, userJid },
     "Agent started"
   );
 

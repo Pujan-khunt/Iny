@@ -20,7 +20,6 @@ export const SIMILARITY_THRESHOLD = Number(process.env.SIMILARITY_THRESHOLD ?? 0
 
 export const TOP_K = Number(process.env.TOP_K ?? 5);
 
-export const MAX_CITATIONS = Number(process.env.MAX_CITATIONS ?? 3);
 
 export const MAX_CONTEXT_TOKENS = Number(process.env.MAX_CONTEXT_TOKENS ?? 2000);
 
@@ -51,7 +50,7 @@ export const ALLOWED_JIDS_WITH_NAMES = (() => {
     .split(",")
     .map((jid) => jid.trim())
     .filter(Boolean);
-  
+
   const names = (process.env.ALLOWED_JIDS_NAMES ?? "")
     .split(",")
     .map((name) => name.trim());
@@ -61,3 +60,13 @@ export const ALLOWED_JIDS_WITH_NAMES = (() => {
     name: names[index] || `default user ${index + 1}`,
   }));
 })();
+
+export const AGENT_CONFIG = {
+  maxIterations: Number(process.env.AGENT_MAX_ITERATIONS ?? 5),
+  retryAttempts: Number(process.env.AGENT_RETRY_ATTEMPTS ?? 3),
+  retryBaseDelay: Number(process.env.AGENT_RETRY_BASE_DELAY ?? 500),
+};
+
+export const SOURCE_CACHE_TTL_MS = Number(process.env.SOURCE_CACHE_TTL_MS ?? 15 * 60 * 1000);
+export const ALLOWLIST_CACHE_TTL_MS = Number(process.env.ALLOWLIST_CACHE_TTL_MS ?? 5 * 60 * 1000);
+export const COMMAND_PREFIX = process.env.COMMAND_PREFIX ?? "/";

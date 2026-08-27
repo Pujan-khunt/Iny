@@ -1,41 +1,30 @@
-import { isAdmin } from "../services/admin.js";
 import type { Command, CommandContext } from "./types.js";
 
 export const helpCommand: Command = {
   name: "help",
-  aliases: ["commands"],
-  description: "Lists all available commands",
-  usage: "/help",
+  description: "Show Iny's capabilities",
+  adminOnly: false,
   execute: async (ctx: CommandContext) => {
+    const { isAdmin } = await import("../services/admin.js");
     const admin = isAdmin(ctx.jid, ctx.altJid);
-    const commands = ctx.registry.list();
 
-    const regular = commands.filter((cmd) => !cmd.adminOnly);
-    const adminCommands = commands.filter((cmd) => cmd.adminOnly);
-
-    const lines: string[] = [];
-
-    lines.push("Commands:");
-    lines.push(
-      ...regular.map((cmd) => {
-        const usage = cmd.usage ?? `/${cmd.name}`;
-        const description = cmd.description ? ` - ${cmd.description}` : "";
-        return `${usage}${description}`;
-      }),
-    );
-
-    if (admin && adminCommands.length > 0) {
-      lines.push("");
-      lines.push("Admin commands:");
-      lines.push(
-        ...adminCommands.map((cmd) => {
-          const usage = cmd.usage ?? `/${cmd.name}`;
-          const description = cmd.description ? ` - ${cmd.description}` : "";
-          return `${usage}${description}`;
-        }),
-      );
+    if (admin) {
+      const text =
+        `*Iny Admin Commands:*\n\n` +
+        `• */allow <jid-or-phone> [name]* - Add a user/group to the allowlist\n` +
+        `• */disallow <jid-or-phone>* - Remove a user/group from the allowlist\n` +
+        `• */allowlist* - List all allowlisted entries\n` +
+        `• */help* - Show this help message`;
+      await ctx.reply({ text });
+    } else {
+      const text =
+        `*Hi! I'm Iny, your assistant for Scaler School of Technology (SST).*\n\n` +
+        `You can ask me anything related to SST policies, procedures, and campus operations.\n\n` +
+        `*How to use:*\n` +
+        `• Ask any policy question directly (e.g., "What is the SEV policy?")\n` +
+        `• Ask procedural questions (e.g., "How do I get a bonafide certificate?")\n` +
+        `• Reply to any of my responses asking for *sources* or *references* to see where the information came from.`;
+      await ctx.reply({ text });
     }
-
-    await ctx.reply({ text: lines.join("\n") });
   },
 };

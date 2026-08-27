@@ -183,19 +183,3 @@ export const allowlistCommand: Command = {
     await ctx.reply({ text });
   },
 };
-
-export const helpCommand: Command = {
-  name: "help",
-  description: "Show Iny's capabilities",
-  adminOnly: false,
-  execute: async (ctx: CommandContext) => {
-    const { isAdmin } = await import("../services/admin.js");
-    const admin = isAdmin(ctx.jid, ctx.altJid);
-
-    if (admin) {
-      await ctx.reply({ text: "Admin commands:\n/allow <jid> [name] — add user to allowlist\n/disallow <jid> — remove from allowlist\n/allowlist — list allowlisted users" });
-    } else {
-      await ctx.reply({ text: "I'm Iny, your SST assistant. Ask me anything about policies, events etc. Just type your question naturally." });
-    }
-  },
-};

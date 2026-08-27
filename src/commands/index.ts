@@ -1,4 +1,5 @@
-import { allowCommand, allowlistCommand, disallowCommand, helpCommand } from "./admin.js";
+import { allowCommand, allowlistCommand, disallowCommand } from "./admin.js";
+import { helpCommand } from "./help.js";
 import { createCommandRegistry } from "./registry.js";
 import type { CommandRegistry } from "./registry.js";
 

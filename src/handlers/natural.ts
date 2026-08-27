@@ -1,5 +1,5 @@
 import { isJidGroup, proto, type WASocket } from "@whiskeysockets/baileys";
-import { extractMessageContent, getContentType } from "@whiskeysockets/baileys";
+import { getMessageText } from "../utils/messageText.js";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
 import type { Stores } from "../store.js";
 import { runAgent } from "../services/agent.js";
@@ -8,6 +8,7 @@ import { replyTo } from "../services/sendMessage.js";
 import { createRateLimiter } from "../services/rateLimit.js";
 import { FALLBACK_MESSAGE } from "../config.js";
 import type { CommandRegistry } from "../commands/registry.js";
+import { parseCommand } from "../commands/parser.js";
 import { getSourcesForUser } from "../services/sourceCache.js";
 import { isAskingForSources, formatSourcesForWhatsApp } from "../rag/formatSources.js";
 
@@ -16,29 +17,12 @@ const REPLY_RATE_LIMITER = createRateLimiter(10, 60_000);
 const DM_RATE_LIMITER = createRateLimiter(20, 60_000);
 const COMMAND_RATE_LIMITER = createRateLimiter(15, 60_000);
 
-function getMessageText(message: proto.IMessage | null | undefined): string | undefined {
-  if (!message) return undefined;
-  const content = extractMessageContent(message);
-  const type = getContentType(content);
-  if (type === "conversation") return content?.conversation ?? undefined;
-  if (type === "extendedTextMessage") return content?.extendedTextMessage?.text ?? undefined;
-  return undefined;
-}
-
-function parseCommand(text: string): { name: string; args: string[]; text: string } | null {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("/")) return null;
-  const parts = trimmed.slice(1).split(/\s+/);
-  return { name: parts[0]?.toLowerCase() ?? "", args: parts.slice(1), text: trimmed };
-}
-
 export async function handleNaturalMessage(
   socket: WASocket,
   logger: ILogger,
   stores: Stores,
   msg: proto.IWebMessageInfo,
   botJid: string,
-  sentMessageIDs: Set<string>,
   commandRegistry: CommandRegistry,
 ): Promise<void> {
   if (!msg.key) return;
