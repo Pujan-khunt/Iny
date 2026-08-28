@@ -4,8 +4,7 @@
  */
 
 import pino from "pino";
-import { retrieveTopK } from "./retrieve.js";
-import type { RetrievedChunk } from "../services/sourceCache.js";
+import { retrieveTopK, type RetrievedChunk } from "./retrieve.js";
 
 const logger = pino();
 
@@ -48,12 +47,12 @@ export function createToolExecutors(): ToolExecutorContext {
         lastToolExecutionChunks = [];
         return JSON.stringify({
           success: false,
-          message: "No matching documents found",
+          message: "No matching documents found for this query. If looking for a specific topic, try reformulating with core keywords or policy names.",
           results: [],
         });
       }
 
-      // Store raw chunks for agent to retrieve
+      // Store raw chunks for agent / source caching
       lastToolExecutionChunks = chunks;
 
       // Format results for LLM consumption
@@ -61,11 +60,12 @@ export function createToolExecutors(): ToolExecutorContext {
         index: index + 1,
         content: chunk.content,
         source: chunk.title,
-        pages: `p.${chunk.pageStart}${chunk.pageEnd !== chunk.pageStart ? `-${chunk.pageEnd}` : ""
-          }`,
+        pages: `p.${chunk.pageStart}${
+          chunk.pageEnd !== chunk.pageStart ? `-${chunk.pageEnd}` : ""
+        }`,
+        matchType: chunk.matchType ?? "semantic",
       }));
 
-      // Also keep raw chunks in response (for documentation)
       const response = {
         success: true,
         message: `Found ${chunks.length} matching document(s)`,

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { customType } from "drizzle-orm/pg-core";
 import { index, integer, pgTable, primaryKey, text, timestamp, uuid, vector } from "drizzle-orm/pg-core";
 
@@ -54,5 +55,6 @@ export const chunks = pgTable(
     index("chunks_source_type_idx").on(table.sourceType),
     index("chunks_page_idx").on(table.pageStart, table.pageEnd),
     index("chunks_embedding_hnsw_idx").using("hnsw", table.embedding.op("vector_cosine_ops")),
+    index("chunks_fts_idx").using("gin", sql`to_tsvector('english', ${table.content})`),
   ],
 );

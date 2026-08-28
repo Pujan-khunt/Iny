@@ -28,19 +28,19 @@ export const TOOL_SCHEMAS = [
     function: {
       name: "search_policy_database",
       description:
-        "Search the SST college policy database for information about academic policies, procedures, and campus operations. Use this tool when students ask about college policies, procedures, or official information.",
+        "Search the SST college policy database using hybrid retrieval (semantic similarity + exact keyword matching) for information about academic policies, disciplinary rules (e.g., demerit points, code of conduct), procedures, and campus operations. Use specific keywords or policy names for best results.",
       parameters: {
         type: "object" as const,
         properties: {
           query: {
             type: "string",
             description:
-              "The search query about college policies or procedures (e.g., 'SEV policy', 'how to get bonafide certificate')",
+              "The search query or key terms (e.g., 'demerit points', 'SEV policy', 'bonafide certificate procedure', 'leave policy')",
           },
           threshold: {
             type: "number",
             description:
-              "Optional: Similarity threshold (0-1, default 0.35) for matching relevance. Use higher values (0.5+) for exact matches.",
+              "Optional: Semantic similarity threshold (0-1, default 0.35).",
           },
         },
         required: ["query"],
