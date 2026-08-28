@@ -1,6 +1,7 @@
 import { COUNTRY_CODE } from "../config.js";
 import { isAdmin } from "../services/admin.js";
 import { addToAllowlist, listAllowlist, removeFromAllowlist } from "../repositories/allowlist.js";
+import { normalizeJid, resolveUserJid } from "../services/jid.js";
 import type { Command, CommandContext } from "./types.js";
 
 /**
@@ -73,7 +74,8 @@ export const allowCommand: Command = {
   usage: "/allow <jid-or-phone> [name]",
   adminOnly: true,
   execute: async (ctx: CommandContext) => {
-    if (!isAdmin(ctx.jid, ctx.altJid)) {
+    const adminCheckJids = ctx.allJids ?? [ctx.jid, ctx.altJid].filter(Boolean) as string[];
+    if (!isAdmin(adminCheckJids)) {
       await ctx.reply({ text: "You don't have permission to run this command." });
       return;
     }
@@ -100,8 +102,15 @@ export const allowCommand: Command = {
       return;
     }
 
-    const jid = parseResult.jid!;
+    const jid = normalizeJid(parseResult.jid!) || parseResult.jid!;
     const result = await addToAllowlist(jid, ctx.jid, name || "");
+
+    // Proactively resolve and cache LID/PN mapping if available
+    try {
+      await resolveUserJid(ctx.socket, jid);
+    } catch {
+      // Ignore resolution failure during allow
+    }
 
     if (result.added) {
       await ctx.reply({
@@ -126,7 +135,8 @@ export const disallowCommand: Command = {
   usage: "/disallow <jid-or-phone>",
   adminOnly: true,
   execute: async (ctx: CommandContext) => {
-    if (!isAdmin(ctx.jid, ctx.altJid)) {
+    const adminCheckJids = ctx.allJids ?? [ctx.jid, ctx.altJid].filter(Boolean) as string[];
+    if (!isAdmin(adminCheckJids)) {
       await ctx.reply({ text: "You don't have permission to run this command." });
       return;
     }
@@ -150,7 +160,7 @@ export const disallowCommand: Command = {
       return;
     }
 
-    const jid = parseResult.jid!;
+    const jid = normalizeJid(parseResult.jid!) || parseResult.jid!;
     const removed = await removeFromAllowlist(jid);
 
     if (removed) {
@@ -166,7 +176,8 @@ export const allowlistCommand: Command = {
   description: "List all allowlisted users (admin only)",
   adminOnly: true,
   execute: async (ctx: CommandContext) => {
-    if (!isAdmin(ctx.jid, ctx.altJid)) {
+    const adminCheckJids = ctx.allJids ?? [ctx.jid, ctx.altJid].filter(Boolean) as string[];
+    if (!isAdmin(adminCheckJids)) {
       await ctx.reply({ text: "You don't have permission to run this command." });
       return;
     }

@@ -6,7 +6,8 @@ export const helpCommand: Command = {
   adminOnly: false,
   execute: async (ctx: CommandContext) => {
     const { isAdmin } = await import("../services/admin.js");
-    const admin = isAdmin(ctx.jid, ctx.altJid);
+    const adminCheckJids = ctx.allJids ?? [ctx.jid, ctx.altJid].filter(Boolean) as string[];
+    const admin = isAdmin(adminCheckJids);
 
     if (admin) {
       const text =

@@ -2,6 +2,7 @@ import type { AnyMessageContent, MiscMessageGenerationOptions, WAMessage, WASock
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
 import type { Stores } from "../store.js";
 import type { CommandRegistry } from "./registry.js";
+import type { JidInfo } from "../services/jid.js";
 
 export interface CommandContext {
   socket: WASocket;
@@ -11,6 +12,8 @@ export interface CommandContext {
   msg: WAMessage;
   jid: string;
   altJid?: string | undefined;
+  allJids?: string[];
+  jidInfo?: JidInfo;
   name: string;
   args: string[];
   text: string;

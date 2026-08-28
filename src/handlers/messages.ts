@@ -7,6 +7,7 @@ import { handleNaturalMessage } from "./natural.js";
 import { createCommands } from "../commands/index.js";
 import type { CommandRegistry } from "../commands/registry.js";
 import type { Stores } from "../store.js";
+import { resolveMessageJids } from "../services/jid.js";
 
 export function registerMessageHandlers(
   socket: WASocket,
@@ -28,17 +29,18 @@ export function registerMessageHandlers(
 
       logger.info({ msg });
 
-      const remoteJid = msg.key.remoteJid!;
-      const isBotReply = stores.sentMessageIDs.has(msg.key.id!);
+      const remoteJid = msg.key.remoteJid;
+      const isBotReply = msg.key.id && stores.sentMessageIDs.has(msg.key.id);
 
-      if (isBotReply || type !== "notify") {
+      if (!remoteJid || isBotReply || type !== "notify") {
         continue;
       }
 
-      const altJid = msg.key.remoteJidAlt;
+      // Resolve all candidate JIDs (PN, LID, group participant)
+      const jidInfo = await resolveMessageJids(socket, msg);
 
-      if (!isAllowlisted(remoteJid, altJid)) {
-        logger.warn({ remoteJid, remoteJidAlt: altJid }, "Ignored non-allowlisted message");
+      if (!isAllowlisted(jidInfo.allJids)) {
+        logger.warn({ remoteJid, allJids: jidInfo.allJids }, "Ignored non-allowlisted message");
         continue;
       }
 
@@ -48,7 +50,7 @@ export function registerMessageHandlers(
         continue;
       }
 
-      await handleNaturalMessage(socket, logger, stores, msg, botJid, commandRegistry);
+      await handleNaturalMessage(socket, logger, stores, msg, botJid, commandRegistry, jidInfo);
     }
   });
 }
