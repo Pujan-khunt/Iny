@@ -13,29 +13,29 @@ export interface ParsedDocument {
 
 export async function parsePdf(data: Buffer | Uint8Array): Promise<ParsedDocument> {
   const buffer = data instanceof Buffer ? data : Buffer.from(data);
-  
+
   // Write to temp file
   const { writeFile, unlink, mkdtemp } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const tmpDir = await mkdtemp("/tmp/pdf-");
   const tmpPath = join(tmpDir, "input.pdf");
-  
+
   await writeFile(tmpPath, buffer);
-  
+
   try {
     // Extract text with page numbers
     const text = await runPdftotext(tmpPath);
-    
+
     // Extract title from first page or use fallback
     const title = extractTitle(text) || "Master Policy";
-    
+
     // Split into pages
     const pages = splitIntoPages(text);
     const fullText = pages.map(p => p.text).join("\n\n");
-    
+
     return { title, pages, fullText: normalizeText(fullText) };
   } finally {
-    await unlink(tmpPath).catch(() => {});
+    await unlink(tmpPath).catch(() => { });
   }
 }
 
@@ -44,10 +44,10 @@ function runPdftotext(filePath: string): Promise<string> {
     const proc = spawn("pdftotext", ["-layout", "-nopgbrk", filePath, "-"]);
     let stdout = "";
     let stderr = "";
-    
+
     proc.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
     proc.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
-    
+
     proc.on("close", (code) => {
       if (code === 0) {
         resolve(stdout);
@@ -55,7 +55,7 @@ function runPdftotext(filePath: string): Promise<string> {
         reject(new Error(`pdftotext failed: ${stderr}`));
       }
     });
-    
+
     proc.on("error", reject);
   });
 }
@@ -83,13 +83,13 @@ function splitIntoPages(text: string): Array<{ pageNumber: number; text: string 
       text: normalizeText(t),
     }));
   }
-  
+
   // Approximate pages by splitting on double newlines or length
   const targetPageLength = 3000;
   const pages: Array<{ pageNumber: number; text: string }> = [];
   let remaining = text;
   let pageNum = 1;
-  
+
   while (remaining.length > 0) {
     const chunk = remaining.slice(0, targetPageLength);
     const lastNewline = chunk.lastIndexOf("\n");
@@ -97,7 +97,7 @@ function splitIntoPages(text: string): Array<{ pageNumber: number; text: string 
     pages.push({ pageNumber: pageNum++, text: normalizeText(pageText) });
     remaining = remaining.slice(pageText.length);
   }
-  
+
   return pages;
 }
 
