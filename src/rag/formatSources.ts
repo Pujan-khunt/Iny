@@ -58,42 +58,22 @@ export function formatSourcesForWhatsApp(chunks: RetrievedChunk[]): string {
   return output.trim();
 }
 
+const SOURCE_PATTERNS = [
+  /\b(sources?|citations?|references?|proof|evidence)\b/i,
+  /\bwhere('?d| did) (you|this) (come from|get this|find this)\b/i,
+  /\bwhere is (this|that) (written|mentioned|from)\b/i,
+  /\bwhich (policy|document|handbook|pdf) (is this|is that|states this|from)\b/i,
+  /\bshow (me )?(the )?(sources?|references?|citations?|pages?)\b/i,
+  /\bwhat('?s| is) the source\b/i,
+];
+
 /**
  * Check if user is asking for sources
- * Returns true if message contains source-related keywords
+ * Returns true if message explicitly asks for sources, citations, or references
  */
 export function isAskingForSources(text: string): boolean {
-  const keywords = [
-    "source",
-    "sources",
-    "where from",
-    "where'd you get",
-    "where did you get",
-    "reference",
-    "references",
-    "cite",
-    "citation",
-    "citations",
-    "evidence",
-    "proof",
-    "link",
-    "links",
-    "document",
-    "documents",
-    "page",
-    "pages",
-    "show me",
-    "tell me where",
-  ];
+  const trimmed = text.trim();
+  if (!trimmed) return false;
 
-  const lowerText = text.toLowerCase().trim();
-
-  // Check for keywords
-  for (const keyword of keywords) {
-    if (lowerText.includes(keyword)) {
-      return true;
-    }
-  }
-
-  return false;
+  return SOURCE_PATTERNS.some((pattern) => pattern.test(trimmed));
 }

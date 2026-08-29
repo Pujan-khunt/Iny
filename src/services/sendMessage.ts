@@ -2,7 +2,10 @@ import type { AnyMessageContent, MiscMessageGenerationOptions, WAMessage, WASock
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
 import { isAllowlisted } from "../repositories/allowlist.js";
 import type { Stores } from "../store.js";
+import { getLogger } from "../logger.js";
 import { resolveUserJid } from "./jid.js";
+
+const logger = getLogger("send-message");
 
 export async function safeSendMessage(
   socket: WASocket,
@@ -32,7 +35,8 @@ export async function safeSendMessage(
   }
 
   if (!allowed) {
-    throw new Error(`JID is not allowlisted: ${jid}`);
+    logger.warn({ jid, candidates }, "Refusing to send message to non-allowlisted JID");
+    return undefined;
   }
 
   return socket.sendMessage(jid, content, options);
@@ -40,7 +44,7 @@ export async function safeSendMessage(
 
 export async function replyTo(
   socket: WASocket,
-  logger: ILogger,
+  log: ILogger,
   stores: Stores,
   jid: string,
   content: AnyMessageContent,
@@ -52,6 +56,6 @@ export async function replyTo(
   if (sentMsg?.key.id) {
     stores.sentMessageIDs.add(sentMsg.key.id);
   } else {
-    logger.warn("Message sent, but id not found. Unable to add it to sent messages list.");
+    log.warn({ jid }, "Message send returned no message ID or was skipped");
   }
 }
