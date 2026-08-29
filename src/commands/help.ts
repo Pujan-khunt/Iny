@@ -1,3 +1,4 @@
+import { isAdmin } from "../services/admin.js";
 import type { Command, CommandContext } from "./types.js";
 
 export const helpCommand: Command = {
@@ -5,7 +6,6 @@ export const helpCommand: Command = {
   description: "Show Iny's capabilities",
   adminOnly: false,
   execute: async (ctx: CommandContext) => {
-    const { isAdmin } = await import("../services/admin.js");
     const adminCheckJids = ctx.allJids ?? [ctx.jid, ctx.altJid].filter(Boolean) as string[];
     const admin = isAdmin(adminCheckJids);
 

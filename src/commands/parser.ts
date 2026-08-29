@@ -1,10 +1,12 @@
+import { COMMAND_PREFIX } from "../config.js";
+
+export { COMMAND_PREFIX };
+
 export interface ParsedCommand {
   name: string;
   args: string[];
   text: string;
 }
-
-export const COMMAND_PREFIX = "/";
 
 function tokenize(input: string): string[] {
   const tokens: string[] = [];

@@ -1,5 +1,4 @@
 import { COUNTRY_CODE } from "../config.js";
-import { isAdmin } from "../services/admin.js";
 import { addToAllowlist, listAllowlist, removeFromAllowlist } from "../repositories/allowlist.js";
 import { normalizeJid, resolveUserJid } from "../services/jid.js";
 import type { Command, CommandContext } from "./types.js";
@@ -74,12 +73,6 @@ export const allowCommand: Command = {
   usage: "/allow <jid-or-phone> [name]",
   adminOnly: true,
   execute: async (ctx: CommandContext) => {
-    const adminCheckJids = ctx.allJids ?? [ctx.jid, ctx.altJid].filter(Boolean) as string[];
-    if (!isAdmin(adminCheckJids)) {
-      await ctx.reply({ text: "You don't have permission to run this command." });
-      return;
-    }
-
     // Parse text to extract JID/phone and optional name
     const parts = ctx.text.trim().split(/\s+/);
     if (parts.length === 0) {
@@ -118,7 +111,6 @@ export const allowCommand: Command = {
       });
     } else {
       // Already exists, fetch and show current name
-      const { listAllowlist } = await import("../repositories/allowlist.js");
       const list = await listAllowlist();
       const entry = list.find((e) => e.jid === jid);
       const currentName = entry?.name || "Unknown";
@@ -135,12 +127,6 @@ export const disallowCommand: Command = {
   usage: "/disallow <jid-or-phone>",
   adminOnly: true,
   execute: async (ctx: CommandContext) => {
-    const adminCheckJids = ctx.allJids ?? [ctx.jid, ctx.altJid].filter(Boolean) as string[];
-    if (!isAdmin(adminCheckJids)) {
-      await ctx.reply({ text: "You don't have permission to run this command." });
-      return;
-    }
-
     const jidInput = ctx.text.trim();
 
     if (!jidInput) {
@@ -176,12 +162,6 @@ export const allowlistCommand: Command = {
   description: "List all allowlisted users (admin only)",
   adminOnly: true,
   execute: async (ctx: CommandContext) => {
-    const adminCheckJids = ctx.allJids ?? [ctx.jid, ctx.altJid].filter(Boolean) as string[];
-    if (!isAdmin(adminCheckJids)) {
-      await ctx.reply({ text: "You don't have permission to run this command." });
-      return;
-    }
-
     const entries = await listAllowlist();
 
     if (entries.length === 0) {
