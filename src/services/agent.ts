@@ -11,7 +11,7 @@
 
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import pino from "pino";
+import { getLogger } from "../logger.js";
 import {
   AI_API_KEY,
   AI_BASE_URL,
@@ -26,7 +26,7 @@ import { createToolExecutors, type ToolExecutionResult } from "../rag/toolExecut
 import { cacheSourcesForUser } from "./sourceCache.js";
 import { convertMarkdownToWhatsApp } from "../utils/markdown.js";
 
-const logger = pino();
+const logger = getLogger("agent");
 
 const client = AI_API_KEY
   ? new OpenAI({

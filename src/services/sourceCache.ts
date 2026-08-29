@@ -6,7 +6,7 @@
  */
 
 import NodeCache from "@cacheable/node-cache";
-import pino from "pino";
+import { getLogger } from "../logger.js";
 import { SOURCE_CACHE_TTL_MS } from "../config.js";
 import type { RetrievedChunk } from "../rag/retrieve.js";
 
@@ -18,7 +18,7 @@ export interface CachedSources {
   timestamp: number;
 }
 
-const logger = pino();
+const logger = getLogger("source-cache");
 
 const sourceCache = new NodeCache({
   stdTTL: Math.max(1, Math.round(SOURCE_CACHE_TTL_MS / 1000)),

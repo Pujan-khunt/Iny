@@ -9,10 +9,10 @@
  * each request has its own isolated state — no shared mutable globals.
  */
 
-import pino from "pino";
+import { getLogger } from "../logger.js";
 import { retrieveTopK, type RetrievedChunk } from "./retrieve.js";
 
-const logger = pino();
+const logger = getLogger("tool-executors");
 
 export interface ToolExecutionResult {
   /** JSON string to include in the LLM message history as the tool result */
