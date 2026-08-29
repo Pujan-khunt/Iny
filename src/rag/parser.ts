@@ -14,39 +14,31 @@ export interface ParsedDocument {
 export async function parsePdf(data: Buffer | Uint8Array): Promise<ParsedDocument> {
   const buffer = data instanceof Buffer ? data : Buffer.from(data);
 
-  // Write to temp file
-  const { writeFile, unlink, mkdtemp } = await import("node:fs/promises");
-  const { join } = await import("node:path");
-  const tmpDir = await mkdtemp("/tmp/pdf-");
-  const tmpPath = join(tmpDir, "input.pdf");
+  // Extract text with page numbers via stdin stream (no disk I/O or temp files)
+  const text = await runPdftotext(buffer);
 
-  await writeFile(tmpPath, buffer);
+  // Extract title from first page or use fallback
+  const title = extractTitle(text) || "Master Policy";
 
-  try {
-    // Extract text with page numbers
-    const text = await runPdftotext(tmpPath);
+  // Split into pages
+  const pages = splitIntoPages(text);
+  const fullText = pages.map((p) => p.text).join("\n\n");
 
-    // Extract title from first page or use fallback
-    const title = extractTitle(text) || "Master Policy";
-
-    // Split into pages
-    const pages = splitIntoPages(text);
-    const fullText = pages.map(p => p.text).join("\n\n");
-
-    return { title, pages, fullText: normalizeText(fullText) };
-  } finally {
-    await unlink(tmpPath).catch(() => { });
-  }
+  return { title, pages, fullText: normalizeText(fullText) };
 }
 
-function runPdftotext(filePath: string): Promise<string> {
+function runPdftotext(buffer: Buffer): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn("pdftotext", ["-layout", "-nopgbrk", filePath, "-"]);
+    const proc = spawn("pdftotext", ["-layout", "-nopgbrk", "-", "-"]);
     let stdout = "";
     let stderr = "";
 
-    proc.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
-    proc.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    proc.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    proc.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
 
     proc.on("close", (code) => {
       if (code === 0) {
@@ -57,6 +49,8 @@ function runPdftotext(filePath: string): Promise<string> {
     });
 
     proc.on("error", reject);
+    proc.stdin.on("error", reject);
+    proc.stdin.end(buffer);
   });
 }
 
