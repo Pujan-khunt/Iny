@@ -42,13 +42,13 @@ export async function retrieveTopK(
   const threshold = opts.threshold ?? SIMILARITY_THRESHOLD;
   const candidateLimit = Math.max(topK * 4, 20);
 
-  // 1. Generate dense query embedding
+  // Generate dense query embedding
   const client = new OpenAIEmbeddingClient();
   const vectors = await client.embedBatch([trimmedQuery]);
   const queryVector = vectors[0]!;
   const vectorString = `[${queryVector.join(",")}]`;
 
-  // 2. Hybrid SQL Query with Reciprocal Rank Fusion (RRF k=60)
+  // Hybrid SQL Query with Reciprocal Rank Fusion (RRF k=60)
   const querySql = sql`
     WITH vector_search AS (
       SELECT
@@ -73,7 +73,7 @@ export async function retrieveTopK(
         c.page_end,
         d.title,
         ts_rank_cd(
-          to_tsvector('english', c.content || ' ' || d.title),
+          to_tsvector('english', c.content),
           COALESCE(
             NULLIF(websearch_to_tsquery('english', ${trimmedQuery}), ''::tsquery),
             plainto_tsquery('english', ${trimmedQuery})
@@ -81,7 +81,7 @@ export async function retrieveTopK(
         ) AS text_score,
         ROW_NUMBER() OVER (
           ORDER BY ts_rank_cd(
-            to_tsvector('english', c.content || ' ' || d.title),
+            to_tsvector('english', c.content),
             COALESCE(
               NULLIF(websearch_to_tsquery('english', ${trimmedQuery}), ''::tsquery),
               plainto_tsquery('english', ${trimmedQuery})
@@ -92,7 +92,7 @@ export async function retrieveTopK(
       INNER JOIN documents d ON c.document_id = d.id
       WHERE c.source_type = 'document'
         AND (
-          to_tsvector('english', c.content || ' ' || d.title) @@
+          to_tsvector('english', c.content) @@
           COALESCE(
             NULLIF(websearch_to_tsquery('english', ${trimmedQuery}), ''::tsquery),
             plainto_tsquery('english', ${trimmedQuery})

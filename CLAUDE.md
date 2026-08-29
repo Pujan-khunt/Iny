@@ -548,4 +548,20 @@ npm run dev
 
 ---
 
-*Last updated: 2026-08-26*
+## Git Commit Convention
+
+**NEVER use `git commit` directly.**
+
+This project uses `aicommits` (globally installed npm package) to generate AI-written commit messages from the diff.
+
+Always commit using:
+
+```bash
+aicommits --all -y
+```
+
+The `--all` flag stages all changes (`git add -A`) and invokes the AI to generate the commit message. The `-y` flag auto-confirms the generated message without interactive input. Do not stage files manually or write commit messages by hand.
+
+---
+
+*Last updated: 2026-08-29*
