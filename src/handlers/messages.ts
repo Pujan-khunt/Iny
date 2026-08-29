@@ -50,7 +50,7 @@ export function registerMessageHandlers(
         continue;
       }
 
-      await handleNaturalMessage(socket, logger, stores, msg, botJid, commandRegistry, jidInfo);
+      await handleNaturalMessage(socket, logger, stores, msg, botJid, commandRegistry, jidInfo, text);
     }
   });
 }

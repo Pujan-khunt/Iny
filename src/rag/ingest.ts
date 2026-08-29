@@ -1,5 +1,4 @@
-import { createHash } from "node:crypto";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { parsePdf } from "./parser.js";
 import { chunkText } from "./chunker.js";
 import { OpenAIEmbeddingClient } from "../embeddings/client.js";

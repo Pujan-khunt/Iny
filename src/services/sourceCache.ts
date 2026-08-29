@@ -1,34 +1,30 @@
 /**
- * Source Cache Service: Stores retrieved sources per user (in-memory)
+ * Source Cache Service: Stores retrieved sources per user (in-memory with TTL)
  *
  * Tracks the sources used in the last bot response for each user.
  * When users ask for sources, we retrieve from this cache.
  */
 
+import NodeCache from "@cacheable/node-cache";
 import pino from "pino";
 import { SOURCE_CACHE_TTL_MS } from "../config.js";
+import type { RetrievedChunk } from "../rag/retrieve.js";
 
-const logger = pino();
-
-export interface RetrievedChunk {
-  content: string;
-  title: string;
-  pageStart: number;
-  pageEnd: number;
-}
+export type { RetrievedChunk };
 
 export interface CachedSources {
   userJid: string;
   chunks: RetrievedChunk[];
   timestamp: number;
-  expiresAt: number;
 }
 
-/**
- * Per-user source cache
- * Key: userJid, Value: CachedSources
- */
-const sourceCache = new Map<string, CachedSources>();
+const logger = pino();
+
+const sourceCache = new NodeCache({
+  stdTTL: Math.max(1, Math.round(SOURCE_CACHE_TTL_MS / 1000)),
+  checkperiod: 120,
+  useClones: false,
+});
 
 /**
  * Store sources for a user (latest response)
@@ -43,11 +39,10 @@ export function cacheSourcesForUser(
     userJid,
     chunks,
     timestamp: now,
-    expiresAt: now + SOURCE_CACHE_TTL_MS,
   });
 
   logger.debug(
-    { userJid, chunkCount: chunks.length, expiresAt: new Date(now + SOURCE_CACHE_TTL_MS).toISOString() },
+    { userJid, chunkCount: chunks.length },
     "Sources cached for user"
   );
 }
@@ -57,17 +52,10 @@ export function cacheSourcesForUser(
  * Returns null if no sources found or cache expired
  */
 export function getSourcesForUser(userJid: string): CachedSources | null {
-  const cached = sourceCache.get(userJid);
+  const cached = sourceCache.get(userJid) as CachedSources | undefined;
 
   if (!cached) {
     logger.debug({ userJid }, "No cached sources found for user");
-    return null;
-  }
-
-  // Check if cache has expired
-  if (Date.now() > cached.expiresAt) {
-    sourceCache.delete(userJid);
-    logger.debug({ userJid }, "Cached sources expired and removed");
     return null;
   }
 
@@ -87,7 +75,7 @@ export function getSourcesForUser(userJid: string): CachedSources | null {
  * Clear sources for a user
  */
 export function clearSourcesForUser(userJid: string): void {
-  sourceCache.delete(userJid);
+  sourceCache.del(userJid);
   logger.debug({ userJid }, "Sources cleared for user");
 }
 
@@ -95,27 +83,14 @@ export function clearSourcesForUser(userJid: string): void {
  * Get cache stats (for debugging)
  */
 export function getCacheStats(): {
-  totalUsers: number;
-  cacheSize: number;
-  activeEntries: number;
-  expiredEntries: number;
+  keys: number;
+  hits: number;
+  misses: number;
 } {
-  const now = Date.now();
-  let activeEntries = 0;
-  let expiredEntries = 0;
-
-  for (const entry of sourceCache.values()) {
-    if (now > entry.expiresAt) {
-      expiredEntries++;
-    } else {
-      activeEntries++;
-    }
-  }
-
+  const stats = sourceCache.getStats();
   return {
-    totalUsers: sourceCache.size,
-    cacheSize: sourceCache.size,
-    activeEntries,
-    expiredEntries,
+    keys: sourceCache.keys().length,
+    hits: stats.hits,
+    misses: stats.misses,
   };
 }

@@ -1,9 +1,7 @@
-import { isJidGroup, proto, type WASocket } from "@whiskeysockets/baileys";
-import { getMessageText } from "../utils/messageText.js";
+import { proto, type WASocket } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
 import type { Stores } from "../store.js";
 import { runAgent } from "../services/agent.js";
-import { isAllowlisted } from "../repositories/allowlist.js";
 import { replyTo } from "../services/sendMessage.js";
 import { createRateLimiter } from "../services/rateLimit.js";
 import { FALLBACK_MESSAGE } from "../config.js";
@@ -11,7 +9,7 @@ import type { CommandRegistry } from "../commands/registry.js";
 import { parseCommand } from "../commands/parser.js";
 import { getSourcesForUser } from "../services/sourceCache.js";
 import { isAskingForSources, formatSourcesForWhatsApp } from "../rag/formatSources.js";
-import { normalizeJid, resolveMessageJids, type JidInfo } from "../services/jid.js";
+import { normalizeJid, type JidInfo } from "../services/jid.js";
 import { isAdmin } from "../services/admin.js";
 
 const MENTION_RATE_LIMITER = createRateLimiter(10, 60_000);
@@ -26,20 +24,15 @@ export async function handleNaturalMessage(
   msg: proto.IWebMessageInfo,
   botJid: string,
   commandRegistry: CommandRegistry,
-  resolvedJidInfo?: JidInfo,
+  jidInfo: JidInfo,
+  rawText: string,
 ): Promise<void> {
-  if (!msg.key) return;
-  const remoteJid = msg.key.remoteJid;
+  const remoteJid = jidInfo.remoteJid;
   if (!remoteJid) return;
 
-  const isBotReply = msg.key.id && stores.sentMessageIDs.has(msg.key.id);
-  if (isBotReply) return;
-
-  const text = getMessageText(msg.message);
-  if (!text) return;
-
-  const jidInfo = resolvedJidInfo ?? (await resolveMessageJids(socket, msg));
   const isGroup = jidInfo.isGroup;
+  const text = rawText.trim();
+  if (!text) return;
 
   // Check bot mention supporting both PN and LID forms
   const mentionedJids = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid ?? [];
@@ -65,11 +58,6 @@ export async function handleNaturalMessage(
     return;
   }
 
-  if (!isAllowlisted(jidInfo.allJids)) {
-    logger.warn({ remoteJid, allJids: jidInfo.allJids }, "Ignored non-allowlisted message");
-    return;
-  }
-
   const rateLimitKey = jidInfo.canonicalJid;
   const rateLimiter = isDM ? DM_RATE_LIMITER : (isMention ? MENTION_RATE_LIMITER : REPLY_RATE_LIMITER);
   if (!rateLimiter.check(rateLimitKey)) {
@@ -86,7 +74,7 @@ export async function handleNaturalMessage(
     altJid: (msg.key as any).remoteJidAlt,
     allJids: jidInfo.allJids,
     jidInfo,
-    text: text.trim(),
+    text,
     isGroup,
     isMention,
     isReply: !!isReply,
