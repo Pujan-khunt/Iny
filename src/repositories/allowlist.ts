@@ -13,11 +13,10 @@ import {
 const allowedJidSet = new Set<string>();
 
 export async function initAllowlist(): Promise<void> {
-  const rows = await db.select({ jid: allowedJids.jid, name: allowedJids.name }).from(allowedJids);
-
-  if (rows.length === 0) {
-    for (const { jid, name } of ALLOWED_JIDS_WITH_NAMES) {
-      await db.insert(allowedJids).values({ jid: normalizeJid(jid), name, addedBy: "bootstrap" }).onConflictDoNothing();
+  for (const { jid, name } of ALLOWED_JIDS_WITH_NAMES) {
+    const norm = normalizeJid(jid);
+    if (norm) {
+      await db.insert(allowedJids).values({ jid: norm, name, addedBy: "bootstrap" }).onConflictDoNothing();
     }
   }
 

@@ -38,12 +38,6 @@ export const ADMIN_JIDS = new Set<string>(
 
 export const COUNTRY_CODE = process.env.COUNTRY_CODE ?? "";
 
-export const ALLOWED_JIDS = new Set<string>(
-  (process.env.ALLOWED_JIDS ?? "")
-    .split(",")
-    .map((jid) => jid.trim())
-    .filter(Boolean),
-);
 
 export const ALLOWED_JIDS_WITH_NAMES = (() => {
   const jids = (process.env.ALLOWED_JIDS ?? "")
