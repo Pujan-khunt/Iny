@@ -5,43 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1787344175567,
-      "tag": "0000_enable_pgvector",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1787344175568,
-      "tag": "0001_moaning_whiplash",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1787350000000,
-      "tag": "0002_add_source_type_and_page_cols",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1787350000001,
-      "tag": "0003_add_source_type_to_documents",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1787604672458,
-      "tag": "0004_brief_smasher",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1787897659239,
-      "tag": "0005_mixed_lightspeed",
+      "when": 1788015344424,
+      "tag": "0000_squashed",
       "breakpoints": true
     }
   ]
