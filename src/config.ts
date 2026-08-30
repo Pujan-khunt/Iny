@@ -66,4 +66,6 @@ export const ALLOWLIST_CACHE_TTL_MS = Number(process.env.ALLOWLIST_CACHE_TTL_MS 
 export const COMMAND_PREFIX = process.env.COMMAND_PREFIX ?? "/";
 export const SESSION_MEMORY_TTL_MS = Number(process.env.SESSION_MEMORY_TTL_MS ?? 20 * 60 * 1000);
 export const SESSION_MEMORY_MAX_MESSAGES = Number(process.env.SESSION_MEMORY_MAX_MESSAGES ?? 8);
+export const DEFAULT_RESPONSE_STYLE = process.env.DEFAULT_RESPONSE_STYLE ?? "concise";
+
 

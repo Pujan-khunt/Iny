@@ -1,17 +1,16 @@
 import { proto, type WASocket } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
 import type { Stores } from "../store.js";
-import { runAgent } from "../services/agent.js";
+import { askIny, getSessionSources } from "../core/index.js";
 import { replyTo } from "../services/sendMessage.js";
 import { createRateLimiter } from "../services/rateLimit.js";
 import { FALLBACK_MESSAGE } from "../config.js";
 import type { CommandRegistry } from "../commands/registry.js";
 import { parseCommand } from "../commands/parser.js";
-import { getSourcesForUser } from "../services/sourceCache.js";
 import { isAskingForSources, formatSourcesForWhatsApp } from "../rag/formatSources.js";
 import { normalizeJid, type JidInfo } from "../services/jid.js";
 import { isAdmin } from "../services/admin.js";
-import { getSessionHistory, appendTurn } from "../services/sessionMemory.js";
+import { convertMarkdownToWhatsApp } from "../utils/markdown.js";
 
 const MENTION_RATE_LIMITER = createRateLimiter(10, 60_000);
 const REPLY_RATE_LIMITER = createRateLimiter(10, 60_000);
@@ -121,11 +120,16 @@ export async function handleNaturalMessage(
     }
   }
 
+  // Derive session key: per-participant for groups, canonicalJid for DMs
+  const sessionKey = isGroup
+    ? `${jidInfo.canonicalJid}:${jidInfo.participantJid || jidInfo.canonicalJid}`
+    : jidInfo.canonicalJid;
+
   // Check if user is asking for sources in a reply
   if (isReply && isAskingForSources(text)) {
-    const cached = getSourcesForUser(jidInfo.canonicalJid);
-    if (cached && cached.chunks.length > 0) {
-      const sourcesText = formatSourcesForWhatsApp(cached.chunks);
+    const sources = getSessionSources(sessionKey);
+    if (sources.length > 0) {
+      const sourcesText = formatSourcesForWhatsApp(sources);
       await ctx.reply({ text: sourcesText });
       return;
     } else {
@@ -136,17 +140,21 @@ export async function handleNaturalMessage(
     }
   }
 
-  // Agent handles all messages: greetings, policy questions, follow-ups, and conversation
-  const sessionKey = isGroup
-    ? `${jidInfo.canonicalJid}:${jidInfo.participantJid || jidInfo.canonicalJid}`
-    : jidInfo.canonicalJid;
-
-  const history = getSessionHistory(sessionKey);
-
+  // Query Core RAG Engine
   try {
-    const answer = await runAgent(text.trim(), jidInfo.canonicalJid, history);
-    await ctx.reply({ text: answer });
-    appendTurn(sessionKey, text.trim(), answer);
+    const response = await askIny({
+      sessionId: sessionKey,
+      message: text,
+      metadata: {
+        channel: "whatsapp",
+        userId: jidInfo.canonicalJid,
+        userName: (msg.pushName as string) ?? undefined,
+      },
+    });
+
+    // Format standard Markdown to WhatsApp markup
+    const formattedAnswer = convertMarkdownToWhatsApp(response.message);
+    await ctx.reply({ text: formattedAnswer });
   } catch (error) {
     logger.error({ error }, "Agent handling failed");
     await ctx.reply({ text: FALLBACK_MESSAGE });

@@ -1,17 +1,19 @@
 {
-  "name": "baileys",
+  "name": "iny",
   "version": "1.0.0",
-  "description": "",
+  "description": "WhatsApp RAG Chatbot for Scaler School of Technology",
   "type": "module",
   "main": "index.js",
   "scripts": {
     "build": "tsc",
     "start": "node --env-file=.env dist/src/index.js",
     "dev": "tsx --env-file=.env src/index.ts | pino-pretty",
+    "chat": "LOG_FILE=logs/chat.log tsx --env-file=.env scripts/chat.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "ingest": "tsx --env-file=.env scripts/ingest-docs.ts"
+    "ingest": "tsx --env-file=.env scripts/ingest-docs.ts",
+    "logs:cli": "tail -f logs/chat.log | pino-pretty"
   },
   "keywords": [],
   "author": "Pujan Khunt",
