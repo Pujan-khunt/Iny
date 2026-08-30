@@ -11,25 +11,81 @@ export interface ParsedDocument {
   fullText: string;
 }
 
-export async function parsePdf(data: Buffer | Uint8Array): Promise<ParsedDocument> {
+const KNOWN_ACRONYMS = new Set(["SOP", "SST", "TA", "PDC", "KR", "SEV", "POC"]);
+const SMALL_WORDS = new Set([
+  "and",
+  "or",
+  "for",
+  "of",
+  "in",
+  "to",
+  "on",
+  "at",
+  "from",
+  "the",
+  "a",
+  "an",
+  "by",
+  "with",
+]);
+
+/**
+ * Converts a kebab-case or snake_case PDF filename into a clean, human-readable title.
+ * Examples:
+ * - "academic-policy-master.pdf" -> "Academic Policy Master"
+ * - "sop-meeting-room-booking.pdf" -> "SOP Meeting Room Booking"
+ * - "code-of-conduct-and-violation.pdf" -> "Code of Conduct and Violation"
+ */
+export function formatTitleFromFilename(filename: string): string {
+  const base = filename
+    .replace(/^.*[\\/]/, "") // strip directory path
+    .replace(/\.pdf$/i, "") // strip extension
+    .replace(/[-_]+/g, " ") // replace dashes and underscores with spaces
+    .trim();
+
+  if (!base) return "Policy Document";
+
+  const words = base.split(/\s+/);
+  const formatted = words.map((word, index) => {
+    const upper = word.toUpperCase();
+    if (KNOWN_ACRONYMS.has(upper)) {
+      return upper;
+    }
+    const lower = word.toLowerCase();
+    if (index > 0 && SMALL_WORDS.has(lower)) {
+      return lower;
+    }
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  });
+
+  return formatted.join(" ");
+}
+
+export async function parsePdf(
+  data: Buffer | Uint8Array,
+  filePathOrName?: string,
+): Promise<ParsedDocument> {
   const buffer = data instanceof Buffer ? data : Buffer.from(data);
 
-  // Extract text with page numbers via stdin stream (no disk I/O or temp files)
+  // Extract text with form-feed page markers via stdin stream
   const text = await runPdftotext(buffer);
 
-  // Extract title from first page or use fallback
-  const title = extractTitle(text) || "Master Policy";
+  // Derive title from canonical filename or fallback to text inspection
+  const title = filePathOrName
+    ? formatTitleFromFilename(filePathOrName)
+    : (extractTitle(text) || "Policy Document");
 
-  // Split into pages
+  // Split into true PDF pages using form feeds
   const pages = splitIntoPages(text);
   const fullText = pages.map((p) => p.text).join("\n\n");
 
-  return { title, pages, fullText: normalizeText(fullText) };
+  return { title, pages, fullText };
 }
 
 function runPdftotext(buffer: Buffer): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = spawn("pdftotext", ["-layout", "-nopgbrk", "-", "-"]);
+    // Note: Omit -nopgbrk so pdftotext inserts form feeds (\f) between actual pages
+    const proc = spawn("pdftotext", ["-layout", "-", "-"]);
     let stdout = "";
     let stderr = "";
 
@@ -55,44 +111,42 @@ function runPdftotext(buffer: Buffer): Promise<string> {
 }
 
 function extractTitle(text: string): string | null {
-  const lines = text.split("\n").map(l => l.trim()).filter((l): l is string => Boolean(l));
-  if (lines.length > 0) {
-    for (let i = 0; i < Math.min(5, lines.length); i++) {
-      const line = lines[i]!;
-      if (line.length > 5 && line.length < 100) {
-        return line;
-      }
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l): l is string => Boolean(l));
+
+  for (let i = 0; i < Math.min(5, lines.length); i++) {
+    const line = lines[i]!.replace(/[:;]+$/, "").trim();
+    if (line.length > 5 && line.length < 100 && !/^objective/i.test(line)) {
+      return line;
     }
-    return lines[0]!;
   }
-  return null;
+
+  return lines[0] ?? null;
 }
 
 function splitIntoPages(text: string): Array<{ pageNumber: number; text: string }> {
-  // pdftotext with -nopgbrk doesn't add form feeds, so we'll split by form feed if present
-  const formFeedSplit = text.split(/\f/);
-  if (formFeedSplit.length > 1) {
-    return formFeedSplit.map((t, i) => ({
-      pageNumber: i + 1,
-      text: normalizeText(t),
+  // pdftotext emits form feed characters (\f) between actual PDF pages
+  const formFeedPages = text
+    .split(/\f/)
+    .map((page) => normalizeText(page))
+    .filter((page) => page.length > 0);
+
+  if (formFeedPages.length > 0) {
+    return formFeedPages.map((pageText, index) => ({
+      pageNumber: index + 1,
+      text: pageText,
     }));
   }
 
-  // Approximate pages by splitting on double newlines or length
-  const targetPageLength = 3000;
-  const pages: Array<{ pageNumber: number; text: string }> = [];
-  let remaining = text;
-  let pageNum = 1;
-
-  while (remaining.length > 0) {
-    const chunk = remaining.slice(0, targetPageLength);
-    const lastNewline = chunk.lastIndexOf("\n");
-    const pageText = lastNewline > targetPageLength * 0.5 ? chunk.slice(0, lastNewline) : chunk;
-    pages.push({ pageNumber: pageNum++, text: normalizeText(pageText) });
-    remaining = remaining.slice(pageText.length);
+  // Fallback for single-page text
+  const normalized = normalizeText(text);
+  if (normalized) {
+    return [{ pageNumber: 1, text: normalized }];
   }
 
-  return pages;
+  return [];
 }
 
 function normalizeText(text: string): string {
