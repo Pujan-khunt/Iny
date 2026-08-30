@@ -64,3 +64,6 @@ export const AGENT_CONFIG = {
 export const SOURCE_CACHE_TTL_MS = Number(process.env.SOURCE_CACHE_TTL_MS ?? 15 * 60 * 1000);
 export const ALLOWLIST_CACHE_TTL_MS = Number(process.env.ALLOWLIST_CACHE_TTL_MS ?? 5 * 60 * 1000);
 export const COMMAND_PREFIX = process.env.COMMAND_PREFIX ?? "/";
+export const SESSION_MEMORY_TTL_MS = Number(process.env.SESSION_MEMORY_TTL_MS ?? 20 * 60 * 1000);
+export const SESSION_MEMORY_MAX_MESSAGES = Number(process.env.SESSION_MEMORY_MAX_MESSAGES ?? 8);
+

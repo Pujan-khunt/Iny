@@ -11,6 +11,7 @@ import { getSourcesForUser } from "../services/sourceCache.js";
 import { isAskingForSources, formatSourcesForWhatsApp } from "../rag/formatSources.js";
 import { normalizeJid, type JidInfo } from "../services/jid.js";
 import { isAdmin } from "../services/admin.js";
+import { getSessionHistory, appendTurn } from "../services/sessionMemory.js";
 
 const MENTION_RATE_LIMITER = createRateLimiter(10, 60_000);
 const REPLY_RATE_LIMITER = createRateLimiter(10, 60_000);
@@ -135,10 +136,17 @@ export async function handleNaturalMessage(
     }
   }
 
-  // Agent handles all messages: greetings, policy questions, and conversation
+  // Agent handles all messages: greetings, policy questions, follow-ups, and conversation
+  const sessionKey = isGroup
+    ? `${jidInfo.canonicalJid}:${jidInfo.participantJid || jidInfo.canonicalJid}`
+    : jidInfo.canonicalJid;
+
+  const history = getSessionHistory(sessionKey);
+
   try {
-    const answer = await runAgent(text.trim(), jidInfo.canonicalJid);
+    const answer = await runAgent(text.trim(), jidInfo.canonicalJid, history);
     await ctx.reply({ text: answer });
+    appendTurn(sessionKey, text.trim(), answer);
   } catch (error) {
     logger.error({ error }, "Agent handling failed");
     await ctx.reply({ text: FALLBACK_MESSAGE });

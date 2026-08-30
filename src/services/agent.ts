@@ -30,9 +30,9 @@ const logger = getLogger("agent");
 
 const client = AI_API_KEY
   ? new OpenAI({
-      apiKey: AI_API_KEY,
-      ...(AI_BASE_URL ? { baseURL: AI_BASE_URL } : {}),
-    })
+    apiKey: AI_API_KEY,
+    ...(AI_BASE_URL ? { baseURL: AI_BASE_URL } : {}),
+  })
   : null;
 
 /**
@@ -105,9 +105,14 @@ async function executeToolCallWithRetry(
  *
  * @param userMessage - The user's query
  * @param userJid     - User JID used for source caching (optional)
+ * @param history     - Optional multi-turn conversation history for context
  * @returns The agent's final response formatted for WhatsApp
  */
-export async function runAgent(userMessage: string, userJid?: string): Promise<string> {
+export async function runAgent(
+  userMessage: string,
+  userJid?: string,
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+): Promise<string> {
   if (!client) {
     throw new Error("AI_API_KEY is not configured");
   }
@@ -117,10 +122,11 @@ export async function runAgent(userMessage: string, userJid?: string): Promise<s
 
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
+    ...(history ?? []),
     { role: "user", content: userMessage },
   ];
 
-  logger.info({ userMessage, userJid }, "Agent started");
+  logger.info({ userMessage, userJid, historyTurns: (history?.length ?? 0) / 2 }, "Agent started");
 
   let iteration = 0;
 
