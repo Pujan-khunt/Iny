@@ -1,14 +1,14 @@
-import makeWASocket, { Browsers, fetchLatestBaileysVersion, isJidBroadcast, isJidNewsletter, isJidGroup, makeCacheableSignalKeyStore, useMultiFileAuthState, type WASocket } from "@whiskeysockets/baileys";
+import makeWASocket, { Browsers, fetchLatestBaileysVersion, isJidBroadcast, isJidNewsletter, isJidGroup, makeCacheableSignalKeyStore, type WASocket } from "@whiskeysockets/baileys";
 import type { ILogger } from "@whiskeysockets/baileys/lib/Utils/logger.js";
-import { AUTH_DIR } from "./config.js";
 import { registerConnectionHandlers } from "./handlers/connection.js";
 import { registerGroupHandlers } from "./handlers/groups.js";
 import { registerMessageHandlers } from "./handlers/messages.js";
 import { getMessage as getMessageFromDb } from "./repositories/messages.js";
+import { useDbAuthState } from "./repositories/authState.js";
 import type { Stores } from "./store.js";
 
 export async function startSock(logger: ILogger, stores: Stores): Promise<WASocket> {
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
+  const { state, saveCreds } = await useDbAuthState();
   const { version } = await fetchLatestBaileysVersion();
 
   const socket = makeWASocket({

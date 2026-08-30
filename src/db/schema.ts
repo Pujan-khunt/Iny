@@ -58,3 +58,9 @@ export const chunks = pgTable(
     index("chunks_fts_idx").using("gin", sql`to_tsvector('english', ${table.content})`),
   ],
 );
+
+export const baileysAuth = pgTable("baileys_auth", {
+  id: text("id").primaryKey(),
+  data: text("data").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
