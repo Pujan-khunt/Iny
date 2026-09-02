@@ -11,6 +11,7 @@
 
 import { getLogger } from "../logger.js";
 import { retrieveTopK, type RetrievedChunk } from "./retrieve.js";
+import { MAX_CHUNK_CONTENT_CHARS } from "../config.js";
 
 const logger = getLogger("tool-executors");
 
@@ -47,13 +48,19 @@ async function searchPolicyDatabase(
       };
     }
 
-    const formattedResults = chunks.map((chunk, index) => ({
-      index: index + 1,
-      content: chunk.content,
-      source: chunk.title,
-      pages: `p.${chunk.pageStart}${chunk.pageEnd !== chunk.pageStart ? `-${chunk.pageEnd}` : ""}`,
-      matchType: chunk.matchType ?? "semantic",
-    }));
+    const formattedResults = chunks.map((chunk, index) => {
+      const content =
+        chunk.content.length > MAX_CHUNK_CONTENT_CHARS
+          ? chunk.content.slice(0, MAX_CHUNK_CONTENT_CHARS) + "…"
+          : chunk.content;
+      return {
+        index: index + 1,
+        content,
+        source: chunk.title,
+        pages: `p.${chunk.pageStart}${chunk.pageEnd !== chunk.pageStart ? `-${chunk.pageEnd}` : ""}`,
+        matchType: chunk.matchType ?? "semantic",
+      };
+    });
 
     return {
       content: JSON.stringify({

@@ -59,7 +59,15 @@ export const SOURCE_CACHE_TTL_MS = Number(process.env.SOURCE_CACHE_TTL_MS ?? 15 
 export const ALLOWLIST_CACHE_TTL_MS = Number(process.env.ALLOWLIST_CACHE_TTL_MS ?? 5 * 60 * 1000);
 export const COMMAND_PREFIX = process.env.COMMAND_PREFIX ?? "/";
 export const SESSION_MEMORY_TTL_MS = Number(process.env.SESSION_MEMORY_TTL_MS ?? 20 * 60 * 1000);
-export const SESSION_MEMORY_MAX_MESSAGES = Number(process.env.SESSION_MEMORY_MAX_MESSAGES ?? 8);
+export const SESSION_MEMORY_MAX_MESSAGES = Number(process.env.SESSION_MEMORY_MAX_MESSAGES ?? 6);
 export const DEFAULT_RESPONSE_STYLE = process.env.DEFAULT_RESPONSE_STYLE ?? "concise";
+
+/**
+ * Maximum number of characters to include from each retrieved chunk
+ * when injecting tool results into the LLM message history.
+ * Prevents context window overflow from large policy documents.
+ * ~1500 chars ≈ ~375 tokens, so 5 chunks ≈ ~1875 tokens max for tool results.
+ */
+export const MAX_CHUNK_CONTENT_CHARS = Number(process.env.MAX_CHUNK_CONTENT_CHARS ?? 1500);
 
 

@@ -128,10 +128,21 @@ export async function executeAgent(
 
   let iteration = 0;
 
+  // Compact per-iteration trace accumulated for the max-iterations diagnostic log.
+  const iterationTrace: Array<{
+    iteration: number;
+    finishReason: string | null | undefined;
+    toolCalls: Array<{ name: string; args: string }>;
+    toolResults: Array<{ name: string; success: boolean; chunkCount: number }>;
+  }> = [];
+
   while (iteration < AGENT_CONFIG.maxIterations) {
     iteration++;
 
-    logger.debug({ iteration, messageCount: messages.length }, "Agent iteration started");
+    logger.info(
+      { iteration, maxIterations: AGENT_CONFIG.maxIterations, messageCount: messages.length },
+      "Agent iteration started",
+    );
 
     try {
       // Step 1: Query LLM with tools
@@ -143,16 +154,22 @@ export async function executeAgent(
         max_tokens: 1024,
       });
 
-      const responseMessage = response.choices[0]?.message;
+      const choice = response.choices[0];
+      const responseMessage = choice?.message;
       if (!responseMessage) {
         throw new Error("No response from LLM");
       }
+
+      const finishReason = choice?.finish_reason;
 
       // Step 2: Final response check
       if (!responseMessage.tool_calls || responseMessage.tool_calls.length === 0) {
         const finalAnswer = responseMessage.content ?? MISSING_INFO_FALLBACK;
 
-        logger.info({ iteration, hasToolCalls: false }, "Agent reached final response");
+        logger.info(
+          { iteration, finishReason, contentLength: finalAnswer.length },
+          "Agent reached final response",
+        );
 
         return {
           message: finalAnswer,
@@ -171,22 +188,20 @@ export async function executeAgent(
       logger.info(
         {
           iteration,
+          finishReason,
           toolCallCount: functionToolCalls.length,
-          toolNames: functionToolCalls.map((tc) => tc.function.name),
+          tools: functionToolCalls.map((tc) => ({
+            name: tc.function.name,
+            args: tc.function.arguments,
+          })),
         },
         "LLM requested tool calls",
       );
 
-      for (const toolCall of functionToolCalls) {
-        logger.debug(
-          {
-            toolName: toolCall.function.name,
-            toolCallId: toolCall.id,
-            arguments: toolCall.function.arguments,
-          },
-          "Executing tool call",
-        );
+      const iterationToolResults: Array<{ name: string; success: boolean; chunkCount: number }> =
+        [];
 
+      for (const toolCall of functionToolCalls) {
         const executionResult = await executeToolCallWithRetry(
           {
             id: toolCall.id,
@@ -196,6 +211,33 @@ export async function executeAgent(
           executors,
           AGENT_CONFIG.retryAttempts,
           AGENT_CONFIG.retryBaseDelay,
+        );
+
+        // Parse success flag from result JSON for structured logging
+        let resultSuccess = true;
+        try {
+          const parsed = JSON.parse(executionResult.content) as { success?: boolean };
+          resultSuccess = parsed.success !== false;
+        } catch {
+          // ignore parse errors — treat as success
+        }
+
+        const toolResultSummary = {
+          name: toolCall.function.name,
+          success: resultSuccess,
+          chunkCount: executionResult.chunks.length,
+        };
+        iterationToolResults.push(toolResultSummary);
+
+        logger.info(
+          {
+            iteration,
+            toolName: toolCall.function.name,
+            args: toolCall.function.arguments,
+            success: resultSuccess,
+            chunkCount: executionResult.chunks.length,
+          },
+          "Tool execution completed",
         );
 
         // Accumulate retrieved sources
@@ -211,6 +253,16 @@ export async function executeAgent(
           content: executionResult.content,
         } as ToolResult);
       }
+
+      iterationTrace.push({
+        iteration,
+        finishReason,
+        toolCalls: functionToolCalls.map((tc) => ({
+          name: tc.function.name,
+          args: tc.function.arguments,
+        })),
+        toolResults: iterationToolResults,
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
@@ -224,8 +276,19 @@ export async function executeAgent(
     }
   }
 
+  // Full diagnostic trace — visible at warn level without needing LOG_LEVEL=debug.
   logger.warn(
-    { maxIterations: AGENT_CONFIG.maxIterations },
+    {
+      maxIterations: AGENT_CONFIG.maxIterations,
+      userMessage,
+      iterationTrace,
+      hint:
+        "LLM kept calling tools without producing a final text response. " +
+        "Diagnosis guide — check iterationTrace: " +
+        "(1) repeated identical tool args = retrieval loop; " +
+        "(2) chunkCount=0 on all results = query never matched embeddings; " +
+        "(3) finishReason='length' = model hit max_tokens mid-response and truncated its answer.",
+    },
     "Agent reached maximum iterations without final response",
   );
 
