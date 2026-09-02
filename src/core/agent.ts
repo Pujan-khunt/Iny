@@ -15,7 +15,6 @@ import {
   AI_API_KEY,
   AI_BASE_URL,
   AI_MODEL,
-  FALLBACK_MESSAGE,
   AGENT_CONFIG,
 } from "../config.js";
 import { getLogger } from "../logger.js";
@@ -26,6 +25,9 @@ import { createToolExecutors, type ToolExecutionResult } from "../rag/toolExecut
 import type { ConversationTurn, RetrievedChunk } from "./types.js";
 
 const logger = getLogger("core-agent");
+
+const MISSING_INFO_FALLBACK =
+  "I don't have that information in my current knowledge base. Try rephrasing your question or ask about a different topic.";
 
 const client = AI_API_KEY
   ? new OpenAI({
@@ -148,7 +150,7 @@ export async function executeAgent(
 
       // Step 2: Final response check
       if (!responseMessage.tool_calls || responseMessage.tool_calls.length === 0) {
-        const finalAnswer = responseMessage.content ?? FALLBACK_MESSAGE;
+        const finalAnswer = responseMessage.content ?? MISSING_INFO_FALLBACK;
 
         logger.info({ iteration, hasToolCalls: false }, "Agent reached final response");
 
@@ -228,7 +230,7 @@ export async function executeAgent(
   );
 
   return {
-    message: FALLBACK_MESSAGE,
+    message: MISSING_INFO_FALLBACK,
     sources: collectedSources,
     iterations: iteration,
   };

@@ -4,7 +4,6 @@ import type { Stores } from "../store.js";
 import { askIny, getSessionSources } from "../core/index.js";
 import { replyTo } from "../services/sendMessage.js";
 import { createRateLimiter } from "../services/rateLimit.js";
-import { FALLBACK_MESSAGE } from "../config.js";
 import type { CommandRegistry } from "../commands/registry.js";
 import { parseCommand } from "../commands/parser.js";
 import { isAskingForSources, formatSourcesForWhatsApp } from "../rag/formatSources.js";
@@ -16,6 +15,8 @@ const MENTION_RATE_LIMITER = createRateLimiter(10, 60_000);
 const REPLY_RATE_LIMITER = createRateLimiter(10, 60_000);
 const DM_RATE_LIMITER = createRateLimiter(20, 60_000);
 const COMMAND_RATE_LIMITER = createRateLimiter(15, 60_000);
+
+const GENERIC_ERROR_MESSAGE = "I'm having trouble processing your request. Please try again.";
 
 export async function handleNaturalMessage(
   socket: WASocket,
@@ -157,6 +158,6 @@ export async function handleNaturalMessage(
     await ctx.reply({ text: formattedAnswer });
   } catch (error) {
     logger.error({ error }, "Agent handling failed");
-    await ctx.reply({ text: FALLBACK_MESSAGE });
+    await ctx.reply({ text: GENERIC_ERROR_MESSAGE });
   }
 }

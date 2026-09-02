@@ -74,7 +74,7 @@ Iny is a WhatsApp-based RAG (Retrieval-Augmented Generation) chatbot designed to
 | Tool Definitions | `src/rag/tools.ts` | Define tool schemas for LLM |
 | Tool Executors | `src/rag/toolExecutors.ts` | Implement tool logic (search_policy_database) |
 | Retrieve | `src/rag/retrieve.ts` | Vector similarity search via pgvector |
-| System Prompt | `src/rag/systemPrompt.ts` | 4-block state machine prompt for agentic RAG |
+| System Prompt | `src/rag/systemPrompt.ts` | Persona + conversational 4-block prompt for agentic RAG |
 | Ingestion | `src/rag/ingest.ts` | PDF parsing, chunking, embedding, DB insertion |
 | Chunker | `src/rag/chunker.ts` | Heading-aware text chunking with token counting |
 | Parser | `src/rag/parser.ts` | PDF text extraction via pdftotext CLI |
@@ -188,25 +188,40 @@ The agent implements a **tool-calling loop**:
 
 ### System Prompt Structure
 
-The system prompt uses a **4-block state machine**:
+The system prompt uses a **4-block state machine** combining a conversational persona with strict factual grounding:
 
-1. **Block 1: Role and Domain Bounding**
-   - Defines Iny as SST assistant
-   - Sets strict boundaries (only SST-related queries)
+1. **Block 1: Persona and Intent Classification**
+   - Defines Iny's warm, first-person conversational persona
+   - Classifies intents: conversational/casual, policy/procedure, clearly out-of-domain
+   - Out-of-domain fallback reserved exclusively for clearly unrelated requests
 
-2. **Block 2: Tool Utilization Protocols**
-   - When to use tools (policy questions, procedures)
-   - When NOT to use tools (greetings, general knowledge)
+2. **Block 2: Tool Use Cognitive Flow**
+   - When to use tools (policy questions, procedures, specific details)
+   - When NOT to use tools (greetings, small talk, general knowledge)
+   - Decision gate: evaluate whether retrieval is needed before every tool call
 
-3. **Block 3: Strict Grounding Constraints**
-   - MUST use only retrieved context
+3. **Block 3: Conversational Grounding and Knowledge Presence**
+   - Answer the literal question asked; never dump retrieved context
+   - Retrieved context informs knowledge; it is not an implicit command to output everything
+   - Yes/no access questions → confirm knowledge and ask how to help
+   - MUST use only retrieved context for policy answers
    - NO external knowledge, assumptions, or speculation
-   - NO citations in responses (sources handled separately)
 
 4. **Block 4: Fallback and Failure States**
-   - How to handle empty results
-   - How to handle irrelevant results
-   - How to handle tool failures
+   - Missing-information fallback (no results after search retries)
+   - Out-of-domain fallback (clearly unrelated requests)
+   - How to handle irrelevant results and tool failures
+
+#### Conversational Guidelines
+
+These invariants must be preserved in any future prompt refactoring:
+
+- **First-person persona:** Iny speaks naturally and conversationally, never like a search-engine dump.
+- **Casual intents never fall back:** Greetings, thanks, "who are you", and "what can you do" are answered naturally in the first person and must never trigger the out-of-domain fallback or a database search.
+- **Fallback scoping:** The out-of-domain fallback ("I can only help with questions about SST policies and student procedures...") is used ONLY for clearly out-of-domain requests. Missing retrieval results use the missing-information fallback instead.
+- **Context informs, it does not dump:** Retrieved context is knowledge to draw on; the model answers the literal question and outputs only the details needed.
+- **Yes/no access pattern:** When asked if Iny has access to a policy, confirm briefly and ask how to help rather than summarizing the retrieved content.
+- **Tool necessity:** The model evaluates whether a tool call is needed for casual turns and errs toward not querying the database for greetings.
 
 ### Future Tools
 
@@ -339,9 +354,8 @@ COUNTRY_CODE=91                         # For phone number parsing
 - `AUTH_DIR` - Baileys auth state directory (`auth_info_baileys/`)
 - `MAX_CONTEXT_TOKENS` - Max tokens for context (default: 2000)
 - `MAX_CITATIONS` - Max citations to show (default: 3, currently unused)
-- `FALLBACK_MESSAGE` - Response when no information found
-- `WELCOME_MESSAGE` - Response to greeting triggers
-- `WELCOME_TRIGGER_PATTERN` - Regex for greeting detection
+
+> **Note:** Fallback messages are no longer config constants. The missing-information fallback is hardcoded in `src/core/agent.ts` (`MISSING_INFO_FALLBACK`), the generic error reply in `src/handlers/natural.ts` (`GENERIC_ERROR_MESSAGE`), and the out-of-domain fallback lives in the system prompt (Block 1).
 
 ## Access Control
 

@@ -23,12 +23,6 @@ export const TOP_K = Number(process.env.TOP_K ?? 5);
 
 export const MAX_CONTEXT_TOKENS = Number(process.env.MAX_CONTEXT_TOKENS ?? 2000);
 
-export const WELCOME_TRIGGER_PATTERN = process.env.WELCOME_TRIGGER_PATTERN ?? "^(iny|hi iny)$";
-
-export const FALLBACK_MESSAGE = process.env.FALLBACK_MESSAGE ?? "I don't have that information. Try rephrasing or ask something else.";
-
-export const WELCOME_MESSAGE = process.env.WELCOME_MESSAGE ?? "Hi! I'm Iny, your assistant. Ask me anything related to SST.";
-
 export const ADMIN_JIDS = new Set<string>(
   (process.env.ADMIN_JIDS ?? "")
     .split(",")
