@@ -45,5 +45,14 @@ services:
       - "8264:8264"
     command: ["node", "dist/src/web/server.js"]
 
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.docker/config.json:/config.json:ro # provides GHCR auth
+    command: --interval 300 iny-app iny-web # checks every 300 seconds (5 minutes)
+
 volumes:
   pgdata:
