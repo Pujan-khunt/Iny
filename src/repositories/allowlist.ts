@@ -12,6 +12,16 @@ import {
 // In-memory set of allowed JIDs, kept synchronized with DB operations
 const allowedJidSet = new Set<string>();
 
+/**
+ * Directly add a JID to the in-memory allowlist cache.
+ */
+export function addAllowedJidToCache(jid: string): void {
+  const norm = normalizeJid(jid);
+  if (norm) {
+    allowedJidSet.add(norm);
+  }
+}
+
 export async function initAllowlist(): Promise<void> {
   for (const { jid, name } of ALLOWED_JIDS_WITH_NAMES) {
     const norm = normalizeJid(jid);

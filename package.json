@@ -14,6 +14,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "ingest": "tsx --env-file=.env scripts/ingest-docs.ts",
+    "ingest:prod": "node dist/scripts/ingest-docs.js",
     "logs:cli": "tail -f logs/chat.log | pino-pretty"
   },
   "keywords": [],

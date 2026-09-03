@@ -70,4 +70,8 @@ export const DEFAULT_RESPONSE_STYLE = process.env.DEFAULT_RESPONSE_STYLE ?? "con
  */
 export const MAX_CHUNK_CONTENT_CHARS = Number(process.env.MAX_CHUNK_CONTENT_CHARS ?? 1500);
 
+export const PROCESSING_REACTION_EMOJI = process.env.PROCESSING_REACTION_EMOJI ?? "⏳";
+export const TYPING_HEARTBEAT_INTERVAL_MS = Number(process.env.TYPING_HEARTBEAT_INTERVAL_MS ?? 5000);
+
+
 

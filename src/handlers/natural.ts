@@ -10,6 +10,7 @@ import { isAskingForSources, formatSourcesForWhatsApp } from "../rag/formatSourc
 import { normalizeJid, type JidInfo } from "../services/jid.js";
 import { isAdmin } from "../services/admin.js";
 import { convertMarkdownToWhatsApp } from "../utils/markdown.js";
+import { markAsRead, withProgressUx } from "../services/chatUx.js";
 
 const MENTION_RATE_LIMITER = createRateLimiter(10, 60_000);
 const REPLY_RATE_LIMITER = createRateLimiter(10, 60_000);
@@ -66,6 +67,27 @@ export async function handleNaturalMessage(
     return;
   }
 
+  // Mark incoming message as read (blue ticks) immediately
+  if (msg.key?.id && msg.key?.remoteJid) {
+    void markAsRead(socket, msg.key, logger);
+  }
+
+  const reply = (content: any, options?: any) => {
+    let messageContent = content;
+    if (isGroup && jidInfo.participantJid && typeof content === "object" && content !== null && !content.mentions) {
+      messageContent = { ...content, mentions: [jidInfo.participantJid] };
+    }
+    return replyTo(
+      socket,
+      logger,
+      stores,
+      remoteJid,
+      messageContent,
+      { quoted: msg as any, ...options },
+      jidInfo.allJids,
+    );
+  };
+
   const ctx = {
     socket,
     logger,
@@ -80,8 +102,7 @@ export async function handleNaturalMessage(
     isMention,
     isReply: !!isReply,
     isDM,
-    reply: (content: any, options?: any) =>
-      replyTo(socket, logger, stores, remoteJid, content, options, jidInfo.allJids),
+    reply,
   };
 
   // Check for commands first (works in DMs and groups)
@@ -113,8 +134,7 @@ export async function handleNaturalMessage(
         name: parsed.name,
         args: parsed.args,
         text: parsed.text,
-        reply: (content: any, options?: any) =>
-          replyTo(socket, logger, stores, remoteJid, content, options, jidInfo.allJids),
+        reply,
       };
       await command.execute(commandCtx);
       return;
@@ -141,23 +161,34 @@ export async function handleNaturalMessage(
     }
   }
 
-  // Query Core RAG Engine
+  // Query Core RAG Engine with progress UX (reaction emoji + typing indicator heartbeat)
   try {
-    const response = await askIny({
-      sessionId: sessionKey,
-      message: text,
-      metadata: {
-        channel: "whatsapp",
-        userId: jidInfo.canonicalJid,
-        userName: (msg.pushName as string) ?? undefined,
-      },
-    });
+    await withProgressUx(
+      socket,
+      stores,
+      remoteJid,
+      msg.key,
+      jidInfo.allJids,
+      logger,
+      async () => {
+        const response = await askIny({
+          sessionId: sessionKey,
+          message: text,
+          metadata: {
+            channel: "whatsapp",
+            userId: jidInfo.canonicalJid,
+            userName: (msg.pushName as string) ?? undefined,
+          },
+        });
 
-    // Format standard Markdown to WhatsApp markup
-    const formattedAnswer = convertMarkdownToWhatsApp(response.message);
-    await ctx.reply({ text: formattedAnswer });
+        // Format standard Markdown to WhatsApp markup
+        const formattedAnswer = convertMarkdownToWhatsApp(response.message);
+        await ctx.reply({ text: formattedAnswer });
+      },
+    );
   } catch (error) {
     logger.error({ error }, "Agent handling failed");
     await ctx.reply({ text: GENERIC_ERROR_MESSAGE });
   }
 }
+

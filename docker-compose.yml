@@ -46,7 +46,7 @@ services:
     command: ["node", "dist/src/web/server.js"]
 
   watchtower:
-    image: containrrr/watchtower
+    image: ghcr.io/nicholas-fedor/watchtower
     container_name: watchtower
     restart: unless-stopped
     volumes:
