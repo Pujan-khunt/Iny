@@ -2,15 +2,48 @@ services:
   db:
     image: pgvector/pgvector:pg16
     container_name: inydb
+    restart: unless-stopped
     environment:
       POSTGRES_USER: iny
       POSTGRES_PASSWORD: iny
       POSTGRES_DB: inydb
-    ports:
-      - "5432:5432"
     volumes:
       - ./docker/enable_pgvector.sql:/docker-entrypoint-initdb.d/init.sql
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iny -d inydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    image: ${INY_IMAGE:-iny:latest}
+    container_name: iny-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://iny:iny@db:5432/inydb
+    volumes:
+      - ./docs:/app/docs
+
+  web:
+    image: ${INY_IMAGE:-iny:latest}
+    container_name: iny-web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://iny:iny@db:5432/inydb
+      WEB_PORT: "8264"
+    ports:
+      - "8264:8264"
+    command: ["node", "dist/src/web/server.js"]
 
 volumes:
   pgdata:
