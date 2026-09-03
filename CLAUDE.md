@@ -1,361 +1,266 @@
-# Iny - WhatsApp RAG Chatbot for SST
+# Iny — WhatsApp RAG Chatbot for SST
 
 ## Overview
 
-Iny is a WhatsApp-based RAG (Retrieval-Augmented Generation) chatbot designed to answer student queries about SST (Scaler School of Technology) policies, procedures, and campus operations. It uses an **agentic architecture** where an LLM orchestrates tool calls to retrieve information from a vector database.
+Iny is a WhatsApp-based RAG (Retrieval-Augmented Generation) chatbot that answers student queries about SST (Scaler School of Technology) policies, procedures, and campus operations. It uses an **agentic architecture** where an LLM orchestrates tool calls to retrieve information from a vector database.
 
 **Key characteristics:**
-- **Interface**: WhatsApp (via Baileys - reverse-engineered WhatsApp Web protocol)
+- **Interface**: WhatsApp (via Baileys — reverse-engineered WhatsApp Web protocol)
 - **Architecture**: Agentic RAG with tool calling
-- **LLM Provider**: OpenAI-compatible interface (provider-agnostic)
-- **Embeddings**: OpenAI `text-embedding-3-small` (1536 dimensions)
-- **Database**: PostgreSQL with pgvector extension
+- **LLM**: Any OpenAI-compatible API (provider-agnostic via `AI_BASE_URL`)
+- **Embeddings**: OpenAI `text-embedding-3-small` (1536 dimensions, direct OpenAI API)
+- **Database**: PostgreSQL 16 + pgvector (chosen over dedicated vector DBs for cost — Postgres is already there)
+- **Retrieval**: Hybrid — cosine similarity (HNSW) + full-text search (GIN/tsvector), fused via Reciprocal Rank Fusion (RRF)
 
 ## Architecture
 
 ### High-Level Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ENTRY POINT (src/index.ts)                          │
-│  1. Initialize Database (Drizzle ORM + PostgreSQL + pgvector)               │
-│  2. Load Allowlist from DB → in-memory cache                                │
-│  3. Start Baileys WhatsApp Socket                                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    ▼               ▼               ▼
-         ┌──────────────────┐ ┌──────────────┐ ┌─────────────────┐
-         │ Message Handlers │ │Group Handlers│ │Connection Handler│
-         │ (messages.ts)    │ │ (groups.ts)  │ │ (connection.ts)  │
-         └────────┬─────────┘ └──────┬───────┘ └────────┬────────┘
-                  │                  │                  │
-                  ▼                  ▼                  ▼
-         ┌──────────────────────────────────────────────────────┐
-         │                    AGENT SERVICE                      │
-         │                 (src/services/agent.ts)               │
-         │ ┌──────────────┐  ┌──────────────────┐               │
-         │ │ LLM Loop     │  │ Tool Executors   │               │
-         │ │ (OpenAI SDK) │  │ (search_policy_  │               │
-         │ │              │  │  database)       │               │
-         │ └──────────────┘  └────────┬─────────┘               │
-         │                            │                         │
-         └────────────────────────────┼─────────────────────────┘
-                                      ▼
-         ┌──────────────────────────────────────────────────────┐
-         │                  RAG PIPELINE                         │
-         │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐  │
-         │  │ retrieve.ts │  │ sourceCache │  │ sendMessage  │  │
-         │  │ (vector     │  │ .ts         │  │ .ts          │  │
-         │  │  search)    │  │ (per-user   │  │ (WhatsApp    │  │
-         │  │             │  │  cache)     │  │  formatting) │  │
-         │  └─────────────┘  └─────────────┘  └──────────────┘  │
-         └──────────────────────────────────────────────────────┘
-                                      │
-                                      ▼
-         ┌──────────────────────────────────────────────────────┐
-         │              PostgreSQL + pgvector                    │
-         │  - documents (source PDFs)                            │
-         │  - chunks (1536-dim vectors)                          │
-         │  - allowed_jids (access control)                      │
-         │  - messages (Baileys retry storage)                   │
-         └──────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                   ENTRY POINT (src/index.ts)                   │
+│  1. Initialize Database (Drizzle ORM + PostgreSQL + pgvector)  │
+│  2. Load Allowlist from DB → in-memory cache                   │
+│  3. Start Baileys WhatsApp Socket                              │
+└────────────────────────────────────────────────────────────────┘
+                                │
+                ┌───────────────┼───────────────┐
+                ▼               ▼               ▼
+     ┌──────────────────┐ ┌──────────────┐ ┌─────────────────┐
+     │ Message Handlers │ │Group Handlers│ │Connection Handler│
+     │ (messages.ts)    │ │ (groups.ts)  │ │ (connection.ts)  │
+     └────────┬─────────┘ └──────────────┘ └─────────────────┘
+              │
+              ▼
+     ┌──────────────────────────────────────────────────────────┐
+     │              NATURAL HANDLER (natural.ts)                 │
+     │  Resolves context (DM/mention/reply), rate limits,        │
+     │  dispatches commands, handles source queries               │
+     └────────┬─────────────────────────────────────────────────┘
+              │
+              ▼
+     ┌──────────────────────────────────────────────────────────┐
+     │               CORE ENGINE (src/core/engine.ts)            │
+     │  askIny() — channel-agnostic entry point                  │
+     │  Manages: session memory, agent execution, source cache   │
+     └────────┬─────────────────────────────────────────────────┘
+              │
+              ▼
+     ┌──────────────────────────────────────────────────────────┐
+     │              AGENT LOOP (src/core/agent.ts)               │
+     │  executeAgent() — LLM + tool calling loop                 │
+     │  ┌───────────────┐    ┌────────────────────────┐          │
+     │  │ OpenAI SDK    │───▶│ Tool: search_policy_db │          │
+     │  │ (any compat.) │    │ (hybrid vector+FTS)    │          │
+     │  └───────────────┘    └────────────────────────┘          │
+     └──────────────────────────────────────────────────────────┘
+              │
+              ▼
+     ┌──────────────────────────────────────────────────────────┐
+     │              PostgreSQL + pgvector                         │
+     │  baileys_auth, messages, allowed_jids, documents, chunks  │
+     └──────────────────────────────────────────────────────────┘
 ```
 
-### Component Responsibilities
+### Component Map
 
-| Component | File | Responsibility |
-|-----------|------|----------------|
-| Entry Point | `src/index.ts` | Initialize DB, allowlist, start WhatsApp socket |
-| Socket | `src/socket.ts` | Create Baileys WebSocket, register handlers |
-| Message Handlers | `src/handlers/messages.ts` | Persist messages, filter by allowlist, route to natural handler |
-| Natural Handler | `src/handlers/natural.ts` | Detect context (DM/group mention/reply), rate limit, route to agent |
-| Agent Service | `src/services/agent.ts` | Orchestrate LLM + tool loop, handle retries, format response |
-| Tool Definitions | `src/rag/tools.ts` | Define tool schemas for LLM |
-| Tool Executors | `src/rag/toolExecutors.ts` | Implement tool logic (search_policy_database) |
-| Retrieve | `src/rag/retrieve.ts` | Vector similarity search via pgvector |
-| System Prompt | `src/rag/systemPrompt.ts` | Persona + conversational 4-block prompt for agentic RAG |
-| Ingestion | `src/rag/ingest.ts` | PDF parsing, chunking, embedding, DB insertion |
-| Chunker | `src/rag/chunker.ts` | Heading-aware text chunking with token counting |
-| Parser | `src/rag/parser.ts` | PDF text extraction via pdftotext CLI |
-| Commands | `src/commands/` | Admin command implementations |
-| Allowlist Repo | `src/repositories/allowlist.ts` | In-memory cache + DB sync for allowed JIDs |
-| Source Cache | `src/services/sourceCache.ts` | Per-user cache of retrieved chunks for "show sources" |
+| Component | File(s) | Responsibility |
+|-----------|---------|----------------|
+| Entry Point | `src/index.ts` | Bootstrap: init DB, allowlist, start WhatsApp socket |
+| Socket | `src/socket.ts` | Create Baileys WebSocket with DB-backed auth state |
+| Stores | `src/store.ts` | In-memory caches: retry counters, group metadata, sent message IDs |
+| Connection Handler | `src/handlers/connection.ts` | QR code display, reconnection logic |
+| Group Handler | `src/handlers/groups.ts` | Populate group metadata cache |
+| Message Handler | `src/handlers/messages.ts` | Persist messages, resolve JIDs, check allowlist, route to natural handler |
+| Natural Handler | `src/handlers/natural.ts` | Context detection (DM/mention/reply), rate limiting, command dispatch, source queries, agent routing |
+| Core Engine | `src/core/engine.ts` | `askIny()` — channel-agnostic API coordinating memory + agent + sources |
+| Agent | `src/core/agent.ts` | `executeAgent()` — agentic LLM + tool loop with retries |
+| Session Memory | `src/core/memory.ts` | Per-session sliding window conversation history (NodeCache + TTL) |
+| Source Cache | `src/core/sources.ts` | Per-session retrieved chunk cache + citation builder |
+| Core Types | `src/core/types.ts` | `ChatRequest`, `ChatResponse`, `ConversationTurn`, `RetrievedChunk`, etc. |
+| Tool Schemas | `src/rag/tools.ts` | OpenAI function tool definitions for the LLM |
+| Tool Executors | `src/rag/toolExecutors.ts` | `search_policy_database` implementation with chunk content truncation |
+| Retrieval | `src/rag/retrieve.ts` | Hybrid search: pgvector cosine + tsvector FTS, fused via RRF |
+| System Prompt | `src/rag/systemPrompt.ts` | 4-block state machine prompt + selectable response styles |
+| Source Formatting | `src/rag/formatSources.ts` | Detect "show sources" requests, format citations for WhatsApp |
+| Ingestion | `src/rag/ingest.ts` | PDF parsing → chunking → embedding → DB insertion |
+| Chunker | `src/rag/chunker.ts` | Heading-aware token-bounded text chunking with page tracking |
+| PDF Parser | `src/rag/parser.ts` | `pdftotext` CLI wrapper for text extraction |
+| Embeddings | `src/embeddings/client.ts` | OpenAI embedding client with batch support |
+| Auth State | `src/repositories/authState.ts` | PostgreSQL-backed Baileys auth + auto-migration from file-based sessions |
+| Allowlist | `src/repositories/allowlist.ts` | In-memory Set + PostgreSQL sync, bidirectional LID/PN mapping |
+| Message Repo | `src/repositories/messages.ts` | Protobuf message persistence for Baileys retry mechanism |
+| JID Service | `src/services/jid.ts` | JID normalization, bidirectional PN↔LID cache, message JID resolution |
+| Admin Service | `src/services/admin.ts` | Admin permission checks against `ADMIN_JIDS` with LID/PN awareness |
+| Rate Limiter | `src/services/rateLimit.ts` | Sliding window in-memory rate limiters |
+| Send Message | `src/services/sendMessage.ts` | Allowlist-guarded message sending + sent ID tracking |
+| Markdown Utils | `src/utils/markdown.ts` | GitHub Markdown → WhatsApp formatting converter |
+| Message Text | `src/utils/messageText.ts` | Extract text from Baileys message protobuf |
+| Command Parser | `src/commands/parser.ts` | Quote-aware command tokenizer |
+| Command Registry | `src/commands/registry.ts` | Case-insensitive command map with alias support |
+| Admin Commands | `src/commands/admin.ts` | `/allow`, `/disallow`, `/allowlist` |
+| Help Command | `src/commands/help.ts` | `/help` (admin-aware output) |
+| Command Index | `src/commands/index.ts` | `createCommands()` — registers all commands |
+| Web Server | `src/web/server.ts` | HTTP API (`/api/chat`, `/api/reset`) + static UI (internal testing) |
+| Config | `src/config.ts` | All env vars and operational defaults |
+| Logger | `src/logger.ts` | Pino structured logging with runtime level control |
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/ingest-docs.ts` | Ingest PDFs from `docs/` into PostgreSQL |
+| `scripts/chat.ts` | Interactive CLI chat for testing the RAG engine |
+| `scripts/test-agent-query.ts` | Automated test query against `askIny()` |
+| `scripts/test-embed.ts` | Test embedding generation + cosine similarity |
+| `scripts/test-hybrid-retrieval.ts` | Test hybrid retrieval against PostgreSQL |
+| `scripts/test-jid-resolution.ts` | Test JID normalization, LID/PN mapping, allowlist, admin checks |
 
 ## Data Model
 
-### Database Schema
+### Database Schema (PostgreSQL 16 + pgvector)
 
-```sql
--- Messages for Baileys retry mechanism
-CREATE TABLE messages (
-  remote_jid TEXT NOT NULL,
-  message_id TEXT NOT NULL,
-  message BYTEA NOT NULL,  -- Serialized protobuf
-  PRIMARY KEY (remote_jid, message_id)
-);
+#### `baileys_auth` — WhatsApp Session State
 
--- Allowlisted users/groups (development safety rail)
-CREATE TABLE allowed_jids (
-  jid TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  added_by TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+Stores all Baileys authentication credentials and Signal protocol keys **in PostgreSQL** (not the filesystem). Combined with `makeCacheableSignalKeyStore` for in-memory caching of hot cryptographic keys. If a legacy `auth_info_baileys/` directory exists on disk, it is automatically migrated on first startup.
 
--- Source documents (PDFs)
-CREATE TABLE documents (
-  id UUID PRIMARY KEY,
-  title TEXT NOT NULL,
-  source_path TEXT NOT NULL,
-  content_hash TEXT UNIQUE NOT NULL,  -- SHA256 for deduplication
-  source_type TEXT DEFAULT 'document', -- 'document' | 'whatsapp'
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `text` PK | e.g., `"creds"`, `"pre-key-1"`, `"session-..."` |
+| `data` | `text` | JSON with `BufferJSON` serialization |
+| `updated_at` | `timestamptz` | |
 
--- Vector chunks (1536 dimensions for text-embedding-3-small)
-CREATE TABLE chunks (
-  id UUID PRIMARY KEY,
-  document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
-  content TEXT NOT NULL,
-  chunk_index INT NOT NULL,
-  token_count INT NOT NULL,
-  embedding VECTOR(1536),
-  source_type TEXT DEFAULT 'document',
-  page_start INT DEFAULT 1,
-  page_end INT DEFAULT 1,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+#### `messages` — Baileys Retry Storage
 
-### Indexes
+| Column | Type | Notes |
+|--------|------|-------|
+| `remote_jid` | `text` | |
+| `message_id` | `text` | |
+| `message` | `bytea` | Serialized protobuf |
+| PK | composite | `(remote_jid, message_id)` |
 
-- `chunks_document_id_idx` - B-tree on document ID
-- `chunks_source_type_idx` - B-tree on source type
-- `chunks_page_idx` - B-tree on page range
-- `chunks_embedding_hnsw_idx` - HNSW index for vector similarity search
+#### `allowed_jids` — Access Control
 
-### JID Formats
+| Column | Type | Notes |
+|--------|------|-------|
+| `jid` | `text` PK | `@s.whatsapp.net` format |
+| `name` | `text` | |
+| `added_by` | `text` | |
+| `created_at` | `timestamptz` | |
 
-WhatsApp uses two JID formats:
+#### `documents` — Source PDFs
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `uuid` PK | |
+| `title` | `text` | |
+| `source_path` | `text` | |
+| `content_hash` | `text` UNIQUE | SHA256 for deduplication |
+| `source_type` | `text` | `"document"` (future: `"whatsapp"`) |
+| `created_at` | `timestamptz` | |
+
+#### `chunks` — Vector Chunks (1536 dimensions)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `uuid` PK | |
+| `document_id` | `uuid` FK → documents | CASCADE delete |
+| `content` | `text` | |
+| `chunk_index` | `integer` | |
+| `token_count` | `integer` | |
+| `embedding` | `vector(1536)` | `text-embedding-3-small` |
+| `source_type` | `text` | |
+| `page_start` | `integer` | |
+| `page_end` | `integer` | |
+| `created_at` | `timestamptz` | |
+
+**Indexes:**
+- `chunks_document_id_idx` — B-tree on `document_id`
+- `chunks_source_type_idx` — B-tree on `source_type`
+- `chunks_page_idx` — B-tree on `(page_start, page_end)`
+- `chunks_embedding_hnsw_idx` — HNSW on `embedding` using `vector_cosine_ops`
+- `chunks_fts_idx` — GIN on `to_tsvector('english', content)`
+
+### WhatsApp JID Formats
+
+WhatsApp uses two JID formats. The system tracks both via bidirectional in-memory caching in `src/services/jid.ts`. This complexity affects allowlist checks, admin verification, and message routing.
 
 | Format | Example | Use Case |
 |--------|---------|----------|
-| `@s.whatsapp.net` | `919876543210@s.whatsapp.net` | Phone-based, deterministic. Used for admin commands, allowlist. |
-| `@lid` | `123456789@lid` | WhatsApp internal, non-deterministic. Used for message routing. |
+| `@s.whatsapp.net` | `919876543210@s.whatsapp.net` | Phone-based, deterministic. Used for admin commands, allowlist entries. |
+| `@lid` | `123456789@lid` | WhatsApp internal Linked Identity. Non-deterministic, used in message routing. |
 
-**Design decision:** The system tracks both `remoteJid` and `remoteJidAlt`. Admin commands use `@s.whatsapp.net` format for deterministic user management.
+Both `remoteJid` and `remoteJidAlt` are resolved per message. Admin and allowlist checks test all known JID forms for a user.
 
 ## Agent Architecture
 
-### Agentic RAG Pattern
-
-The agent implements a **tool-calling loop**:
+### Agentic RAG Loop (`src/core/agent.ts`)
 
 ```
-1. Build messages: [SYSTEM_PROMPT, user_message]
-2. While iteration < MAX_ITERATIONS (5):
+1. Build messages: [SYSTEM_PROMPT + STYLE_LAYER, ...history, user_message]
+2. While iteration < maxIterations (default 5):
    a. Call LLM with tools (tool_choice: "auto")
    b. If no tool_calls → return final answer
    c. Execute each tool with retry (3 attempts, linear backoff)
-   d. Add tool results to message history
-   e. Loop
-3. Return fallback if max iterations reached
+   d. Truncate tool result chunk content to MAX_CHUNK_CONTENT_CHARS (default 1500)
+   e. Add tool results to message history
+   f. Record iteration trace for diagnostics
+   g. Loop
+3. If max iterations reached → log full iterationTrace at WARN level + return fallback
 ```
 
-### Tool: search_policy_database
+### Iteration Diagnostics
 
-**Purpose:** Search the vector database for policy information.
+When max iterations are reached, the agent logs a structured `iterationTrace` at `WARN` level containing per-iteration `finishReason`, tool call names/args, and result success/chunkCount. Diagnosis patterns:
 
-**Schema:**
-```json
-{
-  "name": "search_policy_database",
-  "description": "Search SST college policy database for information about academic policies, procedures, and campus operations.",
-  "parameters": {
-    "query": "string - The search query",
-    "threshold": "number (optional) - Similarity threshold 0-1, default 0.35"
-  }
-}
-```
+| `iterationTrace` pattern | Root cause |
+|---|---|
+| Repeated identical `args` across iterations | Retrieval loop — LLM ignores "no results" and retries same query |
+| `chunkCount: 0` on all iterations | Query embeddings never matched — wrong keywords or threshold too high |
+| `finishReason: "length"` | `max_tokens` too small — model's answer was cut off mid-tool-call |
+
+### Tool: `search_policy_database`
+
+Defined in `src/rag/tools.ts`, implemented in `src/rag/toolExecutors.ts`.
+
+**Parameters:** `query` (string, required), `threshold` (number, optional, default 0.35)
 
 **Execution flow:**
 1. Embed query using OpenAI `text-embedding-3-small`
-2. Perform cosine similarity search via pgvector
-3. Filter by threshold (default 0.35)
+2. Run hybrid retrieval (`src/rag/retrieve.ts`):
+   - **Semantic**: pgvector cosine similarity via HNSW index
+   - **Keyword**: PostgreSQL `websearch_to_tsquery` + GIN index
+   - **Fusion**: Reciprocal Rank Fusion (RRF) to merge and re-rank results
+3. Filter by similarity threshold
 4. Return top K results (default 5)
-5. Cache chunks for "show sources" feature
+5. Truncate each chunk's content to `MAX_CHUNK_CONTENT_CHARS` before injecting into LLM context
+6. Cache full (untruncated) chunks for "show sources" feature
 
-### System Prompt Structure
+### Context Budget Management
 
-The system prompt uses a **4-block state machine** combining a conversational persona with strict factual grounding:
+With small-context models (e.g., 8K tokens), the token budget is tight:
 
-1. **Block 1: Persona and Intent Classification**
-   - Defines Iny's warm, first-person conversational persona
-   - Classifies intents: conversational/casual, policy/procedure, clearly out-of-domain
-   - Out-of-domain fallback reserved exclusively for clearly unrelated requests
+| Component | ~Tokens |
+|---|---|
+| System prompt + style layer | ~1,800 |
+| Session history (default max 6 messages = 3 turns) | ~450 |
+| User message | ~30 |
+| Tool call + result (5 chunks × 375 tokens max each) | ~2,000 |
+| `max_tokens` response budget | 1,024 |
+| **Typical total** | **~5,300** |
 
-2. **Block 2: Tool Use Cognitive Flow**
-   - When to use tools (policy questions, procedures, specific details)
-   - When NOT to use tools (greetings, small talk, general knowledge)
-   - Decision gate: evaluate whether retrieval is needed before every tool call
+Key controls:
+- `MAX_CHUNK_CONTENT_CHARS` (default 1500) — truncates each chunk before LLM sees it
+- `SESSION_MEMORY_MAX_MESSAGES` (default 6) — sliding window on conversation history
+- `TOP_K` (default 5) — number of chunks returned per search
 
-3. **Block 3: Conversational Grounding and Knowledge Presence**
-   - Answer the literal question asked; never dump retrieved context
-   - Retrieved context informs knowledge; it is not an implicit command to output everything
-   - Yes/no access questions → confirm knowledge and ask how to help
-   - MUST use only retrieved context for policy answers
-   - NO external knowledge, assumptions, or speculation
+### Session Memory (`src/core/memory.ts`)
 
-4. **Block 4: Fallback and Failure States**
-   - Missing-information fallback (no results after search retries)
-   - Out-of-domain fallback (clearly unrelated requests)
-   - How to handle irrelevant results and tool failures
-
-#### Conversational Guidelines
-
-These invariants must be preserved in any future prompt refactoring:
-
-- **First-person persona:** Iny speaks naturally and conversationally, never like a search-engine dump.
-- **Casual intents never fall back:** Greetings, thanks, "who are you", and "what can you do" are answered naturally in the first person and must never trigger the out-of-domain fallback or a database search.
-- **Fallback scoping:** The out-of-domain fallback ("I can only help with questions about SST policies and student procedures...") is used ONLY for clearly out-of-domain requests. Missing retrieval results use the missing-information fallback instead.
-- **Context informs, it does not dump:** Retrieved context is knowledge to draw on; the model answers the literal question and outputs only the details needed.
-- **Yes/no access pattern:** When asked if Iny has access to a policy, confirm briefly and ask how to help rather than summarizing the retrieved content.
-- **Tool necessity:** The model evaluates whether a tool call is needed for casual turns and errs toward not querying the database for greetings.
-
-### Future Tools
-
-The architecture is designed to support additional tools:
-- **WhatsApp message search** - Query ingested WhatsApp group messages
-- **Instructor/POC lookup** - Search instructor database
-- **Event calendar** - Query upcoming events
-
-## Message Processing Flow
-
-```
-User sends WhatsApp message
-        │
-        ▼
-Baileys socket receives 'messages.upsert' event
-        │
-        ▼
-saveMessage() → Persist to PostgreSQL (for retries)
-        │
-        ▼
-isBotReply? → Yes: skip
-        │
-        ▼
-isAllowlisted(remoteJid, altJid)? → No: skip with warning
-        │
-        ▼
-getMessageText() → Extract text from message proto
-        │
-        ▼
-handleNaturalMessage()
-        │
-        ├─► Is command? → parseCommand() → commandRegistry.get() → execute()
-        │
-        ├─► Is "sources" request? → getSourcesForUser() → formatSourcesForWhatsApp() → reply
-        │
-        └─► Natural language → runAgent(userMessage, userJid)
-                  │
-                  ▼
-         ┌────────────────────────────────────┐
-         │ Agent Loop (max 5 iterations)      │
-         │                                    │
-         │ 1. LLM(messages, tools)            │
-         │ 2. If tool_calls:                  │
-         │    a. executeToolCallWithRetry()   │
-         │    b. If search_policy_database:   │
-         │       - retrieveTopK(query)        │
-         │       - OpenAI embed query         │
-         │       - pgvector cosine search     │
-         │       - cacheSourcesForUser()      │
-         │    c. Add tool result to messages  │
-         │ 3. Else: return final answer       │
-         │                                    │
-         └────────────────────────────────────┘
-                  │
-                  ▼
-         Convert Markdown → WhatsApp formatting (*bold*, ~strikethrough~)
-                  │
-                  ▼
-         replyTo() → socket.sendMessage() → track sentMessageID
-```
-
-## Ingestion Pipeline
-
-```
-npm run ingest
-        │
-        ▼
-glob("docs/*.pdf")
-        │
-        ▼
-For each PDF:
-  readFile() → Buffer
-        │
-        ▼
-ingestFile(file, buffer, {maxTokens: 500, overlap: 50, sourceType: "document"})
-        │
-        ├─► SHA256 hash → check documents.content_hash → skip if exists
-        │
-        ├─► parsePdf() → pdftotext → {title, pages[], fullText}
-        │
-        ├─► chunkText(pages) → Chunk[] with headings, page ranges, token counts
-        │
-        ├─► OpenAIEmbeddingClient.embedBatch(chunk.content)
-        │
-        └─► DB Transaction:
-              INSERT documents {id, title, sourcePath, contentHash, sourceType}
-              INSERT chunks {id, documentId, content, chunkIndex, tokenCount, 
-                             embedding, sourceType, pageStart, pageEnd}
-```
-
-### Chunking Strategy
-
-- **Max tokens:** 500 (configurable)
-- **Overlap:** 50 tokens
-- **Heading-aware:** Preserves heading breadcrumbs in chunks
-- **Page tracking:** Each chunk tracks its source page range
-
-## Configuration
-
-### Environment Variables
-
-```bash
-# Database
-DATABASE_URL=postgres://iny:iny@localhost:5432/inydb
-
-# LLM (OpenAI-compatible interface)
-AI_API_KEY=your_api_key
-AI_MODEL=gpt-4o-mini                    # Default: gpt-4o-mini
-AI_BASE_URL=https://api.openai.com/v1   # Optional: for other providers
-
-# Embeddings (OpenAI only)
-OPENAI_API_KEY=your_openai_key
-EMBEDDING_MODEL=text-embedding-3-small  # Default: text-embedding-3-small
-
-# RAG Settings
-SIMILARITY_THRESHOLD=0.35               # Default: 0.35
-TOP_K=5                                 # Default: 5
-
-# Access Control (comma-separated JIDs)
-ADMIN_JIDS=919876543210@s.whatsapp.net
-ALLOWED_JIDS=                           # Bootstrap allowlist
-ALLOWED_JIDS_NAMES=                     # Names for bootstrap entries
-
-# Admin Commands
-COUNTRY_CODE=91                         # For phone number parsing
-```
-
-### Constants (config.ts)
-
-- `AUTH_DIR` - Baileys auth state directory (`auth_info_baileys/`)
-- `MAX_CONTEXT_TOKENS` - Max tokens for context (default: 2000)
-- `MAX_CITATIONS` - Max citations to show (default: 3, currently unused)
-
-> **Note:** Fallback messages are no longer config constants. The missing-information fallback is hardcoded in `src/core/agent.ts` (`MISSING_INFO_FALLBACK`), the generic error reply in `src/handlers/natural.ts` (`GENERIC_ERROR_MESSAGE`), and the out-of-domain fallback lives in the system prompt (Block 1).
+Per-session sliding window using NodeCache with TTL:
+- Stores clean `user`/`assistant` turns only (no tool messages)
+- Max messages: `SESSION_MEMORY_MAX_MESSAGES` (default 6 = 3 turns)
+- TTL: `SESSION_MEMORY_TTL_MS` (default 20 minutes)
+- Session key: `canonicalJid` for DMs, `canonicalJid:participantJid` for groups
 
 ## Access Control
 
@@ -365,201 +270,204 @@ The allowlist is a **development safety rail**, not a production access control 
 
 ### Two-Tier System
 
-1. **Admin JIDs** (from `ADMIN_JIDS` env var)
-   - Permanent access
-   - Can execute admin commands (`/allow`, `/disallow`, `/allowlist`)
-   - Cannot be removed via commands
+1. **Admin JIDs** (from `ADMIN_JIDS` env var) — permanent access, can manage allowlist
+2. **Allowlist** (in `allowed_jids` table) — managed via `/allow`, `/disallow`, `/allowlist` commands
 
-2. **Temporary Allowlist** (in `allowed_jids` table)
-   - Managed via admin commands
-   - Persisted in PostgreSQL, cached in memory
-   - Can be cleared for production launch
-
-### Future: Open Access Mode
-
-Planned improvement: Add `OPEN_ACCESS=true` environment variable to bypass allowlist for production while keeping admin management capabilities.
+Both tiers use bidirectional LID/PN resolution for JID matching.
 
 ## Commands
-
-### Command Registry
-
-Commands are registered in `src/commands/index.ts` with a Map-based registry supporting aliases.
-
-### Available Commands
 
 | Command | Admin Only | Description |
 |---------|------------|-------------|
 | `/allow <jid-or-phone> [name]` | Yes | Add user/group to allowlist |
 | `/disallow <jid-or-phone>` | Yes | Remove from allowlist |
 | `/allowlist` | Yes | List all allowlisted entries |
-| `/help` | No | Show capabilities (admin sees command list) |
+| `/help` | No | Show capabilities (admin sees command list, students see help guide) |
 
-### Command Parser
+Parser: `src/commands/parser.ts` — quote-aware tokenizer with configurable prefix (default `/`).
 
-**Canonical parser:** `src/commands/parser.ts` (quote-aware tokenizer)
+## Web Interface (Internal Testing)
 
-The parser handles:
-- Quoted arguments: `/allow "John Doe"`
-- Escaped quotes
-- Proper argument extraction
+Standalone HTTP server at `src/web/server.ts` — used for internal testing, not production.
 
-**Note:** The inline split in `natural.ts` should be replaced with the canonical parser.
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/` | GET | Serves `src/web/public/index.html` (single-page chat UI) |
+| `/api/chat` | POST | `{ sessionId, message, style? }` → `{ message, citations, iterations, style }` |
+| `/api/reset` | POST | `{ sessionId }` → `{ ok: true }` |
 
-## Known Issues & Technical Debt
+Port: `WEB_PORT` env var (default `8264` in Docker, `3000` locally).
 
-### Critical Issues
+## Message Processing Flow
 
-| Issue | Location | Impact | Fix |
-|-------|----------|--------|-----|
-| Module-level mutable state | `toolExecutors.ts:20` | Race conditions with concurrent users | Pass via context or use request-scoped storage |
-| Duplicate `getMessageText` | `messages.ts:10`, `natural.ts:19` | Maintenance burden | Extract to `src/utils/message.ts` |
-| Duplicate chunker interfaces | `chunker.ts:9-16, 89-101` | Confusion | Remove duplicates |
-| Duplicate helper functions | `chunker.ts:261-326` | Code bloat | Use top-level functions |
+```
+WhatsApp message received (messages.upsert)
+  │
+  ├─► saveMessage() → persist protobuf to PostgreSQL
+  ├─► Skip if bot's own reply
+  ├─► resolveMessageJids() → resolve all PN/LID forms
+  ├─► isAllowlisted()? → skip with warning if not
+  ├─► getMessageText() → extract text from protobuf
+  │
+  └─► handleNaturalMessage()
+        │
+        ├─► Group message without mention/reply? → ignore
+        ├─► Rate limited? → ignore
+        │
+        ├─► parseCommand() → is it a command?
+        │     └─► Yes → check admin perms → execute command
+        │
+        ├─► isAskingForSources() + isReply?
+        │     └─► Yes → getSessionSources() → formatSourcesForWhatsApp() → reply
+        │
+        └─► askIny({ sessionId, message, metadata })
+              │
+              ├─► getSessionHistory()
+              ├─► executeAgent(message, history, style)
+              │     └─► LLM loop with tool calls (see Agent Architecture)
+              ├─► cacheSources()
+              ├─► appendTurn()
+              ├─► buildCitations()
+              │
+              └─► convertMarkdownToWhatsApp() → reply
+```
 
-### High Priority Issues
+## Ingestion Pipeline
 
-| Issue | Location | Impact | Fix |
-|-------|----------|--------|-----|
-| Three `helpCommand` implementations | `admin.ts:187`, `help.ts`, `commands/index.ts` | Which runs? Confusion | Consolidate to single implementation |
-| In-memory caches without TTL | `allowlist.ts:6`, `sourceCache.ts:29` | Unbounded memory growth | Add TTL + periodic cleanup |
-| Deprecated `rag/format.ts` | `format.ts` | Dead code | Delete file |
+```
+npm run ingest  (or: docker exec iny-app node dist/scripts/ingest-docs.js)
+  │
+  ▼
+glob("docs/*.pdf")
+  │
+  For each PDF:
+    ├─► SHA256 hash → check documents.content_hash → skip if exists
+    ├─► parsePdf() → pdftotext CLI → { title, pages[], fullText }
+    ├─► chunkText(pages) → Chunk[] with headings, page ranges, token counts
+    ├─► OpenAIEmbeddingClient.embedBatch(chunks)
+    └─► DB Transaction:
+          INSERT documents { id, title, sourcePath, contentHash, sourceType }
+          INSERT chunks { id, documentId, content, chunkIndex, tokenCount,
+                          embedding, sourceType, pageStart, pageEnd }
+```
 
-### Medium Priority Issues
+**Chunking strategy:** max 500 tokens, 50-token overlap, heading-aware (preserves breadcrumbs), page-tracked.
 
-| Issue | Location | Impact | Fix |
-|-------|----------|--------|-----|
-| Hardcoded agent config | `agent.ts:39-43` | Inconsistent patterns | Move to `config.ts` |
-| Two command parsers | `parser.ts`, `natural.ts:28-33` | Confusion | Use `parser.ts` everywhere |
-| Unused `MAX_CITATIONS` | `config.ts:23` | Dead config | Remove or implement |
-| Unused `pdf-parse` dependency | `package.json` | Unnecessary dependency | Remove from package.json |
+## Configuration
 
-## Future Improvements
+### Environment Variables
 
-### Planned Features
+```bash
+# Database
+DATABASE_URL=postgres://iny:iny@localhost:5432/inydb  # use db:5432 in Docker
 
-1. **WhatsApp Message Ingestion**
-   - Ingest messages from official WhatsApp groups
-   - Support `sourceType: 'whatsapp'` in chunks table
-   - New tool: `search_whatsapp_messages`
+# LLM (any OpenAI-compatible API)
+AI_API_KEY=              # required
+AI_MODEL=gpt-4o-mini     # default
+AI_BASE_URL=             # optional, for non-OpenAI providers
 
-2. **Instructor/POC Database**
-   - New document type for instructor information
-   - New tool: `lookup_instructor`
+# Embeddings (OpenAI direct)
+OPENAI_API_KEY=          # required (separate from AI_API_KEY)
+EMBEDDING_MODEL=text-embedding-3-small
 
-3. **Open Access Mode**
-   - Environment flag `OPEN_ACCESS=true`
-   - Bypass allowlist for production
-   - Keep admin commands for management
+# RAG
+SIMILARITY_THRESHOLD=0.35
+TOP_K=5
+MAX_CONTEXT_TOKENS=2000
+MAX_CHUNK_CONTENT_CHARS=1500   # truncate chunks in tool results
 
-4. **Message Storage Optimization**
-   - Replace PostgreSQL persistence with in-memory LRU cache
-   - Add TTL (e.g., 1 hour)
-   - Reduce I/O overhead
+# Agent
+AGENT_MAX_ITERATIONS=5
+AGENT_RETRY_ATTEMPTS=3
+AGENT_RETRY_BASE_DELAY=500
 
-### Architectural Improvements
+# Session Memory
+SESSION_MEMORY_TTL_MS=1200000      # 20 minutes
+SESSION_MEMORY_MAX_MESSAGES=6      # 3 conversation turns
 
-1. **Dependency Injection**
-   - Pass dependencies explicitly instead of importing modules
-   - Improve testability
+# Access Control
+ADMIN_JIDS=919876543210@s.whatsapp.net   # comma-separated
+ALLOWED_JIDS=                            # bootstrap allowlist
+ALLOWED_JIDS_NAMES=
+COUNTRY_CODE=91
 
-2. **Request-Scoped Context**
-   - Replace module-level state with context objects
-   - Support concurrent requests safely
+# Logging
+LOG_LEVEL=info       # fatal|error|warn|info|debug|trace
+LOG_FILE=            # optional file path; stdout if unset
 
-3. **Structured Logging**
-   - Add request IDs for tracing
-   - Improve debugging in production
+# Web UI
+WEB_PORT=8264
 
-4. **Health Checks**
-   - Add `/health` endpoint for monitoring
-   - Database connection status
-   - WhatsApp connection status
+# Misc
+COMMAND_PREFIX=/
+DEFAULT_RESPONSE_STYLE=concise   # concise|to-the-point|detailed
+SOURCE_CACHE_TTL_MS=900000       # 15 minutes
+ALLOWLIST_CACHE_TTL_MS=300000    # 5 minutes
+```
+
+## Known Issues (High-Impact)
+
+These are issues an AI assistant should be aware of to avoid introducing regressions:
+
+| Issue | Location | Impact | Notes |
+|-------|----------|--------|-------|
+| `AUTH_DIR` constant still exists in config | `config.ts` | Used only by the file→DB migration path in `authState.ts`. Not used at runtime. | Do not remove — migration still references it. |
+| In-memory caches without size bounds | `allowlist.ts` (Set), `sourceCache` (NodeCache), `jid.ts` (Maps) | Unbounded memory growth in long-running process | Source cache and session memory have TTL; allowlist and JID caches do not. |
+| `@hapi/boom` is a dependency but unused | `package.json` | Dead dependency | Can be safely removed. |
+
+## Future Improvements (Planned, Not Implemented)
+
+1. **WhatsApp Message Ingestion** — ingest messages from official groups, `sourceType: "whatsapp"`, new `search_whatsapp_messages` tool
+2. **Instructor/POC Lookup** — new document type + `lookup_instructor` tool
+3. **Open Access Mode** — `OPEN_ACCESS=true` env flag to bypass allowlist in production
+4. **Event Calendar** — query upcoming events tool
 
 ## Development
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - PostgreSQL 16 with pgvector extension
-- `pdftotext` CLI (poppler-utils)
+- `pdftotext` CLI (`poppler-utils`)
 
 ### Setup
 
 ```bash
-# Install dependencies
 npm install
 
-# Set up database
-docker run -d --name iny-db \
-  -e POSTGRES_USER=iny \
-  -e POSTGRES_PASSWORD=iny \
-  -e POSTGRES_DB=inydb \
-  -p 5432:5432 \
-  pgvector/pgvector:pg16
+# Start database
+docker compose up db -d
 
-# Generate migrations
-npm run db:generate
-
-# Run migrations
+# Push schema
 npm run db:push
 
 # Ingest documents
 npm run ingest
 
-# Start development server
+# Start WhatsApp bot (scan QR in terminal)
 npm run dev
+
+# Start web UI (separate terminal)
+npm run web
+
+# Interactive CLI chat
+npm run chat
 ```
 
-### Scripts
+### npm Scripts
 
 | Script | Description |
 |--------|-------------|
-| `npm run dev` | Start development server with hot reload |
-| `npm run build` | Compile TypeScript to JavaScript |
-| `npm run start` | Run compiled JavaScript |
+| `npm run dev` | Start WhatsApp bot with hot reload + pino-pretty |
+| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run start` | Run compiled JS (production) |
+| `npm run web` | Start web UI server with hot reload |
+| `npm run chat` | Interactive CLI chat for testing |
 | `npm run db:generate` | Generate Drizzle migrations |
 | `npm run db:push` | Push schema to database |
 | `npm run db:studio` | Open Drizzle Studio |
-| `npm run ingest` | Ingest PDFs from `docs/` directory |
-
-## Testing Strategy
-
-### Unit Tests (Planned)
-
-- Command parsing
-- Chunking logic
-- Vector search
-- Rate limiting
-
-### Integration Tests (Planned)
-
-- Agent loop
-- Tool execution
-- Message handling flow
-
-### Manual Testing
-
-1. Start bot with `npm run dev`
-2. Scan QR code with WhatsApp
-3. Add your JID to allowlist via `/allow`
-4. Send test messages
-5. Verify responses and check logs
-
-## Monitoring & Observability
-
-### Current State
-
-- Pino structured logging
-- Tool execution logging with timestamps
-- Agent iteration logging
-
-### Future Additions
-
-- Request ID tracing
-- Performance metrics
-- Error tracking (Sentry)
-- Usage analytics
+| `npm run ingest` | Ingest PDFs from `docs/` |
 
 ---
 
-*Last updated: 2026-08-30*
+*Last updated: 2026-09-03*
