@@ -16,6 +16,12 @@ const MENTION_RATE_LIMITER = createRateLimiter(10, 60_000);
 const REPLY_RATE_LIMITER = createRateLimiter(10, 60_000);
 const DM_RATE_LIMITER = createRateLimiter(20, 60_000);
 const COMMAND_RATE_LIMITER = createRateLimiter(15, 60_000);
+const WARNING_RATE_LIMITER = createRateLimiter(1, 45_000);
+
+const RATE_LIMIT_WARNING_MESSAGE =
+  "⏳ *Slow down a bit!* You're sending messages too fast. Please wait a moment before sending another query.";
+const COMMAND_RATE_LIMIT_WARNING_MESSAGE =
+  "⏳ *Slow down a bit!* You're sending commands too fast. Please wait a moment.";
 
 const GENERIC_ERROR_MESSAGE = "I'm having trouble processing your request. Please try again.";
 
@@ -60,13 +66,6 @@ export async function handleNaturalMessage(
     return;
   }
 
-  const rateLimitKey = jidInfo.canonicalJid;
-  const rateLimiter = isDM ? DM_RATE_LIMITER : (isMention ? MENTION_RATE_LIMITER : REPLY_RATE_LIMITER);
-  if (!rateLimiter.check(rateLimitKey)) {
-    logger.warn(`Rate limited user: ${rateLimitKey}`);
-    return;
-  }
-
   // Mark incoming message as read (blue ticks) immediately
   if (msg.key?.id && msg.key?.remoteJid) {
     void markAsRead(socket, msg.key, logger);
@@ -87,6 +86,20 @@ export async function handleNaturalMessage(
       jidInfo.allJids,
     );
   };
+
+  // Derive rate limit key: per participant in groups, or canonicalJid in DMs
+  const rateLimitKey = isGroup && jidInfo.participantJid
+    ? `${jidInfo.canonicalJid}:${jidInfo.participantJid}`
+    : jidInfo.canonicalJid;
+
+  const rateLimiter = isDM ? DM_RATE_LIMITER : (isMention ? MENTION_RATE_LIMITER : REPLY_RATE_LIMITER);
+  if (!rateLimiter.check(rateLimitKey)) {
+    logger.warn(`Rate limited user: ${rateLimitKey}`);
+    if (WARNING_RATE_LIMITER.check(rateLimitKey)) {
+      await reply({ text: RATE_LIMIT_WARNING_MESSAGE });
+    }
+    return;
+  }
 
   const ctx = {
     socket,
@@ -112,6 +125,9 @@ export async function handleNaturalMessage(
     if (command) {
       if (!COMMAND_RATE_LIMITER.check(rateLimitKey)) {
         logger.warn(`Command rate limited user: ${rateLimitKey}`);
+        if (WARNING_RATE_LIMITER.check(rateLimitKey)) {
+          await reply({ text: COMMAND_RATE_LIMIT_WARNING_MESSAGE });
+        }
         return;
       }
       if (command.adminOnly) {
