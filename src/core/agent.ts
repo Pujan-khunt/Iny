@@ -19,9 +19,7 @@ import {
 } from "../config.js";
 import { getLogger } from "../logger.js";
 import { getSystemPrompt } from "../rag/systemPrompt.js";
-import { TOOL_SCHEMAS } from "../rag/tools.js";
-import type { ToolCall, ToolResult } from "../rag/tools.js";
-import { createToolExecutors, type ToolExecutionResult } from "../rag/toolExecutors.js";
+import type { ToolRegistry, ToolExecutionResult } from "../rag/tool.js";
 import type { ConversationTurn, RetrievedChunk } from "./types.js";
 
 const logger = getLogger("core-agent");
@@ -41,8 +39,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function executeToolCallWithRetry(
-  toolCall: ToolCall,
-  executors: Record<string, (args: Record<string, unknown>) => Promise<ToolExecutionResult>>,
+  toolCall: { id: string; type: "function"; function: { name: string; arguments: string } },
+  registry: ToolRegistry,
   maxRetries: number,
   baseDelay: number,
 ): Promise<ToolExecutionResult> {
@@ -51,13 +49,13 @@ async function executeToolCallWithRetry(
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const executor = executors[toolName];
-      if (!executor) {
+      const tool = registry.get(toolName);
+      if (!tool) {
         throw new Error(`Unknown tool: ${toolName}`);
       }
 
-      const args = JSON.parse(toolCall.function.arguments);
-      const result = await executor(args);
+      const args = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
+      const result = await tool.execute(args);
 
       logger.info({ tool: toolName, attempt: attempt + 1 }, "Tool execution succeeded");
       return result;
@@ -104,6 +102,7 @@ export interface AgentExecutionResult {
 export async function executeAgent(
   userMessage: string,
   history: ConversationTurn[] = [],
+  registry: ToolRegistry,
   style?: string,
   customStylePrompt?: string,
 ): Promise<AgentExecutionResult> {
@@ -111,7 +110,6 @@ export async function executeAgent(
     throw new Error("AI_API_KEY is not configured");
   }
 
-  const executors = createToolExecutors();
   const collectedSources: RetrievedChunk[] = [];
   const systemPrompt = getSystemPrompt(style, customStylePrompt);
 
@@ -149,7 +147,7 @@ export async function executeAgent(
       const response = await client.chat.completions.create({
         model: AI_MODEL,
         messages,
-        tools: TOOL_SCHEMAS,
+        tools: registry.schemas(),
         tool_choice: "auto",
         max_tokens: 1024,
       });
@@ -208,7 +206,7 @@ export async function executeAgent(
             type: "function",
             function: toolCall.function,
           },
-          executors,
+          registry,
           AGENT_CONFIG.retryAttempts,
           AGENT_CONFIG.retryBaseDelay,
         );
@@ -249,9 +247,8 @@ export async function executeAgent(
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
-          name: toolCall.function.name,
           content: executionResult.content,
-        } as ToolResult);
+        });
       }
 
       iterationTrace.push({

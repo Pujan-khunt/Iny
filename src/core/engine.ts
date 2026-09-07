@@ -10,6 +10,9 @@ import { appendTurn, clearSessionMemory, getSessionHistory } from "./memory.js";
 import { buildCitations, cacheSources, clearSources, getSources } from "./sources.js";
 import { DEFAULT_RESPONSE_STYLE } from "../config.js";
 import type { ChatRequest, ChatResponse, RetrievedChunk } from "./types.js";
+import { createToolRegistry } from "../rag/tools/index.js";
+
+const registry = createToolRegistry();
 
 /**
  * Primary entry point for querying the Iny RAG Engine.
@@ -33,6 +36,7 @@ export async function askIny(request: ChatRequest): Promise<ChatResponse> {
   const result = await executeAgent(
     userMessage,
     history,
+    registry,
     selectedStyle,
     request.customStylePrompt,
   );
