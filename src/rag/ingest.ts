@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { parsePdf } from "./parser.js";
+import { parseFile } from "./parser.js";
 import { chunkText } from "./chunker.js";
 import { OpenAIEmbeddingClient } from "../embeddings/client.js";
 import { db } from "../db/index.js";
@@ -41,8 +41,8 @@ export async function ingestFile(
     return { docId: existingByHash[0]!.id, chunksCreated: 0, tokens: 0, costUsd: 0 };
   }
 
-  // 2. Parse PDF and extract formatted title + true page splits
-  const { title, pages } = await parsePdf(buffer, filePath);
+  // 2. Parse File and extract formatted title + true page splits
+  const { title, pages } = await parseFile(filePath, buffer);
 
   const chunksData = chunkText(pages, {
     maxTokens: opts.maxTokens,

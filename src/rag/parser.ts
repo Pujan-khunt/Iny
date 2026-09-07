@@ -156,3 +156,43 @@ function normalizeText(text: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+export async function parseMarkdown(
+  data: Buffer | Uint8Array,
+  filePathOrName?: string,
+): Promise<ParsedDocument> {
+  const text = data instanceof Buffer ? data.toString("utf8") : Buffer.from(data).toString("utf8");
+
+  // Attempt to find a title from an H1 tag
+  let title = "Markdown Document";
+  const h1Match = text.match(/^#\s+(.+)$/m);
+  if (h1Match && h1Match[1]) {
+    title = h1Match[1].trim();
+  } else if (filePathOrName) {
+    title = formatTitleFromFilename(filePathOrName);
+  } else {
+    const extracted = extractTitle(text);
+    if (extracted) title = extracted;
+  }
+
+  // Markdown doesn't have pages, so we put it all in page 1
+  const normalizedText = normalizeText(text);
+  const pages: ParsedPage[] = [
+    {
+      pageNumber: 1,
+      text: normalizedText,
+    }
+  ];
+
+  return { title, pages, fullText: normalizedText };
+}
+
+export async function parseFile(
+  filePath: string,
+  buffer: Buffer,
+): Promise<ParsedDocument> {
+  if (filePath.toLowerCase().endsWith(".md")) {
+    return parseMarkdown(buffer, filePath);
+  }
+  return parsePdf(buffer, filePath);
+}

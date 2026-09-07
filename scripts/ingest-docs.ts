@@ -13,14 +13,14 @@ async function main(): Promise<void> {
 
   console.log(`Starting ingest with maxTokens=${maxTokens}, overlap=50`);
 
-  const files = await glob("docs/*.pdf");
+  const files = await glob("docs/*.{pdf,md}");
 
   if (files.length === 0) {
-    console.log("No PDF files found in docs/");
+    console.log("No PDF or Markdown files found in docs/");
     return;
   }
 
-  console.log(`Found ${files.length} PDF(s) in docs/`);
+  console.log(`Found ${files.length} file(s) in docs/`);
 
   let totalChunks = 0;
   let totalTokens = 0;
