@@ -110,7 +110,6 @@ Iny is a WhatsApp-based RAG (Retrieval-Augmented Generation) chatbot that answer
 | Script | Purpose |
 |--------|---------|
 | `scripts/ingest-docs.ts` | Ingest PDFs from `docs/` into PostgreSQL |
-| `scripts/chat.ts` | Interactive CLI chat for testing the RAG engine |
 | `scripts/test-agent-query.ts` | Automated test query against `askIny()` |
 | `scripts/test-embed.ts` | Test embedding generation + cosine similarity |
 | `scripts/test-hybrid-retrieval.ts` | Test hybrid retrieval against PostgreSQL |
@@ -449,9 +448,6 @@ npm run dev
 
 # Start web UI (separate terminal)
 npm run web
-
-# Interactive CLI chat
-npm run chat
 ```
 
 ### npm Scripts
@@ -462,7 +458,6 @@ npm run chat
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run start` | Run compiled JS (production) |
 | `npm run web` | Start web UI server with hot reload |
-| `npm run chat` | Interactive CLI chat for testing |
 | `npm run db:generate` | Generate Drizzle migrations |
 | `npm run db:push` | Push schema to database |
 | `npm run db:studio` | Open Drizzle Studio |

@@ -15,9 +15,6 @@ RUN cp -r src/web/public dist/src/web/public
 
 FROM node:22-alpine AS runner
 
-# pdftotext is needed for the ingest pipeline (poppler-utils)
-RUN apk add --no-cache poppler-utils
-
 WORKDIR /app
 
 COPY package.json package-lock.json ./

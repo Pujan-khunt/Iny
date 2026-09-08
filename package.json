@@ -8,14 +8,12 @@
     "build": "tsc",
     "start": "node --env-file=.env dist/src/index.js",
     "dev": "tsx --env-file=.env src/index.ts | pino-pretty",
-    "chat": "LOG_FILE=logs/chat.log tsx --env-file=.env scripts/chat.ts",
     "web": "tsx --env-file=.env src/web/server.ts | pino-pretty",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "ingest": "tsx --env-file=.env scripts/ingest-docs.ts",
-    "ingest:prod": "node dist/scripts/ingest-docs.js",
-    "logs:cli": "tail -f logs/chat.log | pino-pretty"
+    "ingest:prod": "node dist/scripts/ingest-docs.js"
   },
   "keywords": [],
   "author": "Pujan Khunt",

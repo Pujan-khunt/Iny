@@ -13,10 +13,10 @@ async function main(): Promise<void> {
 
   console.log(`Starting ingest with maxTokens=${maxTokens}, overlap=50`);
 
-  const files = await glob("docs/*.{pdf,md}");
+  const files = await glob("docs/*.md");
 
   if (files.length === 0) {
-    console.log("No PDF or Markdown files found in docs/");
+    console.log("No Markdown files found in docs/");
     return;
   }
 
