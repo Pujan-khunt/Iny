@@ -1,10 +1,3 @@
-/**
- * Core Source & Citation Service
- *
- * Tracks retrieved source chunks per session and provides
- * structured citation builders for any presentation channel.
- */
-
 import NodeCache from "@cacheable/node-cache";
 import { SOURCE_CACHE_TTL_MS } from "../config.js";
 import { getLogger } from "../logger.js";
@@ -18,48 +11,14 @@ export interface CachedSources {
   timestamp: number;
 }
 
-const sourceCache = new NodeCache({
-  stdTTL: Math.max(1, Math.round(SOURCE_CACHE_TTL_MS / 1000)),
-  checkperiod: 120,
-  useClones: false,
-});
-
-/**
- * Stores retrieved source chunks for a session.
- */
-export function cacheSources(sessionId: string, chunks: RetrievedChunk[]): void {
-  const now = Date.now();
-  sourceCache.set(sessionId, {
-    sessionId,
-    chunks,
-    timestamp: now,
-  });
-
-  logger.debug(
-    { sessionId, chunkCount: chunks.length },
-    "Sources cached for session",
-  );
+export interface SourceCacheStore {
+  cacheSources(sessionId: string, chunks: RetrievedChunk[]): void;
+  getSources(sessionId: string): RetrievedChunk[];
+  clearSources(sessionId: string): void;
+  buildCitations(chunks: RetrievedChunk[]): SourceCitation[];
 }
 
-/**
- * Retrieves the latest cached source chunks for a session.
- */
-export function getSources(sessionId: string): RetrievedChunk[] {
-  const cached = sourceCache.get(sessionId) as CachedSources | undefined;
-  return cached?.chunks ?? [];
-}
-
-/**
- * Clears cached sources for a session.
- */
-export function clearSources(sessionId: string): void {
-  sourceCache.del(sessionId);
-}
-
-/**
- * Builds structured citation objects from retrieved chunks.
- */
-export function buildCitations(chunks: RetrievedChunk[]): SourceCitation[] {
+export function buildCitationsPure(chunks: RetrievedChunk[]): SourceCitation[] {
   if (!chunks || chunks.length === 0) {
     return [];
   }
@@ -113,3 +72,45 @@ export function buildCitations(chunks: RetrievedChunk[]): SourceCitation[] {
 
   return citations;
 }
+
+export function createSourceCacheStore(opts?: { ttlMs?: number }): SourceCacheStore {
+  const ttlMs = opts?.ttlMs ?? SOURCE_CACHE_TTL_MS;
+
+  const sourceCache = new NodeCache({
+    stdTTL: Math.max(1, Math.round(ttlMs / 1000)),
+    checkperiod: 120,
+    useClones: false,
+  });
+
+  return {
+    cacheSources(sessionId: string, chunks: RetrievedChunk[]): void {
+      const now = Date.now();
+      sourceCache.set(sessionId, {
+        sessionId,
+        chunks,
+        timestamp: now,
+      });
+
+      logger.debug(
+        { sessionId, chunkCount: chunks.length },
+        "Sources cached for session",
+      );
+    },
+    getSources(sessionId: string): RetrievedChunk[] {
+      const cached = sourceCache.get(sessionId) as CachedSources | undefined;
+      return cached?.chunks ?? [];
+    },
+    clearSources(sessionId: string): void {
+      sourceCache.del(sessionId);
+    },
+    buildCitations(chunks: RetrievedChunk[]): SourceCitation[] {
+      return buildCitationsPure(chunks);
+    }
+  };
+}
+
+const defaultStore = createSourceCacheStore();
+export const cacheSources = defaultStore.cacheSources;
+export const getSources = defaultStore.getSources;
+export const clearSources = defaultStore.clearSources;
+export const buildCitations = buildCitationsPure;

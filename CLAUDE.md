@@ -12,6 +12,36 @@ Iny is a WhatsApp-based RAG (Retrieval-Augmented Generation) chatbot that answer
 - **Database**: PostgreSQL 16 + pgvector (chosen over dedicated vector DBs for cost — Postgres is already there)
 - **Retrieval**: Hybrid — cosine similarity (HNSW) + full-text search (GIN/tsvector), fused via Reciprocal Rank Fusion (RRF)
 
+
+## Testing Convention
+
+The project uses `vitest` for unit and integration testing.
+
+**Key principles:**
+1. **Co-located Tests:** Test files are placed immediately next to the modules they test (e.g., `src/core/agent.ts` is tested by `src/core/agent.test.ts`). There is no separate `tests/` directory.
+2. **Dependency Injection:** Modules with heavy external dependencies (OpenAI, PostgreSQL, Baileys socket) use a factory pattern (e.g., `createAgent(deps)`) allowing mocks to be passed in testing. The default configured instances are exported for backward compatibility.
+3. **Running Tests:**
+   - `npm test` — Runs Vitest
+   - `npm run test:watch` — Runs Vitest in watch mode
+   - `npm run test:coverage` — Runs Vitest with V8 coverage
+
+Test files are excluded from the TypeScript build output via `tsconfig.json`.
+
+
+## Testing Convention
+
+The project uses `vitest` for unit and integration testing.
+
+**Key principles:**
+1. **Co-located Tests:** Test files are placed immediately next to the modules they test (e.g., `src/core/agent.ts` is tested by `src/core/agent.test.ts`). There is no separate `tests/` directory.
+2. **Dependency Injection:** Modules with heavy external dependencies (OpenAI, PostgreSQL, Baileys socket) use a factory pattern (e.g., `createAgent(deps)`) allowing mocks to be passed in testing. The default configured instances are exported for backward compatibility.
+3. **Running Tests:**
+   - `npm test` — Runs Vitest
+   - `npm run test:watch` — Runs Vitest in watch mode
+   - `npm run test:coverage` — Runs Vitest with V8 coverage
+
+Test files are excluded from the TypeScript build output via `tsconfig.json`.
+
 ## Architecture
 
 ### High-Level Flow
@@ -110,11 +140,7 @@ Iny is a WhatsApp-based RAG (Retrieval-Augmented Generation) chatbot that answer
 | Script | Purpose |
 |--------|---------|
 | `scripts/ingest-docs.ts` | Ingest PDFs from `docs/` into PostgreSQL |
-| `scripts/test-agent-query.ts` | Automated test query against `askIny()` |
-| `scripts/test-embed.ts` | Test embedding generation + cosine similarity |
-| `scripts/test-hybrid-retrieval.ts` | Test hybrid retrieval against PostgreSQL |
-| `scripts/test-jid-resolution.ts` | Test JID normalization, LID/PN mapping, allowlist, admin checks |
-
+| `| `| `| `
 ## Data Model
 
 ### Database Schema (PostgreSQL 16 + pgvector)

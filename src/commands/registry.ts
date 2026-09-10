@@ -10,7 +10,7 @@ export function createCommandRegistry(): CommandRegistry {
   const commands = new Map<string, Command>();
 
   function register(command: Command) {
-    commands.set(command.name, command);
+    commands.set(command.name.toLowerCase(), command);
 
     for (const alias of command.aliases ?? []) {
       commands.set(alias, command);

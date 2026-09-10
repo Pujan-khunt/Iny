@@ -6,3 +6,6 @@ dist/
 docs/
 logs/
 *.log
+
+# Testing
+coverage/

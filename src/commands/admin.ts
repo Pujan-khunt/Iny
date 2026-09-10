@@ -7,7 +7,7 @@ import type { Command, CommandContext } from "./types.js";
  * Validate JID format
  * Valid formats: <digits>@s.whatsapp.net, <digits>@g.us, <digits>@lid
  */
-function isValidJidFormat(jid: string): boolean {
+export function isValidJidFormat(jid: string): boolean {
   const jidRegex = /^\d+@(s\.whatsapp\.net|g\.us|lid)$/;
   return jidRegex.test(jid);
 }
@@ -16,7 +16,7 @@ function isValidJidFormat(jid: string): boolean {
  * Parse phone number and convert to JID format
  * Accepts 10-digit (with country code) or 7+ digits
  */
-function parsePhoneNumber(input: string): string | null {
+export function parsePhoneNumber(input: string): string | null {
   const digits = input.replace(/[^0-9]/g, "");
 
   // 10-digit phone number - use country code
@@ -39,7 +39,7 @@ function parsePhoneNumber(input: string): string | null {
  * Parse input as either a JID or phone number
  * Returns: { success: boolean, jid?: string, error?: string }
  */
-function parseInputToJid(
+export function parseInputToJid(
   input: string
 ): { success: boolean; jid?: string; error?: string } {
   const trimmed = input.trim();
