@@ -140,6 +140,22 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/knowledge-base") {
+      // It's best practice to use environment variables for these URLs so you don't 
+      // have to recompile/redeploy your app when the Notion or Tally links change.
+      const targetUrl = process.env.KNOWLEDGE_BASE_URL || "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+      response.writeHead(301, { Location: targetUrl });
+      response.end();
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/contribution-form") {
+      const targetUrl = process.env.CONTRIBUTION_FORM_URL || "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+      response.writeHead(301, { Location: targetUrl });
+      response.end();
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/chat") {
       await handleChat(request, response);
       return;
