@@ -1,0 +1,19 @@
+name = "iny-ingest-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+# R2 bucket binding for accessing uploaded markdown documentation
+[[r2_buckets]]
+binding = "DOCS_BUCKET"
+bucket_name = "iny-docs"
+
+# Queue consumer configuration
+# Receives R2 event notifications when new documents are uploaded
+[[queues.consumers]]
+queue = "iny-ingest-queue"
+max_batch_size = 1
+max_retries = 3
+
+[observability.logs]
+enabled = true
+invocation_logs = true

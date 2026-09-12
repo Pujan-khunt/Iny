@@ -9,3 +9,6 @@ logs/
 
 # Testing
 coverage/
+
+# Cloudflare Wrangler
+.wrangler/

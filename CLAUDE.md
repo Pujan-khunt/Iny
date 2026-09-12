@@ -113,9 +113,10 @@ Test files are excluded from the TypeScript build output via `tsconfig.json`.
 | Retrieval | `src/rag/retrieve.ts` | Hybrid search: pgvector cosine + tsvector FTS, fused via RRF |
 | System Prompt | `src/rag/systemPrompt.ts` | 4-block state machine prompt + selectable response styles |
 | Source Formatting | `src/rag/formatSources.ts` | Detect "show sources" requests, format citations for WhatsApp |
-| Ingestion | `src/rag/ingest.ts` | PDF parsing → chunking → embedding → DB insertion |
+| Ingestion | `src/rag/ingest.ts` | Markdown parsing → chunking → embedding → DB insertion |
+| Ingestion API Handler | `src/web/ingestHandler.ts` | `POST /api/ingest` endpoint handler with Bearer token authentication |
 | Chunker | `src/rag/chunker.ts` | Heading-aware token-bounded text chunking with page tracking |
-| PDF Parser | `src/rag/parser.ts` | `pdftotext` CLI wrapper for text extraction |
+| Markdown Parser | `src/rag/parser.ts` | Markdown parser and title extractor |
 | Embeddings | `src/embeddings/client.ts` | OpenAI embedding client with batch support |
 | Auth State | `src/repositories/authState.ts` | PostgreSQL-backed Baileys auth + auto-migration from file-based sessions |
 | Allowlist | `src/repositories/allowlist.ts` | In-memory Set + PostgreSQL sync, bidirectional LID/PN mapping |
@@ -131,7 +132,8 @@ Test files are excluded from the TypeScript build output via `tsconfig.json`.
 | Admin Commands | `src/commands/admin.ts` | `/allow`, `/disallow`, `/allowlist` |
 | Help Command | `src/commands/help.ts` | `/help` (admin-aware output) |
 | Command Index | `src/commands/index.ts` | `createCommands()` — registers all commands |
-| Web Server | `src/web/server.ts` | HTTP API (`/api/chat`, `/api/reset`) + static UI (internal testing) |
+| Web Server | `src/web/server.ts` | HTTP API (`/api/chat`, `/api/reset`, `/api/ingest`) + static UI |
+| Cloudflare Worker | `worker/` | Event-driven ingestion worker (R2 → Queue → Worker → `/api/ingest`) |
 | Config | `src/config.ts` | All env vars and operational defaults |
 | Logger | `src/logger.ts` | Pino structured logging with runtime level control |
 
@@ -139,8 +141,7 @@ Test files are excluded from the TypeScript build output via `tsconfig.json`.
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/ingest-docs.ts` | Ingest PDFs from `docs/` into PostgreSQL |
-| `| `| `| `
+| `scripts/ingest-docs.ts` | Local dev ingestion: ingest markdown files from `docs/` into PostgreSQL |
 ## Data Model
 
 ### Database Schema (PostgreSQL 16 + pgvector)
@@ -320,6 +321,9 @@ Standalone HTTP server at `src/web/server.ts` — used for internal testing, not
 | `/` | GET | Serves `src/web/public/index.html` (single-page chat UI) |
 | `/api/chat` | POST | `{ sessionId, message, style? }` → `{ message, citations, iterations, style }` |
 | `/api/reset` | POST | `{ sessionId }` → `{ ok: true }` |
+| `/api/ingest` | POST | `{ fileName, content }` + Bearer auth → `{ docId, chunksCreated, tokens, costUsd }` |
+| `/knowledge-base` | GET | Redirects to Notion knowledge base review database |
+| `/contribution-form` | GET | Redirects to Tally contribution form |
 
 Port: `WEB_PORT` env var (default `8264` in Docker, `3000` locally).
 
@@ -359,24 +363,48 @@ WhatsApp message received (messages.upsert)
 
 ## Ingestion Pipeline
 
+### Production Event-Driven Flow (O(1))
+
 ```
-npm run ingest  (or: docker exec iny-app node dist/scripts/ingest-docs.js)
+User submits doc link (Tally.so form)
   │
   ▼
-glob("docs/*.pdf")
+Notion Database (review & approve/reject queue)
   │
-  For each PDF:
-    ├─► SHA256 hash → check documents.content_hash → skip if exists
-    ├─► parsePdf() → pdftotext CLI → { title, pages[], fullText }
-    ├─► chunkText(pages) → Chunk[] with headings, page ranges, token counts
-    ├─► OpenAIEmbeddingClient.embedBatch(chunks)
-    └─► DB Transaction:
-          INSERT documents { id, title, sourcePath, contentHash, sourceType }
-          INSERT chunks { id, documentId, content, chunkIndex, tokenCount,
-                          embedding, sourceType, pageStart, pageEnd }
+  ▼ Admin approves & uploads .md file
+Cloudflare R2 Object Storage
+  │
+  ▼ PutObject / Object Create notification
+Cloudflare Queue (`iny-ingest-queue`)
+  │
+  ▼
+Cloudflare Worker (`worker/src/index.ts`)
+  │
+  ▼ POST /api/ingest (Authorization: Bearer <INGEST_API_KEY>)
+Iny Web Server (`src/web/server.ts` → `src/web/ingestHandler.ts`)
+  │
+  ├─► SHA256 contentHash check → returns 200 skipped if already ingested
+  ├─► parseMarkdown() → title extraction (H1 / filename) & normalization
+  ├─► chunkText() → heading-aware token-bounded chunks (max 500 tokens, 50 overlap)
+  ├─► OpenAIEmbeddingClient.embedBatch() → text-embedding-3-small vectors
+  └─► DB Transaction (PostgreSQL + pgvector):
+        DELETE existing document record if same sourcePath
+        INSERT documents { id, title, sourcePath, contentHash, sourceType }
+        INSERT chunks { id, documentId, content, chunkIndex, tokenCount,
+                        embedding, sourceType, pageStart, pageEnd }
 ```
 
-**Chunking strategy:** max 500 tokens, 50-token overlap, heading-aware (preserves breadcrumbs), page-tracked.
+**Key properties:**
+- **O(1) deployment complexity**: Ingestion runs per-document upon approval, independent of total knowledge base size.
+- **Resilient**: Cloudflare Queues provides automatic retries (max 3) for transient 5xx errors and dead-letter safety for 4xx errors.
+- **Chunking strategy**: max 500 tokens, 50-token overlap, heading-aware breadcrumbs, single-page normalization for markdown.
+
+### Local Development Flow
+
+```bash
+npm run ingest
+```
+Reads markdown files from `docs/*.md` using Node's built-in `fs.readdir` and processes them directly via `ingestFile()`.
 
 ## Configuration
 
@@ -401,6 +429,10 @@ TOP_K=5
 MAX_CONTEXT_TOKENS=2000
 MAX_CHUNK_CONTENT_CHARS=1500   # truncate chunks in tool results
 
+# Ingestion API (shared secret between CF Worker and server)
+INGEST_API_KEY=          # required for /api/ingest auth
+INGEST_MAX_BODY_BYTES=2097152 # 2MB default
+
 # Agent
 AGENT_MAX_ITERATIONS=5
 AGENT_RETRY_ATTEMPTS=3
@@ -420,8 +452,10 @@ COUNTRY_CODE=91
 LOG_LEVEL=info       # fatal|error|warn|info|debug|trace
 LOG_FILE=            # optional file path; stdout if unset
 
-# Web UI
+# Web UI & Redirection URLs
 WEB_PORT=8264
+KNOWLEDGE_BASE_URL=  # Notion DB URL
+CONTRIBUTION_FORM_URL= # Tally form URL
 
 # Misc
 COMMAND_PREFIX=/
@@ -453,7 +487,6 @@ These are issues an AI assistant should be aware of to avoid introducing regress
 
 - Node.js 22+
 - PostgreSQL 16 with pgvector extension
-- `pdftotext` CLI (`poppler-utils`)
 
 ### Setup
 
@@ -466,7 +499,7 @@ docker compose up db -d
 # Push schema
 npm run db:push
 
-# Ingest documents
+# Ingest documents (local dev)
 npm run ingest
 
 # Start WhatsApp bot (scan QR in terminal)
@@ -487,7 +520,7 @@ npm run web
 | `npm run db:generate` | Generate Drizzle migrations |
 | `npm run db:push` | Push schema to database |
 | `npm run db:studio` | Open Drizzle Studio |
-| `npm run ingest` | Ingest PDFs from `docs/` |
+| `npm run ingest` | Ingest Markdown documents from `docs/` (local dev) |
 
 ---
 

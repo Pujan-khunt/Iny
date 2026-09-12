@@ -73,5 +73,15 @@ export const MAX_CHUNK_CONTENT_CHARS = Number(process.env.MAX_CHUNK_CONTENT_CHAR
 export const PROCESSING_REACTION_EMOJI = process.env.PROCESSING_REACTION_EMOJI ?? "⏳";
 export const TYPING_HEARTBEAT_INTERVAL_MS = Number(process.env.TYPING_HEARTBEAT_INTERVAL_MS ?? 5000);
 
+/**
+ * Shared secret for authenticating ingestion requests from the Cloudflare Worker.
+ * Must match the INGEST_API_KEY secret configured in the Worker's environment.
+ */
+export const INGEST_API_KEY = process.env.INGEST_API_KEY;
 
+/**
+ * Maximum body size for the /api/ingest endpoint (default 2MB).
+ * Markdown policy documents are typically <500KB but we allow headroom.
+ */
+export const INGEST_MAX_BODY_BYTES = Number(process.env.INGEST_MAX_BODY_BYTES ?? 2 * 1024 * 1024);
 

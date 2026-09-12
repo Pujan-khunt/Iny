@@ -1,0 +1,15 @@
+{
+  "name": "iny-ingest-worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260911.1",
+    "typescript": "latest",
+    "wrangler": "latest"
+  }
+}

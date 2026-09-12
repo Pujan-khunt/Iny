@@ -1,6 +1,14 @@
-import { glob } from "glob";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ingestFile } from "../src/rag/ingest.js";
+
+/**
+ * Local development ingestion script.
+ * Reads all .md files from docs/ and ingests them using the same
+ * ingestFile() function that the /api/ingest endpoint uses.
+ *
+ * Usage: npm run ingest [-- --max-tokens <number>]
+ */
 
 function parseArgs(args: string[]): { maxTokens: number } {
   const maxTokensArg = args.indexOf("--max-tokens");
@@ -13,23 +21,36 @@ async function main(): Promise<void> {
 
   console.log(`Starting ingest with maxTokens=${maxTokens}, overlap=50`);
 
-  const files = await glob("docs/*.md");
-
-  if (files.length === 0) {
-    console.log("No Markdown files found in docs/");
+  const docsDir = "docs";
+  let entries: string[];
+  try {
+    entries = await readdir(docsDir);
+  } catch {
+    console.log(`No docs/ directory found. Create it and add .md files to ingest.`);
     return;
   }
 
-  console.log(`Found ${files.length} file(s) in docs/`);
+  const mdFiles = entries.filter((f) => f.endsWith(".md")).map((f) => join(docsDir, f));
+
+  if (mdFiles.length === 0) {
+    console.log("No .md files found in docs/");
+    return;
+  }
+
+  console.log(`Found ${mdFiles.length} file(s) in docs/`);
 
   let totalChunks = 0;
   let totalTokens = 0;
   let totalCost = 0;
 
-  for (const file of files) {
+  for (const file of mdFiles) {
     console.log(`\nProcessing: ${file}`);
     const buffer = await readFile(file);
-    const result = await ingestFile(file, buffer, { maxTokens, overlapTokens: 50, sourceType: "document" });
+    const result = await ingestFile(file, buffer, {
+      maxTokens,
+      overlapTokens: 50,
+      sourceType: "document",
+    });
 
     if (result.chunksCreated === 0) {
       console.log(`  ⏭  Unchanged (content hash match)`);
@@ -42,7 +63,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`\n=== Ingest Complete ===`);
-  console.log(`Total files processed: ${files.length}`);
+  console.log(`Total files processed: ${mdFiles.length}`);
   console.log(`Total chunks created: ${totalChunks}`);
   console.log(`Total tokens: ${totalTokens}`);
   console.log(`Estimated cost: $${totalCost.toFixed(6)}`);

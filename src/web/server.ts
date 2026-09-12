@@ -5,6 +5,7 @@ import { askIny, resetSession } from "../core/index.js";
 import type { ResponseStyle } from "../core/index.js";
 import { initDb, pool } from "../db/index.js";
 import { getLogger } from "../logger.js";
+import { handleIngest as handleIngestImpl } from "./ingestHandler.js";
 
 const logger = getLogger("web");
 const port = Number(process.env.WEB_PORT ?? 3000);
@@ -20,6 +21,7 @@ interface ChatBody {
 interface ResetBody {
   sessionId?: unknown;
 }
+
 
 class HttpError extends Error {
   constructor(
@@ -38,7 +40,7 @@ function sendJson(response: ServerResponse, statusCode: number, body: unknown): 
   response.end(JSON.stringify(body));
 }
 
-async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
+async function readJsonBody<T>(request: IncomingMessage, maxBytes: number = maxBodyBytes): Promise<T> {
   const chunks: Buffer[] = [];
   let size = 0;
 
@@ -46,7 +48,7 @@ async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
 
-    if (size > maxBodyBytes) {
+    if (size > maxBytes) {
       throw new HttpError(413, "Request body is too large.");
     }
 
@@ -126,6 +128,10 @@ async function handleReset(request: IncomingMessage, response: ServerResponse): 
   sendJson(response, 200, { ok: true });
 }
 
+async function handleIngest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  await handleIngestImpl(request, response, { readJsonBody, sendJson, requireString, logger });
+}
+
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
 
@@ -166,10 +172,21 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/api/ingest") {
+      await handleIngest(request, response);
+      return;
+    }
+
     sendJson(response, 404, { error: "Not found." });
   } catch (error) {
     if (error instanceof HttpError) {
       sendJson(response, error.statusCode, { error: error.message });
+      return;
+    }
+
+    // Catch HttpError thrown from extracted handler modules (separate class instances)
+    if (error instanceof Error && "statusCode" in error && typeof (error as HttpError).statusCode === "number") {
+      sendJson(response, (error as HttpError).statusCode, { error: error.message });
       return;
     }
 

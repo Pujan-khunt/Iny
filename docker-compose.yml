@@ -27,8 +27,6 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://iny:iny@db:5432/inydb
-    volumes:
-      - ./docs:/app/docs
 
   web:
     image: ${INY_IMAGE:-iny:latest}

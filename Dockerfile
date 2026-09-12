@@ -5,7 +5,6 @@ COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci
 
 COPY src/ src/
-COPY scripts/ scripts/
 RUN npm run build
 
 # Static assets aren't compiled by tsc — copy them so the web server
