@@ -74,14 +74,11 @@ export const PROCESSING_REACTION_EMOJI = process.env.PROCESSING_REACTION_EMOJI ?
 export const TYPING_HEARTBEAT_INTERVAL_MS = Number(process.env.TYPING_HEARTBEAT_INTERVAL_MS ?? 5000);
 
 /**
- * Shared secret for authenticating ingestion requests from the Cloudflare Worker.
- * Must match the INGEST_API_KEY secret configured in the Worker's environment.
+ * Cloudflare R2 configuration (S3-compatible).
+ * Used by the ingest-r2 script to pull markdown files for ingestion.
  */
-export const INGEST_API_KEY = process.env.INGEST_API_KEY;
-
-/**
- * Maximum body size for the /api/ingest endpoint (default 2MB).
- * Markdown policy documents are typically <500KB but we allow headroom.
- */
-export const INGEST_MAX_BODY_BYTES = Number(process.env.INGEST_MAX_BODY_BYTES ?? 2 * 1024 * 1024);
+export const R2_ENDPOINT = process.env.R2_ENDPOINT;
+export const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+export const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+export const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
 

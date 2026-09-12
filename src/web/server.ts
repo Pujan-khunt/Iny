@@ -5,7 +5,6 @@ import { askIny, resetSession } from "../core/index.js";
 import type { ResponseStyle } from "../core/index.js";
 import { initDb, pool } from "../db/index.js";
 import { getLogger } from "../logger.js";
-import { handleIngest as handleIngestImpl } from "./ingestHandler.js";
 
 const logger = getLogger("web");
 const port = Number(process.env.WEB_PORT ?? 3000);
@@ -128,9 +127,6 @@ async function handleReset(request: IncomingMessage, response: ServerResponse): 
   sendJson(response, 200, { ok: true });
 }
 
-async function handleIngest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  await handleIngestImpl(request, response, { readJsonBody, sendJson, requireString, logger });
-}
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
@@ -172,10 +168,6 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
 
-    if (request.method === "POST" && url.pathname === "/api/ingest") {
-      await handleIngest(request, response);
-      return;
-    }
 
     sendJson(response, 404, { error: "Not found." });
   } catch (error) {

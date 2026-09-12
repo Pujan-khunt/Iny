@@ -114,7 +114,6 @@ Test files are excluded from the TypeScript build output via `tsconfig.json`.
 | System Prompt | `src/rag/systemPrompt.ts` | 4-block state machine prompt + selectable response styles |
 | Source Formatting | `src/rag/formatSources.ts` | Detect "show sources" requests, format citations for WhatsApp |
 | Ingestion | `src/rag/ingest.ts` | Markdown parsing → chunking → embedding → DB insertion |
-| Ingestion API Handler | `src/web/ingestHandler.ts` | `POST /api/ingest` endpoint handler with Bearer token authentication |
 | Chunker | `src/rag/chunker.ts` | Heading-aware token-bounded text chunking with page tracking |
 | Markdown Parser | `src/rag/parser.ts` | Markdown parser and title extractor |
 | Embeddings | `src/embeddings/client.ts` | OpenAI embedding client with batch support |
@@ -132,8 +131,8 @@ Test files are excluded from the TypeScript build output via `tsconfig.json`.
 | Admin Commands | `src/commands/admin.ts` | `/allow`, `/disallow`, `/allowlist` |
 | Help Command | `src/commands/help.ts` | `/help` (admin-aware output) |
 | Command Index | `src/commands/index.ts` | `createCommands()` — registers all commands |
-| Web Server | `src/web/server.ts` | HTTP API (`/api/chat`, `/api/reset`, `/api/ingest`) + static UI |
-| Cloudflare Worker | `worker/` | Event-driven ingestion worker (R2 → Queue → Worker → `/api/ingest`) |
+| Web Server | `src/web/server.ts` | HTTP API (`/api/chat`, `/api/reset`) + static UI |
+| R2 Ingestion Script | `scripts/ingest-r2.ts` | CLI script: pull .md files from R2 → ingestFile() pipeline |
 | Config | `src/config.ts` | All env vars and operational defaults |
 | Logger | `src/logger.ts` | Pino structured logging with runtime level control |
 
@@ -142,6 +141,7 @@ Test files are excluded from the TypeScript build output via `tsconfig.json`.
 | Script | Purpose |
 |--------|---------|
 | `scripts/ingest-docs.ts` | Local dev ingestion: ingest markdown files from `docs/` into PostgreSQL |
+| `scripts/ingest-r2.ts` | Pull .md files from Cloudflare R2 and ingest into PostgreSQL |
 ## Data Model
 
 ### Database Schema (PostgreSQL 16 + pgvector)
@@ -321,7 +321,6 @@ Standalone HTTP server at `src/web/server.ts` — used for internal testing, not
 | `/` | GET | Serves `src/web/public/index.html` (single-page chat UI) |
 | `/api/chat` | POST | `{ sessionId, message, style? }` → `{ message, citations, iterations, style }` |
 | `/api/reset` | POST | `{ sessionId }` → `{ ok: true }` |
-| `/api/ingest` | POST | `{ fileName, content }` + Bearer auth → `{ docId, chunksCreated, tokens, costUsd }` |
 | `/knowledge-base` | GET | Redirects to Notion knowledge base review database |
 | `/contribution-form` | GET | Redirects to Tally contribution form |
 
@@ -363,41 +362,30 @@ WhatsApp message received (messages.upsert)
 
 ## Ingestion Pipeline
 
-### Production Event-Driven Flow (O(1))
+### R2 Ingestion (`scripts/ingest-r2.ts`)
 
 ```
-User submits doc link (Tally.so form)
+npm run ingest:r2 [-- --prefix docs/]
   │
   ▼
-Notion Database (review & approve/reject queue)
+scripts/ingest-r2.ts (S3Client → Cloudflare R2)
   │
-  ▼ Admin approves & uploads .md file
-Cloudflare R2 Object Storage
-  │
-  ▼ PutObject / Object Create notification
-Cloudflare Queue (`iny-ingest-queue`)
-  │
-  ▼
-Cloudflare Worker (`worker/src/index.ts`)
-  │
-  ▼ POST /api/ingest (Authorization: Bearer <INGEST_API_KEY>)
-Iny Web Server (`src/web/server.ts` → `src/web/ingestHandler.ts`)
-  │
-  ├─► SHA256 contentHash check → returns 200 skipped if already ingested
-  ├─► parseMarkdown() → title extraction (H1 / filename) & normalization
-  ├─► chunkText() → heading-aware token-bounded chunks (max 500 tokens, 50 overlap)
-  ├─► OpenAIEmbeddingClient.embedBatch() → text-embedding-3-small vectors
-  └─► DB Transaction (PostgreSQL + pgvector):
-        DELETE existing document record if same sourcePath
-        INSERT documents { id, title, sourcePath, contentHash, sourceType }
-        INSERT chunks { id, documentId, content, chunkIndex, tokenCount,
-                        embedding, sourceType, pageStart, pageEnd }
+  ├─► ListObjectsV2 → find all .md files (optionally under --prefix)
+  ├─► GetObject → download each file
+  └─► ingestFile(key, buffer, opts)
+        │
+        ├─► SHA256 contentHash check → skip if already ingested
+        ├─► parseFile() → title extraction + page splits
+        ├─► chunkText() → heading-aware token-bounded chunks (max 500 tokens, 50 overlap)
+        ├─► OpenAIEmbeddingClient.embedBatch() → text-embedding-3-small vectors
+        └─► DB Transaction (PostgreSQL + pgvector):
+              DELETE existing document record if same sourcePath
+              INSERT documents { id, title, sourcePath, contentHash, sourceType }
+              INSERT chunks { id, documentId, content, chunkIndex, tokenCount,
+                              embedding, sourceType, pageStart, pageEnd }
 ```
 
-**Key properties:**
-- **O(1) deployment complexity**: Ingestion runs per-document upon approval, independent of total knowledge base size.
-- **Resilient**: Cloudflare Queues provides automatic retries (max 3) for transient 5xx errors and dead-letter safety for 4xx errors.
-- **Chunking strategy**: max 500 tokens, 50-token overlap, heading-aware breadcrumbs, single-page normalization for markdown.
+R2 is accessed via the S3-compatible API using `@aws-sdk/client-s3`. Credentials are configured via `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` env vars.
 
 ### Local Development Flow
 
@@ -429,9 +417,11 @@ TOP_K=5
 MAX_CONTEXT_TOKENS=2000
 MAX_CHUNK_CONTENT_CHARS=1500   # truncate chunks in tool results
 
-# Ingestion API (shared secret between CF Worker and server)
-INGEST_API_KEY=          # required for /api/ingest auth
-INGEST_MAX_BODY_BYTES=2097152 # 2MB default
+# R2 Storage (S3-compatible, used by npm run ingest:r2)
+R2_ENDPOINT=             # https://<account-id>.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET_NAME=iny-docs
 
 # Agent
 AGENT_MAX_ITERATIONS=5
@@ -521,6 +511,7 @@ npm run web
 | `npm run db:push` | Push schema to database |
 | `npm run db:studio` | Open Drizzle Studio |
 | `npm run ingest` | Ingest Markdown documents from `docs/` (local dev) |
+| `npm run ingest:r2` | Pull .md files from Cloudflare R2 and ingest into PostgreSQL |
 
 ---
 
