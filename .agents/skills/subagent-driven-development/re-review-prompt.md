@@ -7,13 +7,13 @@ new breakage. It is not a fresh review — the full review already happened.
 **Purpose:** Verify each finding from the previous review was addressed, and
 that the fix itself broke nothing.
 
-```
-Subagent (general-purpose):
-  description: "Re-review Task N fix round R"
-  model: [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted
-         model silently inherits the session's most expensive one]
-  prompt: |
-    You are re-reviewing one task's fix round. A previous review produced
+```markdown
+**ACTION REQUIRED:** Dispatch a subagent using your environment's native tool (e.g., `invoke_subagent` in Antigravity, or `claude -p` / `Subagent:` text blocks for others) with the following parameters:
+
+- **Role:** Re-review Task N fix round R
+- **Model:** [MODEL — REQUIRED: choose per SKILL.md Model Selection; an omitted model silently inherits the session's most expensive one]
+- **Prompt:**
+  You are re-reviewing one task's fix round. A previous review produced
     findings; an implementer has attempted to fix them. Your job is to
     verdict each finding and inspect the fix diff — nothing else.
 

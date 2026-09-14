@@ -6,11 +6,13 @@ Use this template when dispatching a plan document reviewer subagent.
 
 **Dispatch after:** The complete plan is written.
 
-```
-Subagent (general-purpose):
-  description: "Review plan document"
-  prompt: |
-    You are a plan document reviewer. Verify this plan is complete and ready for implementation.
+```markdown
+**ACTION REQUIRED:** Dispatch a subagent using your environment's native tool (e.g., `invoke_subagent` in Antigravity, or `claude -p` / `Subagent:` text blocks for others) with the following parameters:
+
+- **Role:** Review plan document
+- **Model:** inherit
+- **Prompt:**
+  You are a plan document reviewer. Verify this plan is complete and ready for implementation.
 
     **Plan to review:** [PLAN_FILE_PATH]
     **Spec for reference:** [SPEC_FILE_PATH]

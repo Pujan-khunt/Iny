@@ -68,10 +68,11 @@ Each agent gets:
 Issue all three subagent dispatches in the same response — they run in parallel:
 
 ```text
-Subagent (general-purpose): "Fix agent-tool-abort.test.ts failures"
-Subagent (general-purpose): "Fix batch-completion-behavior.test.ts failures"
-Subagent (general-purpose): "Fix tool-approval-race-conditions.test.ts failures"
-# All three run concurrently.
+**ACTION REQUIRED:** Use your environment's native subagent tool (e.g., `invoke_subagent` in Antigravity, or `claude -p` / `Subagent:` text blocks for others) to dispatch three independent subagents concurrently:
+1. Agent with Prompt: "Fix agent-tool-abort.test.ts failures"
+2. Agent with Prompt: "Fix batch-completion-behavior.test.ts failures"
+3. Agent with Prompt: "Fix tool-approval-race-conditions.test.ts failures"
+# All three must run concurrently in a single tool call if your environment supports it.
 ```
 
 Multiple dispatch calls in one response = parallel execution. One per response = sequential.

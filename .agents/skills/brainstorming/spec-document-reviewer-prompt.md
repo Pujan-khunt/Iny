@@ -6,11 +6,13 @@ Use this template when dispatching a spec document reviewer subagent.
 
 **Dispatch after:** Spec document is written to docs/superpowers/specs/
 
-```
-Subagent (general-purpose):
-  description: "Review spec document"
-  prompt: |
-    You are a spec document reviewer. Verify this spec is complete and ready for planning.
+```markdown
+**ACTION REQUIRED:** Dispatch a subagent using your environment's native tool (e.g., `invoke_subagent` in Antigravity, or `claude -p` / `Subagent:` text blocks for others) with the following parameters:
+
+- **Role:** Review spec document
+- **Model:** inherit
+- **Prompt:**
+  You are a spec document reviewer. Verify this spec is complete and ready for planning.
 
     **Spec to review:** [SPEC_FILE_PATH]
 

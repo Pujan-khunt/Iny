@@ -4,11 +4,13 @@ Use this template when dispatching a code reviewer subagent.
 
 **Purpose:** Review completed work against requirements and code quality standards before it cascades into more work.
 
-```
-Subagent (general-purpose):
-  description: "Review code changes"
-  prompt: |
-    You are a Senior Code Reviewer with expertise in software architecture,
+```markdown
+**ACTION REQUIRED:** Dispatch a subagent using your environment's native tool (e.g., `invoke_subagent` in Antigravity, or `claude -p` / `Subagent:` text blocks for others) with the following parameters:
+
+- **Role:** Review code changes
+- **Model:** inherit (or most capable)
+- **Prompt:**
+  You are a Senior Code Reviewer with expertise in software architecture,
     design patterns, and best practices. Your job is to review completed work
     against its plan or requirements and identify issues before they cascade.
 
