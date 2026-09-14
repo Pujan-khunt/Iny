@@ -4,7 +4,9 @@ import OpenAI from 'openai';
 import { Plugin } from '../../../../src/core/ports/PluginRegistryPort';
 import { Message } from '../../../../src/core/entities/Message';
 
-const mockCreate = vi.fn();
+const { mockCreate } = vi.hoisted(() => ({
+  mockCreate: vi.fn(),
+}));
 
 vi.mock('openai', () => {
   return {
