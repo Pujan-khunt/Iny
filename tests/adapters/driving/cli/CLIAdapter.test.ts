@@ -90,6 +90,31 @@ describe('CLIAdapter', () => {
     expect(mockUseCase.execute).not.toHaveBeenCalled();
   });
 
+  it('should handle error during message processing, log error, and prompt again', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = new Error('Execution failed');
+    mockUseCase.execute = vi.fn().mockRejectedValueOnce(error);
+
+    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+
+    mockRl.question
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('trigger error');
+      })
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('exit');
+      });
+
+    adapter.start();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(errorSpy).toHaveBeenCalledWith('Error processing message:', error);
+    expect(mockRl.question).toHaveBeenCalledTimes(2);
+    expect(mockRl.close).toHaveBeenCalledTimes(1);
+    errorSpy.mockRestore();
+  });
+
   it('should initialize default readline interface when none provided', () => {
     const adapter = new CLIAdapter(mockUseCase);
     expect((adapter as any).rl).toBeDefined();

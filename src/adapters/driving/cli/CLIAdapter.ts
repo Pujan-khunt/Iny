@@ -28,14 +28,18 @@ export class CLIAdapter {
         return;
       }
 
-      await this.processMessageUseCase.execute({
-        id: Date.now().toString(),
-        userId: 'cli-user',
-        content: input,
-        timestamp: new Date()
-      });
-
-      this.prompt();
+      try {
+        await this.processMessageUseCase.execute({
+          id: Date.now().toString(),
+          userId: 'cli-user',
+          content: input,
+          timestamp: new Date()
+        });
+      } catch (error) {
+        console.error('Error processing message:', error);
+      } finally {
+        this.prompt();
+      }
     });
   }
 }
