@@ -4,6 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx --env-file=.env src/index.ts",
+    "start": "node --env-file=.env dist/index.js",
     "test": "vitest run"
   },
   "keywords": [],
@@ -11,8 +14,12 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^26.5.1",
-    "ts-node": "^10.9.2",
+    "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "openai": "^7.15.0",
+    "zod": "^4.6.5"
   }
 }

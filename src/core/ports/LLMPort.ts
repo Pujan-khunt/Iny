@@ -10,5 +10,5 @@ export interface LLMResponse {
 }
 
 export interface LLMPort {
-  generateResponse(history: Message[], newMessage: Message, plugins: Plugin[]): Promise<LLMResponse>;
+  generateResponse(systemPrompt: string, history: Message[], newMessage: Message, plugins: Plugin[]): Promise<LLMResponse>;
 }

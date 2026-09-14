@@ -16,7 +16,9 @@ export class ProcessIncomingMessage {
       // In future: fetch history from ChatRepository here
       const history: Message[] = [];
 
-      const response = await this.llm.generateResponse(history, message, plugins);
+      const systemPrompt =
+        'You are Iny, a friendly and highly concise assistant for college students. Never use emojis and keep answers under 2 sentences.';
+      const response = await this.llm.generateResponse(systemPrompt, history, message, plugins);
 
       if (response.text) {
         await this.sender.sendMessage(message.userId, response.text);
