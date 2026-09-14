@@ -17,7 +17,12 @@ describe('ProcessIncomingMessage', () => {
     await useCase.execute(message);
 
     expect(mockRegistry.getAvailablePlugins).toHaveBeenCalled();
-    expect(mockLLM.generateResponse).toHaveBeenCalledWith([], message, []);
+    expect(mockLLM.generateResponse).toHaveBeenCalledWith(
+      expect.stringContaining('You are Iny'),
+      [],
+      expect.objectContaining({ content: 'Hi' }),
+      []
+    );
     expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'Hello back!');
   });
 
@@ -47,7 +52,12 @@ describe('ProcessIncomingMessage', () => {
 
     await useCase.execute(message);
 
-    expect(mockLLM.generateResponse).toHaveBeenCalledWith([], message, [mockPlugin]);
+    expect(mockLLM.generateResponse).toHaveBeenCalledWith(
+      expect.stringContaining('You are Iny'),
+      [],
+      message,
+      [mockPlugin]
+    );
     expect(mockRegistry.executePlugin).toHaveBeenCalledWith('getWeather', { city: 'London' });
     expect(mockSender.sendMessage).toHaveBeenCalledWith('user2', 'Sunny in London');
   });

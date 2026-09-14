@@ -8,7 +8,7 @@ const mockSender = {
 };
 
 const mockLLM = {
-  generateResponse: async () => ({ text: 'I am a mock LLM.' })
+  generateResponse: async (systemPrompt: string, history: any[], newMessage: any, plugins: any[]) => ({ text: 'I am a mock LLM.' })
 };
 
 const mockRegistry = {
