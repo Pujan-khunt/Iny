@@ -5,7 +5,10 @@ This document specifies the design for the Deepseek LLM Adapter, which serves as
 
 ## 2. Configuration & Zod (Fail-Fast)
 To ensure the application fails immediately if required environment variables are missing or malformed, we will introduce `zod`.
-- **Environment Injection:** We will NOT use the `dotenv` package. Instead, we will rely on Node's native `--env-file=.env` CLI flag. `package.json` scripts must be updated to include this flag (e.g., `"start": "ts-node --env-file=.env src/index.ts"`). Note that Vitest automatically loads `.env` files for testing.
+- **Environment Injection:** We will NOT use the `dotenv` package. Instead, we will rely on Node's native `--env-file=.env` CLI flag. `package.json` scripts must be updated to include this flag.
+  - Development (`npm run dev`): `"tsx --env-file=.env src/index.ts"`
+  - Production (`npm start`): `"node --env-file=.env dist/index.js"` (after building via `tsc -p tsconfig.build.json`)
+  - Note: Vitest automatically loads `.env` files for testing.
 - **File:** `src/config.ts`
 - **Responsibility:** Parse `process.env` on startup. Ensure `DEEPSEEK_API_KEY` is present. Export a strictly typed `config` object.
 
