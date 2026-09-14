@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "ts-node --env-file=.env src/index.ts",
     "test": "vitest run"
   },
   "keywords": [],
@@ -14,5 +15,8 @@
     "ts-node": "^10.9.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
   }
 }
