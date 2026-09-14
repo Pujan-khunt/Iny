@@ -38,7 +38,7 @@ export class DeepseekAdapter implements LLMPort {
         : undefined;
 
     const response = await this.client.chat.completions.create({
-      model: 'deepseek-v4.1-flash',
+      model: 'deepseek-flash',
       messages,
       tools,
       tool_choice: tools ? 'auto' : undefined,

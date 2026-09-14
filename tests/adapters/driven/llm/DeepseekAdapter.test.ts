@@ -46,7 +46,7 @@ describe('DeepseekAdapter', () => {
     expect(response.text).toBe('Mock response');
     expect(response.toolCall).toBeUndefined();
     expect(mockCreate).toHaveBeenCalledWith({
-      model: 'deepseek-v4.1-flash',
+      model: 'deepseek-flash',
       messages: [
         { role: 'system', content: 'System prompt' },
         { role: 'user', content: 'Hello' },

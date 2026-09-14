@@ -1,7 +1,7 @@
 # Deepseek LLM Adapter Design
 
 ## 1. Overview
-This document specifies the design for the Deepseek LLM Adapter, which serves as the "brain" for Iny. It implements the `LLMPort` to allow the core business logic to generate responses and execute function calls (tools) using the Deepseek-v4.1-flash model.
+This document specifies the design for the Deepseek LLM Adapter, which serves as the "brain" for Iny. It implements the `LLMPort` to allow the core business logic to generate responses and execute function calls (tools) using the deepseek-flash model.
 
 ## 2. Configuration & Zod (Fail-Fast)
 To ensure the application fails immediately if required environment variables are missing or malformed, we will introduce `zod`.
