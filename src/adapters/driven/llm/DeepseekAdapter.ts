@@ -44,15 +44,27 @@ export class DeepseekAdapter implements LLMPort {
       tool_choice: tools ? 'auto' : undefined,
     });
 
-    const responseMessage = response.choices[0].message;
+    const responseMessage = response.choices[0]?.message;
+
+    if (!responseMessage) {
+      throw new Error('No message returned from LLM provider');
+    }
 
     if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
       const toolCall = responseMessage.tool_calls[0];
       if (toolCall.type === 'function') {
+        let parsedArgs: any;
+        try {
+          parsedArgs = JSON.parse(toolCall.function.arguments);
+        } catch (error) {
+          console.error('Failed to parse tool arguments:', error);
+          return { text: 'Sorry, I encountered an error while processing the tool arguments.' };
+        }
+
         return {
           toolCall: {
             name: toolCall.function.name,
-            arguments: JSON.parse(toolCall.function.arguments),
+            arguments: parsedArgs,
           },
         };
       }
