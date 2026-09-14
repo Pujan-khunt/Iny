@@ -66,4 +66,71 @@ describe('ProcessIncomingMessage', () => {
     expect(mockRegistry.executePlugin).not.toHaveBeenCalled();
     expect(mockSender.sendMessage).not.toHaveBeenCalled();
   });
+
+  it('should send both text and tool result when LLM returns both text and toolCall', async () => {
+    const mockSender: MessageSenderPort = { sendMessage: vi.fn().mockResolvedValue(undefined) };
+    const mockLLM: LLMPort = {
+      generateResponse: vi.fn().mockResolvedValue({
+        text: 'Checking the weather now...',
+        toolCall: {
+          name: 'getWeather',
+          arguments: { city: 'London' }
+        }
+      })
+    };
+    const mockRegistry: PluginRegistryPort = {
+      getAvailablePlugins: vi.fn().mockReturnValue([]),
+      executePlugin: vi.fn().mockResolvedValue('Sunny in London')
+    };
+
+    const useCase = new ProcessIncomingMessage(mockSender, mockLLM, mockRegistry);
+    const message: Message = { id: '4', userId: 'user4', content: 'What is the weather in London?', timestamp: new Date() };
+
+    await useCase.execute(message);
+
+    expect(mockSender.sendMessage).toHaveBeenCalledTimes(2);
+    expect(mockSender.sendMessage).toHaveBeenNthCalledWith(1, 'user4', 'Checking the weather now...');
+    expect(mockSender.sendMessage).toHaveBeenNthCalledWith(2, 'user4', 'Sunny in London');
+  });
+
+  it('should send an error message to the user when LLM generateResponse throws an error', async () => {
+    const mockSender: MessageSenderPort = { sendMessage: vi.fn().mockResolvedValue(undefined) };
+    const mockLLM: LLMPort = {
+      generateResponse: vi.fn().mockRejectedValue(new Error('LLM API down'))
+    };
+    const mockRegistry: PluginRegistryPort = {
+      getAvailablePlugins: vi.fn().mockReturnValue([]),
+      executePlugin: vi.fn()
+    };
+
+    const useCase = new ProcessIncomingMessage(mockSender, mockLLM, mockRegistry);
+    const message: Message = { id: '5', userId: 'user5', content: 'Hello', timestamp: new Date() };
+
+    await useCase.execute(message);
+
+    expect(mockSender.sendMessage).toHaveBeenCalledWith('user5', 'An error occurred during processing.');
+  });
+
+  it('should send an error message to the user when plugin execution throws an error', async () => {
+    const mockSender: MessageSenderPort = { sendMessage: vi.fn().mockResolvedValue(undefined) };
+    const mockLLM: LLMPort = {
+      generateResponse: vi.fn().mockResolvedValue({
+        toolCall: {
+          name: 'failingPlugin',
+          arguments: {}
+        }
+      })
+    };
+    const mockRegistry: PluginRegistryPort = {
+      getAvailablePlugins: vi.fn().mockReturnValue([]),
+      executePlugin: vi.fn().mockRejectedValue(new Error('Plugin crashed'))
+    };
+
+    const useCase = new ProcessIncomingMessage(mockSender, mockLLM, mockRegistry);
+    const message: Message = { id: '6', userId: 'user6', content: 'Do something', timestamp: new Date() };
+
+    await useCase.execute(message);
+
+    expect(mockSender.sendMessage).toHaveBeenCalledWith('user6', 'An error occurred during processing.');
+  });
 });

@@ -11,18 +11,24 @@ export class ProcessIncomingMessage {
   ) {}
 
   async execute(message: Message): Promise<void> {
-    const plugins = this.registry.getAvailablePlugins();
-    // In future: fetch history from ChatRepository here
-    const history: Message[] = [];
+    try {
+      const plugins = this.registry.getAvailablePlugins();
+      // In future: fetch history from ChatRepository here
+      const history: Message[] = [];
 
-    const response = await this.llm.generateResponse(history, message, plugins);
+      const response = await this.llm.generateResponse(history, message, plugins);
 
-    if (response.toolCall) {
-      const toolResult = await this.registry.executePlugin(response.toolCall.name, response.toolCall.arguments);
-      // Send tool result back to user for now (later, pass back to LLM for formatting)
-      await this.sender.sendMessage(message.userId, toolResult);
-    } else if (response.text) {
-      await this.sender.sendMessage(message.userId, response.text);
+      if (response.text) {
+        await this.sender.sendMessage(message.userId, response.text);
+      }
+
+      if (response.toolCall) {
+        const toolResult = await this.registry.executePlugin(response.toolCall.name, response.toolCall.arguments);
+        // Send tool result back to user for now (later, pass back to LLM for formatting)
+        await this.sender.sendMessage(message.userId, toolResult);
+      }
+    } catch (error) {
+      await this.sender.sendMessage(message.userId, 'An error occurred during processing.');
     }
   }
 }
