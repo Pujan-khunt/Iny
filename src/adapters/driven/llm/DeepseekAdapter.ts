@@ -83,7 +83,7 @@ export class DeepseekAdapter implements LLMPort {
       }
     }
 
-    const responseMessage = response.choices[0]?.message;
+    const responseMessage = response.choices?.[0]?.message;
 
     if (!responseMessage) {
       throw new LLMResponseError('No message returned from LLM provider');

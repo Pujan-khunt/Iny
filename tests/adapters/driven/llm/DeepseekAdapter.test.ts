@@ -166,8 +166,36 @@ describe('DeepseekAdapter', () => {
     expect(response.toolCall).toBeUndefined();
   });
 
-  it('should throw LLMResponseError when choices array is empty or message is missing', async () => {
+  it('should throw LLMResponseError when choices array is empty', async () => {
     mockCreate.mockResolvedValueOnce({ choices: [] });
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMResponseError);
+  });
+
+  it('should throw LLMResponseError when choices field is missing or undefined', async () => {
+    mockCreate.mockResolvedValueOnce({} as any);
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMResponseError);
+  });
+
+  it('should throw LLMResponseError when choice exists but message is missing', async () => {
+    mockCreate.mockResolvedValueOnce({ choices: [{ message: undefined }] as any });
 
     const adapter = new DeepseekAdapter('fake_key');
     await expect(
