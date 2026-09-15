@@ -64,4 +64,22 @@ describe('InMemoryPluginRegistry', () => {
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
+
+  it('should handle plugin rejecting with a plain string', async () => {
+    const stringRejectPlugin: Plugin = {
+      name: 'string_reject_tool',
+      description: 'Rejects with a string',
+      schema: {},
+      execute: vi.fn().mockRejectedValue('Custom string error'),
+    };
+
+    registry.register(stringRejectPlugin);
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await registry.executePlugin('string_reject_tool', {});
+
+    expect(result).toBe('Error executing string_reject_tool: Custom string error');
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
 });

@@ -59,6 +59,21 @@ describe('CalculatorPlugin', () => {
     expect(await plugin.execute({ expression: '4 + 5 / (2 - 2) * 3' })).toBe(
       'Error: Division by zero.'
     );
+    expect(await plugin.execute({ expression: '1 / (5 / 0)' })).toBe(
+      'Error: Division by zero.'
+    );
+    expect(await plugin.execute({ expression: '2 / (1 / (5 - 5))' })).toBe(
+      'Error: Division by zero.'
+    );
+  });
+
+  it('should handle unary plus', async () => {
+    expect(await plugin.execute({ expression: '+5' })).toBe('5');
+    expect(await plugin.execute({ expression: '3 * +4' })).toBe('12');
+  });
+
+  it('should handle leading decimal numbers', async () => {
+    expect(await plugin.execute({ expression: '.5 * 2' })).toBe('1');
   });
 
   it('should handle unary minus and negative numbers', async () => {

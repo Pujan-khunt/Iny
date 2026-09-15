@@ -1,5 +1,12 @@
 import { Plugin } from '../core/ports/PluginRegistryPort';
 
+export class DivisionByZeroError extends Error {
+  constructor(message = 'Division by zero.') {
+    super(message);
+    this.name = 'DivisionByZeroError';
+  }
+}
+
 export class CalculatorPlugin implements Plugin {
   readonly name = 'calculate';
   readonly description = 'Evaluates a basic mathematical expression (e.g. "2 + 2", "15 * 3 - 4")';
@@ -31,7 +38,10 @@ export class CalculatorPlugin implements Plugin {
         return 'Error: Division by zero.';
       }
       return String(result);
-    } catch {
+    } catch (err) {
+      if (err instanceof DivisionByZeroError) {
+        return 'Error: Division by zero.';
+      }
       return 'Error: Invalid mathematical expression.';
     }
   }
@@ -48,6 +58,9 @@ export class CalculatorPlugin implements Plugin {
           throw new Error('Mismatched parentheses');
         }
         return val;
+      }
+      if (token === '+') {
+        return parsePrimary();
       }
       if (token === '-') {
         return -parsePrimary();
@@ -67,6 +80,9 @@ export class CalculatorPlugin implements Plugin {
         if (op === '*') {
           left *= right;
         } else {
+          if (right === 0) {
+            throw new DivisionByZeroError('Division by zero.');
+          }
           left /= right;
         }
       }
@@ -96,7 +112,7 @@ export class CalculatorPlugin implements Plugin {
 
   private tokenize(expr: string): string[] {
     const tokens: string[] = [];
-    const re = /\s*([0-9]+(?:\.[0-9]+)?|[+\-*/()])\s*/g;
+    const re = /\s*([0-9]+(?:\.[0-9]*)?|\.[0-9]+|[+\-*/()])\s*/g;
     let match: RegExpExecArray | null;
     let lastIndex = 0;
 

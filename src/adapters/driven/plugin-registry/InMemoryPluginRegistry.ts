@@ -24,7 +24,12 @@ export class InMemoryPluginRegistry implements PluginRegistryPort {
       return await plugin.execute(args);
     } catch (error: any) {
       console.error(`Error executing plugin '${name}':`, error);
-      const message = error?.message || 'Unknown error';
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+          ? error
+          : error?.message || 'Unknown error';
       return `Error executing ${name}: ${message}`;
     }
   }
