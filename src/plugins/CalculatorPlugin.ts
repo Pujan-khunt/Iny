@@ -67,9 +67,6 @@ export class CalculatorPlugin implements Plugin {
         if (op === '*') {
           left *= right;
         } else {
-          if (right === 0) {
-            return Infinity;
-          }
           left /= right;
         }
       }

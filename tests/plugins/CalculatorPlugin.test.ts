@@ -46,10 +46,26 @@ describe('CalculatorPlugin', () => {
     );
   });
 
-  it('should handle division by zero gracefully', async () => {
+  it('should handle division by zero gracefully, including compound expressions', async () => {
     expect(await plugin.execute({ expression: '5 / 0' })).toBe(
       'Error: Division by zero.'
     );
+    expect(await plugin.execute({ expression: '5 / 0 * 2' })).toBe(
+      'Error: Division by zero.'
+    );
+    expect(await plugin.execute({ expression: '10 / 0 / 2' })).toBe(
+      'Error: Division by zero.'
+    );
+    expect(await plugin.execute({ expression: '4 + 5 / (2 - 2) * 3' })).toBe(
+      'Error: Division by zero.'
+    );
+  });
+
+  it('should handle unary minus and negative numbers', async () => {
+    expect(await plugin.execute({ expression: '-5 + 2' })).toBe('-3');
+    expect(await plugin.execute({ expression: '3 * -4' })).toBe('-12');
+    expect(await plugin.execute({ expression: '10 - -2' })).toBe('12');
+    expect(await plugin.execute({ expression: '-(2 + 3) * 4' })).toBe('-20');
   });
 
   it('should handle missing or empty expression arguments gracefully', async () => {
