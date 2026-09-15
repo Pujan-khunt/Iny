@@ -3,6 +3,16 @@ import { DeepseekAdapter } from '../../../../src/adapters/driven/llm/DeepseekAda
 import OpenAI from 'openai';
 import { Plugin } from '../../../../src/core/ports/PluginRegistryPort';
 import { Message } from '../../../../src/core/entities/Message';
+import {
+  LLMError,
+  LLMAuthenticationError,
+  LLMInsufficientBalanceError,
+  LLMInvalidRequestError,
+  LLMRateLimitError,
+  LLMServerError,
+  LLMServerOverloadedError,
+  LLMResponseError,
+} from '../../../../src/core/errors/LLMErrors';
 
 const { mockCreate } = vi.hoisted(() => ({
   mockCreate: vi.fn(),
@@ -154,5 +164,164 @@ describe('DeepseekAdapter', () => {
 
     expect(response.text).toBe('');
     expect(response.toolCall).toBeUndefined();
+  });
+
+  it('should throw LLMResponseError when choices array is empty', async () => {
+    mockCreate.mockResolvedValueOnce({ choices: [] });
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMResponseError);
+  });
+
+  it('should throw LLMResponseError when choices field is missing or undefined', async () => {
+    mockCreate.mockResolvedValueOnce({} as any);
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMResponseError);
+  });
+
+  it('should throw LLMResponseError when choice exists but message is missing', async () => {
+    mockCreate.mockResolvedValueOnce({ choices: [{ message: undefined }] as any });
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMResponseError);
+  });
+
+  it('should throw LLMAuthenticationError when API returns 401', async () => {
+    const error = Object.assign(new Error('Authentication failed due to wrong API key'), { status: 401 });
+    mockCreate.mockRejectedValueOnce(error);
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMAuthenticationError);
+  });
+
+  it('should throw LLMInsufficientBalanceError when API returns 402', async () => {
+    const error = Object.assign(new Error('Insufficient Balance'), { status: 402 });
+    mockCreate.mockRejectedValueOnce(error);
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMInsufficientBalanceError);
+  });
+
+  it('should throw LLMInvalidRequestError when API returns 400 or 422', async () => {
+    const error400 = Object.assign(new Error('Invalid Format'), { status: 400 });
+    mockCreate.mockRejectedValueOnce(error400);
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMInvalidRequestError);
+
+    const error422 = Object.assign(new Error('Invalid Parameters'), { status: 422 });
+    mockCreate.mockRejectedValueOnce(error422);
+
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMInvalidRequestError);
+  });
+
+  it('should throw LLMRateLimitError when API returns 429', async () => {
+    const error = Object.assign(new Error('Rate Limit Reached'), { status: 429 });
+    mockCreate.mockRejectedValueOnce(error);
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMRateLimitError);
+  });
+
+  it('should throw LLMServerError when API returns 500', async () => {
+    const error = Object.assign(new Error('Server Error'), { status: 500 });
+    mockCreate.mockRejectedValueOnce(error);
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMServerError);
+  });
+
+  it('should throw LLMServerOverloadedError when API returns 503', async () => {
+    const error = Object.assign(new Error('Server Overloaded'), { status: 503 });
+    mockCreate.mockRejectedValueOnce(error);
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMServerOverloadedError);
+  });
+
+  it('should throw generic LLMError when API returns unexpected status or network error', async () => {
+    const networkError = new Error('Network connection failed');
+    mockCreate.mockRejectedValueOnce(networkError);
+
+    const adapter = new DeepseekAdapter('fake_key');
+    await expect(
+      adapter.generateResponse(
+        'System prompt',
+        [],
+        { id: '1', userId: 'u1', content: 'Hello', timestamp: new Date() },
+        []
+      )
+    ).rejects.toThrow(LLMError);
   });
 });

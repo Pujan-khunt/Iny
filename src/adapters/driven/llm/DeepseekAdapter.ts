@@ -2,6 +2,16 @@ import OpenAI from 'openai';
 import { LLMPort, LLMResponse } from '../../../core/ports/LLMPort';
 import { Message } from '../../../core/entities/Message';
 import { Plugin } from '../../../core/ports/PluginRegistryPort';
+import {
+  LLMError,
+  LLMAuthenticationError,
+  LLMInsufficientBalanceError,
+  LLMInvalidRequestError,
+  LLMRateLimitError,
+  LLMServerError,
+  LLMServerOverloadedError,
+  LLMResponseError,
+} from '../../../core/errors/LLMErrors';
 
 export class DeepseekAdapter implements LLMPort {
   private client: OpenAI;
@@ -37,17 +47,46 @@ export class DeepseekAdapter implements LLMPort {
           }))
         : undefined;
 
-    const response = await this.client.chat.completions.create({
-      model: 'deepseek-flash',
-      messages,
-      tools,
-      tool_choice: tools ? 'auto' : undefined,
-    });
+    let response: OpenAI.Chat.ChatCompletion;
+    try {
+      response = await this.client.chat.completions.create({
+        model: 'deepseek-flash',
+        messages,
+        tools,
+        tool_choice: tools ? 'auto' : undefined,
+      });
+    } catch (error: any) {
+      if (error instanceof LLMError) {
+        throw error;
+      }
 
-    const responseMessage = response.choices[0]?.message;
+      const status = error?.status;
+      const code = error?.code;
+      const message = error?.message || 'Error occurred while communicating with LLM provider';
+
+      switch (status) {
+        case 400:
+        case 422:
+          throw new LLMInvalidRequestError(message, { status, code, cause: error });
+        case 401:
+          throw new LLMAuthenticationError(message, { status, code, cause: error });
+        case 402:
+          throw new LLMInsufficientBalanceError(message, { status, code, cause: error });
+        case 429:
+          throw new LLMRateLimitError(message, { status, code, cause: error });
+        case 500:
+          throw new LLMServerError(message, { status, code, cause: error });
+        case 503:
+          throw new LLMServerOverloadedError(message, { status, code, cause: error });
+        default:
+          throw new LLMError(message, { status, code, cause: error });
+      }
+    }
+
+    const responseMessage = response.choices?.[0]?.message;
 
     if (!responseMessage) {
-      throw new Error('No message returned from LLM provider');
+      throw new LLMResponseError('No message returned from LLM provider');
     }
 
     if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
