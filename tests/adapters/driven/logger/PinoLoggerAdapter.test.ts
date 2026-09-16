@@ -70,6 +70,17 @@ describe('PinoLoggerAdapter', () => {
     expect(err.stack).toBeDefined();
   });
 
+  it('should ensure explicit Error object takes precedence if context contains an err key', () => {
+    const testError = new Error('Explicit failure');
+
+    adapter.error('Operation failed', testError, { err: 'shadowed value', attempt: 1 });
+
+    expect(logs).toHaveLength(1);
+    expect(logs[0].attempt).toBe(1);
+    const err = logs[0].err as Record<string, unknown>;
+    expect(err.message).toBe('Explicit failure');
+  });
+
   it('should handle error overload with only Error object', () => {
     const testError = new Error('Network timeout');
 

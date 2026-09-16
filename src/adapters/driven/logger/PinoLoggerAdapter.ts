@@ -51,7 +51,7 @@ export class PinoLoggerAdapter implements LoggerPort {
     context?: LogContext
   ): void {
     if (context !== undefined) {
-      this.pino[level]({ err: errorOrContext, ...context }, message);
+      this.pino[level]({ ...context, err: errorOrContext }, message);
     } else if (errorOrContext instanceof Error) {
       this.pino[level]({ err: errorOrContext }, message);
     } else if (typeof errorOrContext === 'object' && errorOrContext !== null) {
