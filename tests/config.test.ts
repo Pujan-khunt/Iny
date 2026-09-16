@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 
 describe('Config', () => {
   const initialEnv = { ...process.env };
@@ -7,6 +7,10 @@ describe('Config', () => {
     vi.resetModules();
     process.env = { ...initialEnv };
     vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   afterAll(() => {
