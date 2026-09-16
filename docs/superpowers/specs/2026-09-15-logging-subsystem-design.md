@@ -57,7 +57,7 @@ export interface LoggerPort {
   constructor(level: string = 'info', baseLogger?: pino.Logger)
   ```
 - **Argument Mapping:**
-  - `debug`, `info`, `warn`: Maps `(message, context)` to `this.pino.info(context ?? {}, message)`.
+- `debug`, `info`, `warn`: Maps each method's `(message, context)` to its corresponding Pino level with context first (for example, `this.pino.debug(context ?? {}, message)`).
   - `error`, `fatal`:
     - Handles method overloads cleanly:
       - If 2nd argument is an `Error` (or 3rd argument is provided as context), serializes as `this.pino.error({ err: errorArg, ...contextArg }, message)`.
