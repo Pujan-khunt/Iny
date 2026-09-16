@@ -60,7 +60,7 @@ export interface LoggerPort {
 - `debug`, `info`, `warn`: Maps each method's `(message, context)` to its corresponding Pino level with context first (for example, `this.pino.debug(context ?? {}, message)`).
   - `error`, `fatal`:
     - Handles method overloads cleanly:
-      - If 2nd argument is an `Error` (or 3rd argument is provided as context), serializes as `this.pino.error({ err: errorArg, ...contextArg }, message)`.
+      - If 2nd argument is an `Error` (or 3rd argument is provided as context), serializes as `this.pino.error({ ...contextArg, err: errorArg }, message)`.
       - If 2nd argument is a plain context object (and 3rd argument is omitted), serializes as `this.pino.error(contextArg, message)`.
       - If 2nd argument is omitted, serializes as `this.pino.error(message)`.
   - `child(bindings)`: Returns a new `PinoLoggerAdapter` wrapping `this.pino.child(bindings)`.

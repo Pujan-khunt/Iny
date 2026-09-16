@@ -371,7 +371,7 @@ export class PinoLoggerAdapter implements LoggerPort {
   error(message: string, context?: LogContext): void;
   error(message: string, errorOrContext?: unknown, context?: LogContext): void {
     if (context !== undefined) {
-      this.pino.error({ err: errorOrContext, ...context }, message);
+      this.pino.error({ ...context, err: errorOrContext }, message);
     } else if (errorOrContext instanceof Error) {
       this.pino.error({ err: errorOrContext }, message);
     } else if (typeof errorOrContext === 'object' && errorOrContext !== null) {
@@ -387,7 +387,7 @@ export class PinoLoggerAdapter implements LoggerPort {
   fatal(message: string, context?: LogContext): void;
   fatal(message: string, errorOrContext?: unknown, context?: LogContext): void {
     if (context !== undefined) {
-      this.pino.fatal({ err: errorOrContext, ...context }, message);
+      this.pino.fatal({ ...context, err: errorOrContext }, message);
     } else if (errorOrContext instanceof Error) {
       this.pino.fatal({ err: errorOrContext }, message);
     } else if (typeof errorOrContext === 'object' && errorOrContext !== null) {
