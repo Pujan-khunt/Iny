@@ -11,11 +11,20 @@ describe('ProcessIncomingMessage', () => {
   let mockLLM: LLMPort;
   let mockRegistry: PluginRegistryPort;
   let mockLogger: LoggerPort;
+  let mockChildLogger: LoggerPort;
 
   beforeEach(() => {
     mockSender = { sendMessage: vi.fn().mockResolvedValue(undefined) };
     mockLLM = { generateResponse: vi.fn() };
     mockRegistry = { getAvailablePlugins: vi.fn().mockReturnValue([]), executePlugin: vi.fn() };
+    mockChildLogger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      fatal: vi.fn(),
+      child: vi.fn(),
+    };
     mockLogger = {
       debug: vi.fn(),
       info: vi.fn(),
@@ -24,7 +33,7 @@ describe('ProcessIncomingMessage', () => {
       fatal: vi.fn(),
       child: vi.fn(),
     };
-    vi.mocked(mockLogger.child).mockReturnValue(mockLogger);
+    vi.mocked(mockLogger.child).mockReturnValue(mockChildLogger);
   });
 
   it('should process a message and send text response with structured logging', async () => {
@@ -36,9 +45,15 @@ describe('ProcessIncomingMessage', () => {
     await useCase.execute(message);
 
     expect(mockLogger.child).toHaveBeenCalledWith({ userId: 'user1', messageId: '1' });
-    expect(mockLogger.info).toHaveBeenCalledWith('Processing incoming message');
-    expect(mockLogger.debug).toHaveBeenCalledWith('Available tools discovered', { count: 0 });
-    expect(mockLogger.info).toHaveBeenCalledWith('Message processed successfully');
+    expect(mockLLM.generateResponse).toHaveBeenCalledWith(
+      expect.stringContaining('Iny'),
+      [],
+      message,
+      []
+    );
+    expect(mockChildLogger.info).toHaveBeenCalledWith('Processing incoming message');
+    expect(mockChildLogger.debug).toHaveBeenCalledWith('Available tools discovered', { count: 0 });
+    expect(mockChildLogger.info).toHaveBeenCalledWith('Message processed successfully');
     expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'Hello back!');
   });
 
@@ -63,10 +78,17 @@ describe('ProcessIncomingMessage', () => {
 
     await useCase.execute(message);
 
-    expect(mockLogger.info).toHaveBeenCalledWith('Executing tool call', { toolName: 'getWeather' });
+    expect(mockLogger.child).toHaveBeenCalledWith({ userId: 'user2', messageId: '2' });
+    expect(mockLLM.generateResponse).toHaveBeenCalledWith(
+      expect.stringContaining('Iny'),
+      [],
+      message,
+      [mockPlugin]
+    );
+    expect(mockChildLogger.info).toHaveBeenCalledWith('Executing tool call', { toolName: 'getWeather' });
     expect(mockRegistry.executePlugin).toHaveBeenCalledWith('getWeather', { city: 'London' });
     expect(mockSender.sendMessage).toHaveBeenCalledWith('user2', 'Sunny in London');
-    expect(mockLogger.info).toHaveBeenCalledWith('Message processed successfully');
+    expect(mockChildLogger.info).toHaveBeenCalledWith('Message processed successfully');
   });
 
   it('should not send a message when LLM response contains neither text nor toolCall', async () => {
@@ -77,10 +99,11 @@ describe('ProcessIncomingMessage', () => {
 
     await useCase.execute(message);
 
+    expect(mockLogger.child).toHaveBeenCalledWith({ userId: 'user3', messageId: '3' });
     expect(mockLLM.generateResponse).toHaveBeenCalled();
     expect(mockRegistry.executePlugin).not.toHaveBeenCalled();
     expect(mockSender.sendMessage).not.toHaveBeenCalled();
-    expect(mockLogger.info).toHaveBeenCalledWith('Message processed successfully');
+    expect(mockChildLogger.info).toHaveBeenCalledWith('Message processed successfully');
   });
 
   it('should send both text and tool result when LLM returns both text and toolCall', async () => {
@@ -98,10 +121,11 @@ describe('ProcessIncomingMessage', () => {
 
     await useCase.execute(message);
 
+    expect(mockLogger.child).toHaveBeenCalledWith({ userId: 'user4', messageId: '4' });
     expect(mockSender.sendMessage).toHaveBeenCalledTimes(2);
     expect(mockSender.sendMessage).toHaveBeenNthCalledWith(1, 'user4', 'Checking the weather now...');
     expect(mockSender.sendMessage).toHaveBeenNthCalledWith(2, 'user4', 'Sunny in London');
-    expect(mockLogger.info).toHaveBeenCalledWith('Message processed successfully');
+    expect(mockChildLogger.info).toHaveBeenCalledWith('Message processed successfully');
   });
 
   it('should log error and send error message when LLM generateResponse throws an error', async () => {
@@ -113,7 +137,8 @@ describe('ProcessIncomingMessage', () => {
 
     await useCase.execute(message);
 
-    expect(mockLogger.error).toHaveBeenCalledWith('Failed to process message', error);
+    expect(mockLogger.child).toHaveBeenCalledWith({ userId: 'user5', messageId: '5' });
+    expect(mockChildLogger.error).toHaveBeenCalledWith('Failed to process message', error);
     expect(mockSender.sendMessage).toHaveBeenCalledWith('user5', 'An error occurred during processing.');
   });
 
@@ -132,7 +157,8 @@ describe('ProcessIncomingMessage', () => {
 
     await useCase.execute(message);
 
-    expect(mockLogger.error).toHaveBeenCalledWith('Failed to process message', error);
+    expect(mockLogger.child).toHaveBeenCalledWith({ userId: 'user6', messageId: '6' });
+    expect(mockChildLogger.error).toHaveBeenCalledWith('Failed to process message', error);
     expect(mockSender.sendMessage).toHaveBeenCalledWith('user6', 'An error occurred during processing.');
   });
 });
