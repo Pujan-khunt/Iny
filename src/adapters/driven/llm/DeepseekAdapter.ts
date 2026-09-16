@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { LLMPort, LLMResponse } from '../../../core/ports/LLMPort';
 import { Message } from '../../../core/entities/Message';
 import { Plugin } from '../../../core/ports/PluginRegistryPort';
+import { LoggerPort } from '../../../core/ports/LoggerPort';
 import {
   LLMError,
   LLMAuthenticationError,
@@ -16,7 +17,7 @@ import {
 export class DeepseekAdapter implements LLMPort {
   private client: OpenAI;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, private logger?: LoggerPort) {
     this.client = new OpenAI({
       apiKey,
       baseURL: 'https://api.deepseek.com',
@@ -46,6 +47,11 @@ export class DeepseekAdapter implements LLMPort {
             },
           }))
         : undefined;
+
+    this.logger?.debug('Sending request to Deepseek LLM', {
+      model: 'deepseek-flash',
+      messageCount: messages.length,
+    });
 
     let response: OpenAI.Chat.ChatCompletion;
     try {
@@ -89,6 +95,10 @@ export class DeepseekAdapter implements LLMPort {
       throw new LLMResponseError('No message returned from LLM provider');
     }
 
+    this.logger?.debug('Received response from Deepseek LLM', {
+      hasToolCall: Boolean(responseMessage.tool_calls && responseMessage.tool_calls.length > 0),
+    });
+
     if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
       const toolCall = responseMessage.tool_calls[0];
       if (toolCall.type === 'function') {
@@ -96,7 +106,11 @@ export class DeepseekAdapter implements LLMPort {
         try {
           parsedArgs = JSON.parse(toolCall.function.arguments);
         } catch (error) {
-          console.error('Failed to parse tool arguments:', error);
+          if (this.logger) {
+            this.logger.error('Failed to parse tool arguments', error);
+          } else {
+            console.error('Failed to parse tool arguments:', error);
+          }
           return { text: 'Sorry, I encountered an error while processing the tool arguments.' };
         }
 

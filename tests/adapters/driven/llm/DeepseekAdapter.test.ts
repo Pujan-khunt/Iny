@@ -3,6 +3,7 @@ import { DeepseekAdapter } from '../../../../src/adapters/driven/llm/DeepseekAda
 import OpenAI from 'openai';
 import { Plugin } from '../../../../src/core/ports/PluginRegistryPort';
 import { Message } from '../../../../src/core/entities/Message';
+import { LoggerPort } from '../../../../src/core/ports/LoggerPort';
 import {
   LLMError,
   LLMAuthenticationError,
@@ -324,4 +325,74 @@ describe('DeepseekAdapter', () => {
       )
     ).rejects.toThrow(LLMError);
   });
+
+  it('should log debug info when optional logger is provided', async () => {
+    const mockLogger: LoggerPort = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      fatal: vi.fn(),
+      child: vi.fn().mockReturnThis(),
+    };
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ message: { content: 'Logged response' } }],
+    });
+
+    const adapter = new DeepseekAdapter('test-key', mockLogger);
+    const message: Message = { id: '1', userId: 'u1', content: 'test', timestamp: new Date() };
+
+    await adapter.generateResponse('system', [], message, []);
+
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      'Sending request to Deepseek LLM',
+      expect.objectContaining({ model: 'deepseek-flash' })
+    );
+    expect(mockLogger.debug).toHaveBeenCalledWith(
+      'Received response from Deepseek LLM',
+      expect.objectContaining({ hasToolCall: false })
+    );
+  });
+
+  it('should log error and return fallback message when tool arguments are invalid JSON', async () => {
+    const mockLogger: LoggerPort = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      fatal: vi.fn(),
+      child: vi.fn().mockReturnThis(),
+    };
+
+    mockCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            tool_calls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: {
+                  name: 'calculate',
+                  arguments: '{"invalid_json: true',
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const adapter = new DeepseekAdapter('test-key', mockLogger);
+    const response = await adapter.generateResponse(
+      'system',
+      [],
+      { id: '1', userId: 'u1', content: 'calc', timestamp: new Date() },
+      []
+    );
+
+    expect(mockLogger.error).toHaveBeenCalledWith('Failed to parse tool arguments', expect.any(Error));
+    expect(response.text).toBe('Sorry, I encountered an error while processing the tool arguments.');
+  });
 });
+

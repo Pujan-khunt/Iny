@@ -1,12 +1,14 @@
 import * as readline from 'readline';
 import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingMessage';
+import { LoggerPort } from '../../../core/ports/LoggerPort';
 
 export class CLIAdapter {
   private rl: readline.Interface;
 
   constructor(
     private processMessageUseCase: ProcessIncomingMessage,
-    rl?: readline.Interface
+    rl?: readline.Interface,
+    private logger?: LoggerPort
   ) {
     this.rl =
       rl ??
@@ -36,7 +38,11 @@ export class CLIAdapter {
           timestamp: new Date()
         });
       } catch (error) {
-        console.error('Error processing message:', error);
+        if (this.logger) {
+          this.logger.error('Error processing message in CLI', error);
+        } else {
+          console.error('Error processing message:', error);
+        }
       } finally {
         this.prompt();
       }

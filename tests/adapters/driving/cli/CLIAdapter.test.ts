@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { CLIAdapter } from '../../../../src/adapters/driving/cli/CLIAdapter';
 import { ProcessIncomingMessage } from '../../../../src/core/use-cases/ProcessIncomingMessage';
 import type * as readline from 'readline';
+import { LoggerPort } from '../../../../src/core/ports/LoggerPort';
 
 describe('CLIAdapter', () => {
   let mockUseCase: ProcessIncomingMessage;
@@ -120,4 +121,34 @@ describe('CLIAdapter', () => {
     expect((adapter as any).rl).toBeDefined();
     (adapter as any).rl.close();
   });
+
+  it('should log error to injected logger when message processing fails', async () => {
+    const mockLogger: LoggerPort = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      fatal: vi.fn(),
+      child: vi.fn().mockReturnThis(),
+    };
+    const error = new Error('Execution failed');
+    mockUseCase.execute = vi.fn().mockRejectedValueOnce(error);
+
+    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface, mockLogger);
+
+    mockRl.question
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('trigger error');
+      })
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('exit');
+      });
+
+    adapter.start();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockLogger.error).toHaveBeenCalledWith('Error processing message in CLI', error);
+  });
 });
+
