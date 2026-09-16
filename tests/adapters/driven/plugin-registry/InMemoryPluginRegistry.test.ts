@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { InMemoryPluginRegistry } from '../../../../src/adapters/driven/plugin-registry/InMemoryPluginRegistry';
 import { Plugin } from '../../../../src/core/ports/PluginRegistryPort';
+import { LoggerPort } from '../../../../src/core/ports/LoggerPort';
 
 describe('InMemoryPluginRegistry', () => {
   let registry: InMemoryPluginRegistry;
@@ -82,4 +83,29 @@ describe('InMemoryPluginRegistry', () => {
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
+
+  it('should log registration and execution error when optional logger is provided', async () => {
+    const mockLogger: LoggerPort = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      fatal: vi.fn(),
+      child: vi.fn().mockReturnThis(),
+    };
+    const registry = new InMemoryPluginRegistry(mockLogger);
+    const failingPlugin: Plugin = {
+      name: 'fail',
+      description: 'fails',
+      schema: {},
+      execute: vi.fn().mockRejectedValue(new Error('Boom')),
+    };
+
+    registry.register(failingPlugin);
+    expect(mockLogger.debug).toHaveBeenCalledWith('Plugin registered', { pluginName: 'fail' });
+
+    await registry.executePlugin('fail', {});
+    expect(mockLogger.error).toHaveBeenCalledWith("Error executing plugin 'fail'", expect.any(Error));
+  });
 });
+
