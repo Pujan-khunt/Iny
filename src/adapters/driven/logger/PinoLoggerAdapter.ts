@@ -9,7 +9,7 @@ export class PinoLoggerAdapter implements LoggerPort {
   }
 
   debug(message: string, context?: LogContext): void {
-    if (context) {
+    if (context !== undefined) {
       this.pino.debug(context, message);
     } else {
       this.pino.debug(message);
@@ -17,7 +17,7 @@ export class PinoLoggerAdapter implements LoggerPort {
   }
 
   info(message: string, context?: LogContext): void {
-    if (context) {
+    if (context !== undefined) {
       this.pino.info(context, message);
     } else {
       this.pino.info(message);
@@ -25,7 +25,7 @@ export class PinoLoggerAdapter implements LoggerPort {
   }
 
   warn(message: string, context?: LogContext): void {
-    if (context) {
+    if (context !== undefined) {
       this.pino.warn(context, message);
     } else {
       this.pino.warn(message);
