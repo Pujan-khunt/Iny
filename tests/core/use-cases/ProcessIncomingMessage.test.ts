@@ -160,5 +160,6 @@ describe('ProcessIncomingMessage', () => {
     expect(mockLogger.child).toHaveBeenCalledWith({ userId: 'user6', messageId: '6' });
     expect(mockChildLogger.error).toHaveBeenCalledWith('Failed to process message', error);
     expect(mockSender.sendMessage).toHaveBeenCalledWith('user6', 'An error occurred during processing.');
+    expect(mockChildLogger.info).not.toHaveBeenCalledWith('Message processed successfully');
   });
 });

@@ -42,13 +42,13 @@ describe('InMemoryPluginRegistry', () => {
     expect(result).toBe('tool success result');
   });
 
-  it('should return a defensive error string if plugin is not found', async () => {
-    const result = await registry.executePlugin('unknown_tool', {});
-
-    expect(result).toBe('Error: Tool "unknown_tool" not found.');
+  it('should throw an error if plugin is not found', async () => {
+    await expect(registry.executePlugin('unknown_tool', {})).rejects.toThrow(
+      'Tool "unknown_tool" not found.'
+    );
   });
 
-  it('should return a defensive error string if plugin execution throws', async () => {
+  it('should log and rethrow error if plugin execution throws', async () => {
     const failingPlugin: Plugin = {
       name: 'failing_tool',
       description: 'Fails on execution',
@@ -59,14 +59,13 @@ describe('InMemoryPluginRegistry', () => {
     registry.register(failingPlugin);
 
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const result = await registry.executePlugin('failing_tool', {});
+    await expect(registry.executePlugin('failing_tool', {})).rejects.toThrow('Internal failure');
 
-    expect(result).toBe('Error executing failing_tool: Internal failure');
-    expect(consoleSpy).toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith("Error executing plugin 'failing_tool':", expect.any(Error));
     consoleSpy.mockRestore();
   });
 
-  it('should handle plugin rejecting with a plain string', async () => {
+  it('should log and rethrow when plugin rejects with a plain string', async () => {
     const stringRejectPlugin: Plugin = {
       name: 'string_reject_tool',
       description: 'Rejects with a string',
@@ -77,10 +76,9 @@ describe('InMemoryPluginRegistry', () => {
     registry.register(stringRejectPlugin);
 
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const result = await registry.executePlugin('string_reject_tool', {});
+    await expect(registry.executePlugin('string_reject_tool', {})).rejects.toBe('Custom string error');
 
-    expect(result).toBe('Error executing string_reject_tool: Custom string error');
-    expect(consoleSpy).toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith("Error executing plugin 'string_reject_tool':", 'Custom string error');
     consoleSpy.mockRestore();
   });
 
@@ -104,7 +102,7 @@ describe('InMemoryPluginRegistry', () => {
     registry.register(failingPlugin);
     expect(mockLogger.debug).toHaveBeenCalledWith('Plugin registered', { pluginName: 'fail' });
 
-    await registry.executePlugin('fail', {});
+    await expect(registry.executePlugin('fail', {})).rejects.toThrow('Boom');
     expect(mockLogger.error).toHaveBeenCalledWith("Error executing plugin 'fail'", expect.any(Error));
   });
 });

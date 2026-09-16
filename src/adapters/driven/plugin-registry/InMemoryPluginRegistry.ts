@@ -21,7 +21,7 @@ export class InMemoryPluginRegistry implements PluginRegistryPort {
   async executePlugin(name: string, args: any): Promise<string> {
     const plugin = this.plugins.get(name);
     if (!plugin) {
-      return `Error: Tool "${name}" not found.`;
+      throw new Error(`Tool "${name}" not found.`);
     }
 
     try {
@@ -32,13 +32,7 @@ export class InMemoryPluginRegistry implements PluginRegistryPort {
       } else {
         console.error(`Error executing plugin '${name}':`, error);
       }
-      const message =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-          ? error
-          : error?.message || 'Unknown error';
-      return `Error executing ${name}: ${message}`;
+      throw error;
     }
   }
 }
