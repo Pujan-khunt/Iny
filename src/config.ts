@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const envSchema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1, 'DEEPSEEK_API_KEY is required'),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'fatal']).default('info'),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
