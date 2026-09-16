@@ -35,32 +35,31 @@ export class PinoLoggerAdapter implements LoggerPort {
   error(message: string, error: unknown, context?: LogContext): void;
   error(message: string, context?: LogContext): void;
   error(message: string, errorOrContext?: unknown, context?: LogContext): void {
-    if (context !== undefined) {
-      this.pino.error({ err: errorOrContext, ...context }, message);
-    } else if (errorOrContext instanceof Error) {
-      this.pino.error({ err: errorOrContext }, message);
-    } else if (typeof errorOrContext === 'object' && errorOrContext !== null) {
-      this.pino.error(errorOrContext as Record<string, unknown>, message);
-    } else if (errorOrContext !== undefined) {
-      this.pino.error({ err: errorOrContext }, message);
-    } else {
-      this.pino.error(message);
-    }
+    this.logErrorOrFatal('error', message, errorOrContext, context);
   }
 
   fatal(message: string, error: unknown, context?: LogContext): void;
   fatal(message: string, context?: LogContext): void;
   fatal(message: string, errorOrContext?: unknown, context?: LogContext): void {
+    this.logErrorOrFatal('fatal', message, errorOrContext, context);
+  }
+
+  private logErrorOrFatal(
+    level: 'error' | 'fatal',
+    message: string,
+    errorOrContext?: unknown,
+    context?: LogContext
+  ): void {
     if (context !== undefined) {
-      this.pino.fatal({ err: errorOrContext, ...context }, message);
+      this.pino[level]({ err: errorOrContext, ...context }, message);
     } else if (errorOrContext instanceof Error) {
-      this.pino.fatal({ err: errorOrContext }, message);
+      this.pino[level]({ err: errorOrContext }, message);
     } else if (typeof errorOrContext === 'object' && errorOrContext !== null) {
-      this.pino.fatal(errorOrContext as Record<string, unknown>, message);
+      this.pino[level](errorOrContext as Record<string, unknown>, message);
     } else if (errorOrContext !== undefined) {
-      this.pino.fatal({ err: errorOrContext }, message);
+      this.pino[level]({ err: errorOrContext }, message);
     } else {
-      this.pino.fatal(message);
+      this.pino[level](message);
     }
   }
 
