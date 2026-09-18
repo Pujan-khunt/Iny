@@ -108,7 +108,6 @@ describe('CLIAdapter', () => {
 
     adapter.start();
     await Promise.resolve();
-    await Promise.resolve();
 
     expect(errorSpy).toHaveBeenCalledWith('Error processing message:', error);
     expect(mockRl.question).toHaveBeenCalledTimes(2);
@@ -145,7 +144,6 @@ describe('CLIAdapter', () => {
       });
 
     adapter.start();
-    await Promise.resolve();
     await Promise.resolve();
 
     expect(mockLogger.error).toHaveBeenCalledWith('Error processing message in CLI', error);
