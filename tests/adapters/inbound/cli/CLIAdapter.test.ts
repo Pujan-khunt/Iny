@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CLIAdapter } from '../../../../src/adapters/driving/cli/CLIAdapter';
+import { CLIAdapter } from '../../../../src/adapters/inbound/cli/CLIAdapter';
 import { ProcessIncomingMessage } from '../../../../src/core/use-cases/ProcessIncomingMessage';
 import type * as readline from 'readline';
 import { LoggerPort } from '../../../../src/core/ports/LoggerPort';

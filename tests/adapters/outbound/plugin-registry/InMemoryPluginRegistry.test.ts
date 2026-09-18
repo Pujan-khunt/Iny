@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { InMemoryPluginRegistry } from '../../../../src/adapters/driven/plugin-registry/InMemoryPluginRegistry';
+import { InMemoryPluginRegistry } from '../../../../src/adapters/outbound/plugin-registry/InMemoryPluginRegistry';
 import { Plugin } from '../../../../src/core/ports/PluginRegistryPort';
 import { LoggerPort } from '../../../../src/core/ports/LoggerPort';
 

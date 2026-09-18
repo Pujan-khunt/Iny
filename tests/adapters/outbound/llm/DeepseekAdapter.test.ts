@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { DeepseekAdapter } from '../../../../src/adapters/driven/llm/DeepseekAdapter';
+import { DeepseekAdapter } from '../../../../src/adapters/outbound/llm/DeepseekAdapter';
 import OpenAI from 'openai';
 import { Plugin } from '../../../../src/core/ports/PluginRegistryPort';
 import { Message } from '../../../../src/core/entities/Message';
