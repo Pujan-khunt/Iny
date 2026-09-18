@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import pino from 'pino';
 import { Writable } from 'node:stream';
-import { PinoLoggerAdapter } from '../../../../src/adapters/driven/logger/PinoLoggerAdapter';
+import { PinoLoggerAdapter } from '../../../../src/adapters/outbound/logger/PinoLoggerAdapter';
 
 describe('PinoLoggerAdapter', () => {
   let logs: Record<string, unknown>[];

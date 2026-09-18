@@ -5,7 +5,7 @@ export interface LLMResponse {
   text?: string;
   toolCall?: {
     name: string;
-    arguments: any;
+    arguments: Record<string, unknown>;
   };
 }
 

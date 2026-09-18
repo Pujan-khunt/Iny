@@ -1,17 +1,24 @@
 import * as readline from 'readline';
 import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingMessage';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
+import { Message } from '../../../core/entities/Message';
+
+export interface CLIAdapterOptions {
+  logger?: LoggerPort;
+  rl?: readline.Interface;
+}
 
 export class CLIAdapter {
   private rl: readline.Interface;
+  private logger?: LoggerPort;
 
   constructor(
     private processMessageUseCase: ProcessIncomingMessage,
-    rl?: readline.Interface,
-    private logger?: LoggerPort
+    options?: CLIAdapterOptions
   ) {
+    this.logger = options?.logger;
     this.rl =
-      rl ??
+      options?.rl ??
       readline.createInterface({
         input: process.stdin,
         output: process.stdout
@@ -25,18 +32,23 @@ export class CLIAdapter {
 
   private prompt() {
     this.rl.question('> ', async (input) => {
-      if (input.trim().toLowerCase() === 'exit') {
-        this.rl.close();
-        return;
+      switch (input.trim().toLowerCase()) {
+        case 'exit':
+          this.rl.close();
+          return;
+        case '':
+          this.prompt();
+          return;
       }
 
       try {
-        await this.processMessageUseCase.execute({
+        const message: Message = {
           id: Date.now().toString(),
           userId: 'cli-user',
-          content: input,
+          content: input.trim(),
           timestamp: new Date()
-        });
+        };
+        await this.processMessageUseCase.execute(message);
       } catch (error) {
         if (this.logger) {
           this.logger.error('Error processing message in CLI', error);

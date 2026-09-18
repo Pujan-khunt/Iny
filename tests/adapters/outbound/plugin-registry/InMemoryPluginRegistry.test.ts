@@ -1,21 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { InMemoryPluginRegistry } from '../../../../src/adapters/driven/plugin-registry/InMemoryPluginRegistry';
+import { InMemoryPluginRegistry } from '../../../../src/adapters/outbound/plugin-registry/InMemoryPluginRegistry';
 import { Plugin } from '../../../../src/core/ports/PluginRegistryPort';
 import { LoggerPort } from '../../../../src/core/ports/LoggerPort';
 
 describe('InMemoryPluginRegistry', () => {
   let registry: InMemoryPluginRegistry;
-
-  const dummyPlugin: Plugin = {
-    name: 'test_tool',
-    description: 'A test tool',
-    schema: { type: 'object', properties: {} },
-    execute: vi.fn().mockResolvedValue('tool success result'),
-  };
+  let dummyPlugin: Plugin;
 
   beforeEach(() => {
     registry = new InMemoryPluginRegistry();
-    vi.clearAllMocks();
+    dummyPlugin = {
+      name: 'test_tool',
+      description: 'A test tool',
+      schema: { type: 'object', properties: {} },
+      execute: vi.fn().mockResolvedValue('tool success result'),
+    };
   });
 
   it('should register a plugin and list it in getAvailablePlugins', () => {

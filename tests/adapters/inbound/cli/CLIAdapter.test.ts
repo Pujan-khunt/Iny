@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CLIAdapter } from '../../../../src/adapters/driving/cli/CLIAdapter';
+import { CLIAdapter } from '../../../../src/adapters/inbound/cli/CLIAdapter';
 import { ProcessIncomingMessage } from '../../../../src/core/use-cases/ProcessIncomingMessage';
 import type * as readline from 'readline';
 import { LoggerPort } from '../../../../src/core/ports/LoggerPort';
@@ -29,7 +29,7 @@ describe('CLIAdapter', () => {
   });
 
   it('should print banner and prompt for input on start', () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     adapter.start();
 
@@ -38,7 +38,7 @@ describe('CLIAdapter', () => {
   });
 
   it('should process incoming message and prompt again', async () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question
       .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
@@ -63,8 +63,29 @@ describe('CLIAdapter', () => {
     expect(mockRl.close).toHaveBeenCalledTimes(1);
   });
 
+  it('should trim message content before constructing message', async () => {
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
+
+    mockRl.question
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('  hello world with spaces  ');
+      })
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('exit');
+      });
+
+    adapter.start();
+    await Promise.resolve();
+
+    expect(mockUseCase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: 'hello world with spaces',
+      })
+    );
+  });
+
   it('should close readline and not execute use case when user inputs "exit"', async () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question.mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
       callback('exit');
@@ -78,7 +99,7 @@ describe('CLIAdapter', () => {
   });
 
   it('should handle case-insensitive and trimmed "  EXIT  "', async () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question.mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
       callback('  EXIT  ');
@@ -91,12 +112,31 @@ describe('CLIAdapter', () => {
     expect(mockUseCase.execute).not.toHaveBeenCalled();
   });
 
+  it('should re-prompt and not execute use case when user inputs empty string or whitespace', async () => {
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
+
+    mockRl.question
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('   ');
+      })
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('exit');
+      });
+
+    adapter.start();
+    await Promise.resolve();
+
+    expect(mockUseCase.execute).not.toHaveBeenCalled();
+    expect(mockRl.question).toHaveBeenCalledTimes(2);
+    expect(mockRl.close).toHaveBeenCalledTimes(1);
+  });
+
   it('should handle error during message processing, log error, and prompt again', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const error = new Error('Execution failed');
     mockUseCase.execute = vi.fn().mockRejectedValueOnce(error);
 
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question
       .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
@@ -107,7 +147,6 @@ describe('CLIAdapter', () => {
       });
 
     adapter.start();
-    await Promise.resolve();
     await Promise.resolve();
 
     expect(errorSpy).toHaveBeenCalledWith('Error processing message:', error);
@@ -134,7 +173,10 @@ describe('CLIAdapter', () => {
     const error = new Error('Execution failed');
     mockUseCase.execute = vi.fn().mockRejectedValueOnce(error);
 
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface, mockLogger);
+    const adapter = new CLIAdapter(mockUseCase, {
+      rl: mockRl as unknown as readline.Interface,
+      logger: mockLogger,
+    });
 
     mockRl.question
       .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
@@ -145,7 +187,6 @@ describe('CLIAdapter', () => {
       });
 
     adapter.start();
-    await Promise.resolve();
     await Promise.resolve();
 
     expect(mockLogger.error).toHaveBeenCalledWith('Error processing message in CLI', error);
