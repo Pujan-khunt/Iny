@@ -1,6 +1,7 @@
 import * as readline from 'readline';
 import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingMessage';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
+import { Message } from '../../../core/entities/Message';
 
 export class CLIAdapter {
   private rl: readline.Interface;
@@ -31,12 +32,13 @@ export class CLIAdapter {
       }
 
       try {
-        await this.processMessageUseCase.execute({
+        const message: Message = {
           id: Date.now().toString(),
           userId: 'cli-user',
           content: input,
           timestamp: new Date()
-        });
+        };
+        await this.processMessageUseCase.execute(message);
       } catch (error) {
         if (this.logger) {
           this.logger.error('Error processing message in CLI', error);
