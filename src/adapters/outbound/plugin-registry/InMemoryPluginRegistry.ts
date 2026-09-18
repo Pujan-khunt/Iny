@@ -18,7 +18,7 @@ export class InMemoryPluginRegistry implements PluginRegistryPort {
     return Array.from(this.plugins.values());
   }
 
-  async executePlugin(name: string, args: any): Promise<string> {
+  async executePlugin(name: string, args: Record<string, unknown>): Promise<string> {
     const plugin = this.plugins.get(name);
     if (!plugin) {
       throw new Error(`Tool "${name}" not found.`);

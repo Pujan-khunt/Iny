@@ -21,7 +21,7 @@ export class CalculatorPlugin implements Plugin {
     required: ['expression'],
   };
 
-  async execute(args: any): Promise<string> {
+  async execute(args: Record<string, unknown>): Promise<string> {
     const expr = args?.expression;
     if (typeof expr !== 'string' || expr.trim() === '') {
       return 'Error: Missing expression argument.';

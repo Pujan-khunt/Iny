@@ -102,7 +102,7 @@ export class DeepseekAdapter implements LLMPort {
     if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
       const toolCall = responseMessage.tool_calls[0];
       if (toolCall.type === 'function') {
-        let parsedArgs: any;
+        let parsedArgs: Record<string, unknown>;
         try {
           parsedArgs = JSON.parse(toolCall.function.arguments);
         } catch (error) {
