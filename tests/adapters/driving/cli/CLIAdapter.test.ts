@@ -91,6 +91,25 @@ describe('CLIAdapter', () => {
     expect(mockUseCase.execute).not.toHaveBeenCalled();
   });
 
+  it('should re-prompt and not execute use case when user inputs empty string or whitespace', async () => {
+    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+
+    mockRl.question
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('   ');
+      })
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('exit');
+      });
+
+    adapter.start();
+    await Promise.resolve();
+
+    expect(mockUseCase.execute).not.toHaveBeenCalled();
+    expect(mockRl.question).toHaveBeenCalledTimes(2);
+    expect(mockRl.close).toHaveBeenCalledTimes(1);
+  });
+
   it('should handle error during message processing, log error, and prompt again', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const error = new Error('Execution failed');

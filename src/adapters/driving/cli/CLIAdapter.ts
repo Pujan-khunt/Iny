@@ -26,9 +26,13 @@ export class CLIAdapter {
 
   private prompt() {
     this.rl.question('> ', async (input) => {
-      if (input.trim().toLowerCase() === 'exit') {
-        this.rl.close();
-        return;
+      switch (input.trim().toLowerCase()) {
+        case 'exit':
+          this.rl.close();
+          return;
+        case '':
+          this.prompt();
+          return;
       }
 
       try {
