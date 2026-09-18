@@ -29,7 +29,7 @@ describe('CLIAdapter', () => {
   });
 
   it('should print banner and prompt for input on start', () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     adapter.start();
 
@@ -38,7 +38,7 @@ describe('CLIAdapter', () => {
   });
 
   it('should process incoming message and prompt again', async () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question
       .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
@@ -64,7 +64,7 @@ describe('CLIAdapter', () => {
   });
 
   it('should trim message content before constructing message', async () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question
       .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
@@ -85,7 +85,7 @@ describe('CLIAdapter', () => {
   });
 
   it('should close readline and not execute use case when user inputs "exit"', async () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question.mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
       callback('exit');
@@ -99,7 +99,7 @@ describe('CLIAdapter', () => {
   });
 
   it('should handle case-insensitive and trimmed "  EXIT  "', async () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question.mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
       callback('  EXIT  ');
@@ -113,7 +113,7 @@ describe('CLIAdapter', () => {
   });
 
   it('should re-prompt and not execute use case when user inputs empty string or whitespace', async () => {
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question
       .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
@@ -136,7 +136,7 @@ describe('CLIAdapter', () => {
     const error = new Error('Execution failed');
     mockUseCase.execute = vi.fn().mockRejectedValueOnce(error);
 
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+    const adapter = new CLIAdapter(mockUseCase, { rl: mockRl as unknown as readline.Interface });
 
     mockRl.question
       .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
@@ -173,7 +173,10 @@ describe('CLIAdapter', () => {
     const error = new Error('Execution failed');
     mockUseCase.execute = vi.fn().mockRejectedValueOnce(error);
 
-    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface, mockLogger);
+    const adapter = new CLIAdapter(mockUseCase, {
+      rl: mockRl as unknown as readline.Interface,
+      logger: mockLogger,
+    });
 
     mockRl.question
       .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {

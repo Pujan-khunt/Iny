@@ -19,7 +19,7 @@ registry.register(new CalculatorPlugin());
 
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, logger);
 const useCase = new ProcessIncomingMessage(mockSender, deepseekAdapter, registry, logger);
-const cli = new CLIAdapter(useCase, undefined, logger);
+const cli = new CLIAdapter(useCase, { logger });
 
 logger.info('Iny application started');
 cli.start();

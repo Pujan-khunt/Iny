@@ -3,16 +3,22 @@ import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingM
 import { LoggerPort } from '../../../core/ports/LoggerPort';
 import { Message } from '../../../core/entities/Message';
 
+export interface CLIAdapterOptions {
+  logger?: LoggerPort;
+  rl?: readline.Interface;
+}
+
 export class CLIAdapter {
   private rl: readline.Interface;
+  private logger?: LoggerPort;
 
   constructor(
     private processMessageUseCase: ProcessIncomingMessage,
-    rl?: readline.Interface,
-    private logger?: LoggerPort
+    options?: CLIAdapterOptions
   ) {
+    this.logger = options?.logger;
     this.rl =
-      rl ??
+      options?.rl ??
       readline.createInterface({
         input: process.stdin,
         output: process.stdout
