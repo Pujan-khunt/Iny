@@ -394,5 +394,46 @@ describe('DeepseekAdapter', () => {
     expect(mockLogger.error).toHaveBeenCalledWith('Failed to parse tool arguments', expect.any(Error));
     expect(response.text).toBe('Sorry, I encountered an error while processing the tool arguments.');
   });
+
+  it('should log error and return fallback message when tool arguments parse to non-object JSON values', async () => {
+    const mockLogger: LoggerPort = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      fatal: vi.fn(),
+      child: vi.fn().mockReturnThis(),
+    };
+
+    mockCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            tool_calls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                function: {
+                  name: 'calculate',
+                  arguments: 'null',
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const adapter = new DeepseekAdapter('test-key', mockLogger);
+    const response = await adapter.generateResponse(
+      'system',
+      [],
+      { id: '1', userId: 'u1', content: 'calc', timestamp: new Date() },
+      []
+    );
+
+    expect(mockLogger.error).toHaveBeenCalledWith('Failed to parse tool arguments', expect.any(Error));
+    expect(response.text).toBe('Sorry, I encountered an error while processing the tool arguments.');
+  });
 });
 

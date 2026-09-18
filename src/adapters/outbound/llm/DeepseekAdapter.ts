@@ -104,7 +104,11 @@ export class DeepseekAdapter implements LLMPort {
       if (toolCall.type === 'function') {
         let parsedArgs: Record<string, unknown>;
         try {
-          parsedArgs = JSON.parse(toolCall.function.arguments);
+          const raw = JSON.parse(toolCall.function.arguments);
+          if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+            throw new Error('Tool arguments must be a JSON object');
+          }
+          parsedArgs = raw as Record<string, unknown>;
         } catch (error) {
           if (this.logger) {
             this.logger.error('Failed to parse tool arguments', error);
