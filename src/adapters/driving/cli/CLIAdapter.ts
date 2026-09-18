@@ -39,7 +39,7 @@ export class CLIAdapter {
         const message: Message = {
           id: Date.now().toString(),
           userId: 'cli-user',
-          content: input,
+          content: input.trim(),
           timestamp: new Date()
         };
         await this.processMessageUseCase.execute(message);

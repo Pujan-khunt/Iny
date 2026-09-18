@@ -63,6 +63,27 @@ describe('CLIAdapter', () => {
     expect(mockRl.close).toHaveBeenCalledTimes(1);
   });
 
+  it('should trim message content before constructing message', async () => {
+    const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
+
+    mockRl.question
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('  hello world with spaces  ');
+      })
+      .mockImplementationOnce((_prompt: string, callback: (answer: string) => void) => {
+        callback('exit');
+      });
+
+    adapter.start();
+    await Promise.resolve();
+
+    expect(mockUseCase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: 'hello world with spaces',
+      })
+    );
+  });
+
   it('should close readline and not execute use case when user inputs "exit"', async () => {
     const adapter = new CLIAdapter(mockUseCase, mockRl as unknown as readline.Interface);
 
