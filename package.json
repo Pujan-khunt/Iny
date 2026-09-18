@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx --env-file=.env src/index.ts | pino-pretty",
-    "start": "node --env-file=.env dist/index.js",
+    "start": "node --enable-source-maps --env-file=.env dist/index.js",
     "test": "vitest run"
   },
   "keywords": [],
