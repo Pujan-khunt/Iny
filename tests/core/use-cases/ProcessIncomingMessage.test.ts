@@ -13,26 +13,21 @@ describe('ProcessIncomingMessage', () => {
   let mockLogger: LoggerPort;
   let mockChildLogger: LoggerPort;
 
+  const createMockLogger = (): LoggerPort => ({
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    fatal: vi.fn(),
+    child: vi.fn(),
+  });
+
   beforeEach(() => {
     mockSender = { sendMessage: vi.fn().mockResolvedValue(undefined) };
     mockLLM = { generateResponse: vi.fn() };
     mockRegistry = { getAvailablePlugins: vi.fn().mockReturnValue([]), executePlugin: vi.fn() };
-    mockChildLogger = {
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      fatal: vi.fn(),
-      child: vi.fn(),
-    };
-    mockLogger = {
-      debug: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      fatal: vi.fn(),
-      child: vi.fn(),
-    };
+    mockChildLogger = createMockLogger();
+    mockLogger = createMockLogger();
     vi.mocked(mockLogger.child).mockReturnValue(mockChildLogger);
   });
 
