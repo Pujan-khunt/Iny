@@ -4,7 +4,7 @@ Use this template when dispatching a spec document reviewer subagent.
 
 **Purpose:** Verify the spec is complete, consistent, and ready for implementation planning.
 
-**Dispatch after:** Spec document is written to docs/superpowers/specs/
+**Dispatch after:** Spec document is written to docs/specs/
 
 ```markdown
 **ACTION REQUIRED:** Dispatch a subagent using your environment's native tool (e.g., `invoke_subagent` in Antigravity, or `claude -p` / `Subagent:` text blocks for others) with the following parameters:
