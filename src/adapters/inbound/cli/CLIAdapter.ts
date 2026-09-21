@@ -1,7 +1,7 @@
 import * as readline from 'readline';
 import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingMessage';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
-import { Message } from '../../../core/entities/Message';
+import { UserMessage } from '../../../core/entities/Message';
 
 export interface CLIAdapterOptions {
   logger?: LoggerPort;
@@ -42,9 +42,10 @@ export class CLIAdapter {
       }
 
       try {
-        const message: Message = {
+        const message: UserMessage = {
           id: Date.now().toString(),
           userId: 'cli-user',
+          role: 'user',
           content: input.trim(),
           timestamp: new Date()
         };
