@@ -9,13 +9,13 @@ import { LoggerPort } from '../ports/LoggerPort';
 export interface ProcessIncomingMessageConfig {
   maxToolIterations?: number;
   maxHistoryTurns?: number;
+  systemPrompt?: string;
 }
 
 export class ProcessIncomingMessage {
   private maxToolIterations: number;
   private maxHistoryTurns: number;
-  private readonly systemPrompt =
-    'You are Iny, a friendly and highly concise assistant for college students. Never use emojis and keep answers under 2 sentences.';
+  private readonly systemPrompt: string;
 
   constructor(
     private sender: MessageSenderPort,
@@ -27,6 +27,9 @@ export class ProcessIncomingMessage {
   ) {
     this.maxToolIterations = config?.maxToolIterations ?? 5;
     this.maxHistoryTurns = config?.maxHistoryTurns ?? 10;
+    this.systemPrompt =
+      config?.systemPrompt ??
+      'You are Iny, a friendly and highly concise assistant for college students. Never use emojis and keep answers under 2 sentences.';
   }
 
   async execute(message: UserMessage): Promise<void> {
@@ -50,7 +53,11 @@ export class ProcessIncomingMessage {
       log.info('Message processed successfully');
     } catch (error) {
       log.error('Failed to process message', error);
-      await this.sender.sendMessage(message.userId, 'An error occurred during processing.');
+      try {
+        await this.sender.sendMessage(message.userId, 'An error occurred during processing.');
+      } catch (sendError) {
+        log.error('Failed to send error notification to user', sendError);
+      }
     }
   }
 

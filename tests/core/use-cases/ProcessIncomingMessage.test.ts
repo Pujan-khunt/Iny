@@ -443,4 +443,68 @@ describe('ProcessIncomingMessage', () => {
     expect(mockSender.sendMessage).toHaveBeenCalledWith('user7', 'An error occurred during processing.');
     expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
   });
+
+  it('should catch and log error if sender.sendMessage fails while delivering generic error message', async () => {
+    const crashError = new Error('Database connection dropped');
+    const sendError = new Error('WhatsApp transport disconnected');
+    vi.mocked(mockChatRepository.getRecentTurns).mockRejectedValue(crashError);
+    vi.mocked(mockSender.sendMessage).mockRejectedValue(sendError);
+
+    const useCase = new ProcessIncomingMessage(
+      mockSender,
+      mockLLM,
+      mockRegistry,
+      mockChatRepository,
+      mockLogger
+    );
+
+    const message: UserMessage = {
+      id: 'msg-err-delivery',
+      userId: 'user-err',
+      role: 'user',
+      content: 'Crash test with failing sender',
+      timestamp: new Date(),
+    };
+
+    await expect(useCase.execute(message)).resolves.toBeUndefined();
+
+    expect(mockChildLogger.error).toHaveBeenCalledWith('Failed to process message', crashError);
+    expect(mockChildLogger.error).toHaveBeenCalledWith(
+      'Failed to send error notification to user',
+      sendError
+    );
+  });
+
+  it('should use custom systemPrompt when provided in config', async () => {
+    vi.mocked(mockLLM.generateResponse).mockResolvedValue({
+      type: 'text',
+      content: 'Custom response',
+    });
+
+    const customPrompt = 'You are a specialized math tutor. Explain steps thoroughly.';
+    const useCase = new ProcessIncomingMessage(
+      mockSender,
+      mockLLM,
+      mockRegistry,
+      mockChatRepository,
+      mockLogger,
+      { systemPrompt: customPrompt }
+    );
+
+    const message: UserMessage = {
+      id: 'msg-custom-prompt',
+      userId: 'user-prompt',
+      role: 'user',
+      content: 'Hello',
+      timestamp: new Date(),
+    };
+
+    await useCase.execute(message);
+
+    expect(mockLLM.generateResponse).toHaveBeenCalledWith(
+      customPrompt,
+      [message],
+      []
+    );
+  });
 });

@@ -15,12 +15,21 @@ export interface UserMessage extends BaseMessage {
   content: string;
 }
 
-export interface AssistantMessage extends BaseMessage {
+export interface AssistantTextMessage extends BaseMessage {
+  role: 'assistant';
+  content: string;
+  thought?: string;
+  toolCalls?: never;
+}
+
+export interface AssistantToolCallMessage extends BaseMessage {
   role: 'assistant';
   content?: string;
   thought?: string;
-  toolCalls?: ToolCall[];
+  toolCalls: ToolCall[];
 }
+
+export type AssistantMessage = AssistantTextMessage | AssistantToolCallMessage;
 
 export interface ToolMessage extends BaseMessage {
   role: 'tool';

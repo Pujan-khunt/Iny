@@ -27,16 +27,41 @@ describe('Config', () => {
     await expect(import('../src/config')).rejects.toThrow();
   });
 
-  it('should export config if DEEPSEEK_API_KEY is present with default LOG_LEVEL info', async () => {
+  it('should export config if DEEPSEEK_API_KEY is present with default LOG_LEVEL info and default deepseek settings', async () => {
     process.env.DEEPSEEK_API_KEY = 'test_key';
+    delete process.env.DEEPSEEK_BASE_URL;
+    delete process.env.DEEPSEEK_MODEL;
     delete process.env.LOG_LEVEL;
     delete process.env.MAX_TOOL_ITERATIONS;
     delete process.env.MAX_HISTORY_TURNS;
     const { config } = await import('../src/config');
     expect(config.DEEPSEEK_API_KEY).toBe('test_key');
+    expect(config.DEEPSEEK_BASE_URL).toBe('https://api.deepseek.com');
+    expect(config.DEEPSEEK_MODEL).toBe('deepseek-flash');
     expect(config.LOG_LEVEL).toBe('info');
     expect(config.MAX_TOOL_ITERATIONS).toBe(5);
     expect(config.MAX_HISTORY_TURNS).toBe(10);
+  });
+
+  it('should accept custom DEEPSEEK_BASE_URL and DEEPSEEK_MODEL', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.DEEPSEEK_BASE_URL = 'https://custom.api.endpoint.com/v1';
+    process.env.DEEPSEEK_MODEL = 'deepseek-chat';
+    const { config } = await import('../src/config');
+    expect(config.DEEPSEEK_BASE_URL).toBe('https://custom.api.endpoint.com/v1');
+    expect(config.DEEPSEEK_MODEL).toBe('deepseek-chat');
+  });
+
+  it('should throw if DEEPSEEK_BASE_URL is not a valid URL', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.DEEPSEEK_BASE_URL = 'invalid-url';
+    await expect(import('../src/config')).rejects.toThrow();
+  });
+
+  it('should throw if DEEPSEEK_MODEL is empty string', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.DEEPSEEK_MODEL = '';
+    await expect(import('../src/config')).rejects.toThrow();
   });
 
   it('should accept valid LOG_LEVEL values', async () => {

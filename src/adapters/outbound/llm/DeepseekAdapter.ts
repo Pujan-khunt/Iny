@@ -16,13 +16,47 @@ import {
 
 type FunctionToolCall = Extract<OpenAI.Chat.ChatCompletionMessageToolCall, { type: 'function' }>;
 
+export interface DeepseekAdapterOptions {
+  baseURL?: string;
+  model?: string;
+  logger?: LoggerPort;
+}
+
 export class DeepseekAdapter implements LLMPort {
   private client: OpenAI;
+  private baseURL: string;
+  private model: string;
+  private logger?: LoggerPort;
 
-  constructor(apiKey: string, private logger?: LoggerPort) {
+  constructor(apiKey: string, logger?: LoggerPort, options?: { baseURL?: string; model?: string });
+  constructor(apiKey: string, options?: DeepseekAdapterOptions);
+  constructor(
+    apiKey: string,
+    loggerOrOptions?: LoggerPort | DeepseekAdapterOptions,
+    maybeOptions?: { baseURL?: string; model?: string }
+  ) {
+    let logger: LoggerPort | undefined;
+    let baseURL: string | undefined;
+    let model: string | undefined;
+
+    if (loggerOrOptions && typeof (loggerOrOptions as LoggerPort).info === 'function') {
+      logger = loggerOrOptions as LoggerPort;
+      baseURL = maybeOptions?.baseURL;
+      model = maybeOptions?.model;
+    } else if (loggerOrOptions && typeof loggerOrOptions === 'object') {
+      const opts = loggerOrOptions as DeepseekAdapterOptions;
+      logger = opts.logger;
+      baseURL = opts.baseURL;
+      model = opts.model;
+    }
+
+    this.logger = logger;
+    this.baseURL = baseURL ?? 'https://api.deepseek.com';
+    this.model = model ?? 'deepseek-flash';
+
     this.client = new OpenAI({
       apiKey,
-      baseURL: 'https://api.deepseek.com',
+      baseURL: this.baseURL,
     });
   }
 
@@ -36,7 +70,7 @@ export class DeepseekAdapter implements LLMPort {
     const tools = this.buildToolsPayload(plugins, options?.forcedSynthesis);
 
     this.logger?.debug('Sending request to Deepseek LLM', {
-      model: 'deepseek-flash',
+      model: this.model,
       messageCount: messages.length,
     });
 
@@ -64,7 +98,7 @@ export class DeepseekAdapter implements LLMPort {
       case 'assistant': {
         const assistantMsg: OpenAI.Chat.ChatCompletionAssistantMessageParam = {
           role: 'assistant',
-          content: msg.content ?? null,
+          content: msg.content ?? (msg.toolCalls?.length ? null : ''),
         };
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
@@ -115,7 +149,7 @@ export class DeepseekAdapter implements LLMPort {
   ): Promise<OpenAI.Chat.ChatCompletion> {
     try {
       return await this.client.chat.completions.create({
-        model: 'deepseek-flash',
+        model: this.model,
         messages,
         tools,
         tool_choice: tools ? 'auto' : undefined,

@@ -19,7 +19,10 @@ const registry = new InMemoryPluginRegistry(logger);
 registry.register(new CalculatorPlugin());
 
 const chatRepository = new InMemoryChatRepository();
-const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, logger);
+const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, logger, {
+  baseURL: config.DEEPSEEK_BASE_URL,
+  model: config.DEEPSEEK_MODEL,
+});
 const useCase = new ProcessIncomingMessage(mockSender, deepseekAdapter, registry, chatRepository, logger, {
   maxToolIterations: config.MAX_TOOL_ITERATIONS,
   maxHistoryTurns: config.MAX_HISTORY_TURNS

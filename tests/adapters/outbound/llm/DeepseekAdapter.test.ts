@@ -65,6 +65,72 @@ describe('DeepseekAdapter', () => {
     });
   });
 
+  it('should initialize OpenAI client with custom baseURL and use custom model', async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ finish_reason: 'stop', message: { content: 'Custom model response' } }],
+    });
+
+    const adapter = new DeepseekAdapter('test_api_key', {
+      baseURL: 'https://custom.endpoint.com/v1',
+      model: 'deepseek-chat',
+    });
+
+    expect(OpenAI).toHaveBeenCalledWith({
+      apiKey: 'test_api_key',
+      baseURL: 'https://custom.endpoint.com/v1',
+    });
+
+    await adapter.generateResponse('System prompt', [defaultUserMessage], []);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'deepseek-chat',
+      })
+    );
+  });
+
+  it('should accept logger and options in 3-argument constructor', () => {
+    const mockLogger = createMockLogger();
+    new DeepseekAdapter('test_api_key', mockLogger, {
+      baseURL: 'https://proxy.example.com',
+      model: 'custom-model',
+    });
+
+    expect(OpenAI).toHaveBeenCalledWith({
+      apiKey: 'test_api_key',
+      baseURL: 'https://proxy.example.com',
+    });
+  });
+
+  it('should map assistant message defensively to empty string if content is missing and no tool calls exist', async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ finish_reason: 'stop', message: { content: 'OK' } }],
+    });
+
+    const adapter = new DeepseekAdapter('fake_key');
+    const historyWithEmptyAssistant: Message[] = [
+      defaultUserMessage,
+      {
+        id: 'bad-assistant',
+        userId: 'u1',
+        role: 'assistant',
+      } as any,
+    ];
+
+    await adapter.generateResponse('System prompt', historyWithEmptyAssistant, []);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          {
+            role: 'assistant',
+            content: '',
+          },
+        ]),
+      })
+    );
+  });
+
   it('should generate text response when no tool calls are returned', async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ finish_reason: 'stop', message: { content: 'Mock response' } }],
