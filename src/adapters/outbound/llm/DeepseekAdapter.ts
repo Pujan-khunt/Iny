@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
-import { LLMPort, LLMResponse } from '../../../core/ports/LLMPort';
-import { Message } from '../../../core/entities/Message';
+import { LLMPort, LLMResponse, GenerateResponseOptions } from '../../../core/ports/LLMPort';
+import { Message, ToolCall } from '../../../core/entities/Message';
 import { Plugin } from '../../../core/ports/PluginRegistryPort';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
 import {
@@ -27,26 +27,62 @@ export class DeepseekAdapter implements LLMPort {
   async generateResponse(
     systemPrompt: string,
     history: Message[],
-    newMessage: Message,
-    plugins: Plugin[]
+    plugins: Plugin[],
+    options?: GenerateResponseOptions
   ): Promise<LLMResponse> {
+    const mappedHistory: OpenAI.Chat.ChatCompletionMessageParam[] = history.map((msg) => {
+      switch (msg.role) {
+        case 'user':
+          return {
+            role: 'user',
+            content: msg.content,
+          };
+        case 'assistant': {
+          const assistantMsg: OpenAI.Chat.ChatCompletionAssistantMessageParam = {
+            role: 'assistant',
+            content: msg.content ?? null,
+          };
+          if (msg.toolCalls && msg.toolCalls.length > 0) {
+            assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
+              id: tc.id,
+              type: 'function',
+              function: {
+                name: tc.name,
+                arguments: JSON.stringify(tc.arguments),
+              },
+            }));
+          }
+          return assistantMsg;
+        }
+        case 'tool':
+          return {
+            role: 'tool',
+            tool_call_id: msg.toolCallId,
+            content: msg.content,
+          };
+        default: {
+          const exhaustiveCheck: never = msg;
+          throw new Error(`Unhandled message role: ${(exhaustiveCheck as any).role}`);
+        }
+      }
+    });
+
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
-      ...history.map((msg) => ({ role: 'user' as const, content: msg.content })),
-      { role: 'user', content: newMessage.content },
+      ...mappedHistory,
     ];
 
     const tools =
-      plugins.length > 0
-        ? plugins.map((p) => ({
+      options?.forcedSynthesis || plugins.length === 0
+        ? undefined
+        : plugins.map((p) => ({
             type: 'function' as const,
             function: {
               name: p.name,
               description: p.description,
               parameters: p.schema,
             },
-          }))
-        : undefined;
+          }));
 
     this.logger?.debug('Sending request to Deepseek LLM', {
       model: 'deepseek-flash',
@@ -89,44 +125,72 @@ export class DeepseekAdapter implements LLMPort {
       }
     }
 
-    const responseMessage = response.choices?.[0]?.message;
+    const choice = response.choices?.[0];
+    const responseMessage = choice?.message;
 
-    if (!responseMessage) {
+    if (!choice || !responseMessage) {
       throw new LLMResponseError('No message returned from LLM provider');
     }
 
-    this.logger?.debug('Received response from Deepseek LLM', {
-      hasToolCall: Boolean(responseMessage.tool_calls && responseMessage.tool_calls.length > 0),
-    });
+    const rawToolCalls = responseMessage.tool_calls;
+    const isToolCall =
+      (choice.finish_reason === 'tool_calls' || Boolean(rawToolCalls && rawToolCalls.length > 0)) &&
+      Boolean(rawToolCalls && rawToolCalls.length > 0);
 
-    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
-      const toolCall = responseMessage.tool_calls[0];
-      if (toolCall.type === 'function') {
-        let parsedArgs: Record<string, unknown>;
-        try {
-          const raw = JSON.parse(toolCall.function.arguments);
-          if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-            throw new Error('Tool arguments must be a JSON object');
-          }
-          parsedArgs = raw as Record<string, unknown>;
-        } catch (error) {
-          if (this.logger) {
-            this.logger.error('Failed to parse tool arguments', error);
-          } else {
-            console.error('Failed to parse tool arguments:', error);
-          }
-          return { text: 'Sorry, I encountered an error while processing the tool arguments.' };
-        }
+    if (isToolCall && rawToolCalls) {
+      const thought =
+        (responseMessage as any).reasoning_content || responseMessage.content || undefined;
 
-        return {
-          toolCall: {
-            name: toolCall.function.name,
+      const toolCalls: ToolCall[] = rawToolCalls
+        .filter((tc) => tc.type === 'function')
+        .map((tc) => {
+          let parsedArgs: Record<string, unknown> = {};
+          try {
+            const raw = JSON.parse(tc.function.arguments);
+            if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+              parsedArgs = raw as Record<string, unknown>;
+            } else {
+              throw new Error('Tool arguments must be a JSON object');
+            }
+          } catch (error) {
+            if (this.logger) {
+              this.logger.error('Failed to parse tool arguments', error);
+            } else {
+              console.error('Failed to parse tool arguments:', error);
+            }
+            parsedArgs = {};
+          }
+
+          return {
+            id: tc.id,
+            name: tc.function.name,
             arguments: parsedArgs,
-          },
-        };
-      }
+          };
+        });
+
+      this.logger?.debug('Received response from Deepseek LLM', {
+        hasToolCall: true,
+        toolCallCount: toolCalls.length,
+      });
+
+      return {
+        type: 'tool_calls',
+        toolCalls,
+        thought,
+      };
     }
 
-    return { text: responseMessage.content || '' };
+    const thought = (responseMessage as any).reasoning_content || undefined;
+    const content = responseMessage.content ?? '';
+
+    this.logger?.debug('Received response from Deepseek LLM', {
+      hasToolCall: false,
+    });
+
+    return {
+      type: 'text',
+      content,
+      thought,
+    };
   }
 }
