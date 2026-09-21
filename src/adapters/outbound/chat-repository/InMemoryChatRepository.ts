@@ -12,8 +12,7 @@ export class InMemoryChatRepository implements ChatRepositoryPort {
 
   async saveTurn(turn: DialogueTurn): Promise<void> {
     const userTurns = this.turns.get(turn.userId) ?? [];
-    userTurns.push(turn);
-    this.turns.set(turn.userId, userTurns);
+    this.turns.set(turn.userId, [...userTurns, turn]);
   }
 
   async clearHistory(userId: string): Promise<void> {

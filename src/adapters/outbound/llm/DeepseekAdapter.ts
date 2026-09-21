@@ -132,41 +132,36 @@ export class DeepseekAdapter implements LLMPort {
       throw new LLMResponseError('No message returned from LLM provider');
     }
 
-    const rawToolCalls = responseMessage.tool_calls;
-    const isToolCall =
-      (choice.finish_reason === 'tool_calls' || Boolean(rawToolCalls && rawToolCalls.length > 0)) &&
-      Boolean(rawToolCalls && rawToolCalls.length > 0);
+    const functionCalls = responseMessage.tool_calls?.filter((tc) => tc.type === 'function') ?? [];
 
-    if (isToolCall && rawToolCalls) {
+    if (functionCalls.length > 0) {
       const thought =
         (responseMessage as any).reasoning_content || responseMessage.content || undefined;
 
-      const toolCalls: ToolCall[] = rawToolCalls
-        .filter((tc) => tc.type === 'function')
-        .map((tc) => {
-          let parsedArgs: Record<string, unknown> = {};
-          try {
-            const raw = JSON.parse(tc.function.arguments);
-            if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
-              parsedArgs = raw as Record<string, unknown>;
-            } else {
-              throw new Error('Tool arguments must be a JSON object');
-            }
-          } catch (error) {
-            if (this.logger) {
-              this.logger.error('Failed to parse tool arguments', error);
-            } else {
-              console.error('Failed to parse tool arguments:', error);
-            }
-            parsedArgs = {};
+      const toolCalls: ToolCall[] = functionCalls.map((tc) => {
+        let parsedArgs: Record<string, unknown> = {};
+        try {
+          const raw = JSON.parse(tc.function.arguments);
+          if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+            parsedArgs = raw as Record<string, unknown>;
+          } else {
+            throw new Error('Tool arguments must be a JSON object');
           }
+        } catch (error) {
+          if (this.logger) {
+            this.logger.error('Failed to parse tool arguments', error);
+          } else {
+            console.error('Failed to parse tool arguments:', error);
+          }
+          parsedArgs = {};
+        }
 
-          return {
-            id: tc.id,
-            name: tc.function.name,
-            arguments: parsedArgs,
-          };
-        });
+        return {
+          id: tc.id,
+          name: tc.function.name,
+          arguments: parsedArgs,
+        };
+      });
 
       this.logger?.debug('Received response from Deepseek LLM', {
         hasToolCall: true,

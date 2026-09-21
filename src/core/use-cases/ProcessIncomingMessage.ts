@@ -123,7 +123,11 @@ export class ProcessIncomingMessage {
           { forcedSynthesis: true }
         );
 
-        const content = forcedResponse.type === 'text' ? forcedResponse.content : '';
+        const rawContent = forcedResponse.type === 'text' ? forcedResponse.content : '';
+        const content =
+          rawContent.trim() !== ''
+            ? rawContent
+            : "I've reached the maximum number of tool iterations and was unable to complete your request.";
         const assistantMessage: AssistantMessage = {
           id: crypto.randomUUID(),
           userId: message.userId,

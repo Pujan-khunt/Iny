@@ -282,6 +282,59 @@ describe('DeepseekAdapter', () => {
     );
   });
 
+  it('should fall back to text response if tool_calls contains no function calls', async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            content: 'No function tool call here',
+            tool_calls: [
+              {
+                id: 'call_custom',
+                type: 'custom_type' as any,
+                function: { name: 'unknown', arguments: '{}' },
+              },
+            ],
+            reasoning_content: 'Thought process',
+          },
+        },
+      ],
+    });
+
+    const adapter = new DeepseekAdapter('fake_key');
+    const response = await adapter.generateResponse('System prompt', [defaultUserMessage], []);
+
+    expect(response).toEqual({
+      type: 'text',
+      content: 'No function tool call here',
+      thought: 'Thought process',
+    });
+  });
+
+  it('should fall back to text response if tool_calls is an empty array', async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            content: 'Empty tool calls array',
+            tool_calls: [],
+          },
+        },
+      ],
+    });
+
+    const adapter = new DeepseekAdapter('fake_key');
+    const response = await adapter.generateResponse('System prompt', [defaultUserMessage], []);
+
+    expect(response).toEqual({
+      type: 'text',
+      content: 'Empty tool calls array',
+      thought: undefined,
+    });
+  });
+
   it('should extract thought from reasoning_content (DeepSeek V4.1 Flash) on text response', async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [

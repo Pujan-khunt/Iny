@@ -3,8 +3,8 @@ import { z } from 'zod';
 const envSchema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1, 'DEEPSEEK_API_KEY is required'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'fatal']).default('info'),
-  MAX_TOOL_ITERATIONS: z.coerce.number().int().positive().default(5),
-  MAX_HISTORY_TURNS: z.coerce.number().int().positive().default(10),
+  MAX_TOOL_ITERATIONS: z.coerce.number().int().positive().max(20).default(5),
+  MAX_HISTORY_TURNS: z.coerce.number().int().positive().max(100).default(10),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

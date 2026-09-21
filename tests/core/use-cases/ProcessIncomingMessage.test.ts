@@ -314,6 +314,51 @@ describe('ProcessIncomingMessage', () => {
     });
   });
 
+  it('should use fallback message if forced synthesis returns empty string or whitespace', async () => {
+    vi.mocked(mockRegistry.executePlugin).mockResolvedValue('ok');
+
+    vi.mocked(mockLLM.generateResponse)
+      .mockResolvedValueOnce({
+        type: 'tool_calls',
+        toolCalls: [{ id: 'c1', name: 'loopTool', arguments: {} }],
+      })
+      .mockResolvedValueOnce({
+        type: 'text',
+        content: '   ',
+      });
+
+    const useCase = new ProcessIncomingMessage(
+      mockSender,
+      mockLLM,
+      mockRegistry,
+      mockChatRepository,
+      mockLogger,
+      { maxToolIterations: 1 }
+    );
+
+    const message: UserMessage = {
+      id: 'msg-empty-synthesis',
+      userId: 'user-empty',
+      role: 'user',
+      content: 'Loop forever',
+      timestamp: new Date(),
+    };
+
+    await useCase.execute(message);
+
+    expect(mockSender.sendMessage).toHaveBeenCalledWith(
+      'user-empty',
+      "I've reached the maximum number of tool iterations and was unable to complete your request."
+    );
+    expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
+    const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
+    const lastMessage = savedTurn.messages[savedTurn.messages.length - 1];
+    expect(lastMessage).toMatchObject({
+      role: 'assistant',
+      content: "I've reached the maximum number of tool iterations and was unable to complete your request.",
+    });
+  });
+
   it('should retrieve historical turns from repository and prepend to LLM working history', async () => {
     const previousTurn: DialogueTurn = {
       id: 'turn-old',

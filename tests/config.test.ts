@@ -96,4 +96,30 @@ describe('Config', () => {
     process.env.MAX_HISTORY_TURNS = 'xyz';
     await expect(import('../src/config')).rejects.toThrow();
   });
+
+  it('should throw if MAX_TOOL_ITERATIONS exceeds upper bound (20)', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.MAX_TOOL_ITERATIONS = '21';
+    await expect(import('../src/config')).rejects.toThrow();
+  });
+
+  it('should accept MAX_TOOL_ITERATIONS at upper bound (20)', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.MAX_TOOL_ITERATIONS = '20';
+    const { config } = await import('../src/config');
+    expect(config.MAX_TOOL_ITERATIONS).toBe(20);
+  });
+
+  it('should throw if MAX_HISTORY_TURNS exceeds upper bound (100)', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.MAX_HISTORY_TURNS = '101';
+    await expect(import('../src/config')).rejects.toThrow();
+  });
+
+  it('should accept MAX_HISTORY_TURNS at upper bound (100)', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.MAX_HISTORY_TURNS = '100';
+    const { config } = await import('../src/config');
+    expect(config.MAX_HISTORY_TURNS).toBe(100);
+  });
 });

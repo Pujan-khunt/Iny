@@ -78,4 +78,19 @@ describe('InMemoryChatRepository', () => {
     const turnsNeg = await repo.getRecentTurns('user-1', -1);
     expect(turnsNeg).toEqual([]);
   });
+
+  it('should store turns immutably without mutating previously retrieved arrays', async () => {
+    const turn1 = createTurn('1', 'user-1', 'Message 1');
+    await repo.saveTurn(turn1);
+
+    const turnsBefore = await repo.getRecentTurns('user-1', 10);
+    expect(turnsBefore).toHaveLength(1);
+
+    const turn2 = createTurn('2', 'user-1', 'Message 2');
+    await repo.saveTurn(turn2);
+
+    const turnsAfter = await repo.getRecentTurns('user-1', 10);
+    expect(turnsAfter).toHaveLength(2);
+    expect(turnsBefore).toHaveLength(1);
+  });
 });
