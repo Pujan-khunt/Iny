@@ -5,7 +5,7 @@ describe('Config', () => {
 
   beforeEach(() => {
     vi.resetModules();
-    process.env = { ...initialEnv };
+    process.env = { ...initialEnv, SYSTEM_PROMPT: 'test_system_prompt' };
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -27,8 +27,21 @@ describe('Config', () => {
     await expect(import('../src/config')).rejects.toThrow();
   });
 
+  it('should throw if SYSTEM_PROMPT is missing', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    delete process.env.SYSTEM_PROMPT;
+    await expect(import('../src/config')).rejects.toThrow();
+  });
+
+  it('should throw if SYSTEM_PROMPT is empty string', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.SYSTEM_PROMPT = '';
+    await expect(import('../src/config')).rejects.toThrow();
+  });
+
   it('should export config if DEEPSEEK_API_KEY is present with default LOG_LEVEL info and default deepseek settings', async () => {
     process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.SYSTEM_PROMPT = 'test_system_prompt';
     delete process.env.DEEPSEEK_BASE_URL;
     delete process.env.DEEPSEEK_MODEL;
     delete process.env.LOG_LEVEL;
@@ -36,11 +49,19 @@ describe('Config', () => {
     delete process.env.MAX_HISTORY_TURNS;
     const { config } = await import('../src/config');
     expect(config.DEEPSEEK_API_KEY).toBe('test_key');
+    expect(config.SYSTEM_PROMPT).toBe('test_system_prompt');
     expect(config.DEEPSEEK_BASE_URL).toBe('https://api.deepseek.com');
     expect(config.DEEPSEEK_MODEL).toBe('deepseek-flash');
     expect(config.LOG_LEVEL).toBe('info');
     expect(config.MAX_TOOL_ITERATIONS).toBe(5);
     expect(config.MAX_HISTORY_TURNS).toBe(10);
+  });
+
+  it('should accept custom SYSTEM_PROMPT', async () => {
+    process.env.DEEPSEEK_API_KEY = 'test_key';
+    process.env.SYSTEM_PROMPT = 'Custom persona prompt for tests';
+    const { config } = await import('../src/config');
+    expect(config.SYSTEM_PROMPT).toBe('Custom persona prompt for tests');
   });
 
   it('should accept custom DEEPSEEK_BASE_URL and DEEPSEEK_MODEL', async () => {

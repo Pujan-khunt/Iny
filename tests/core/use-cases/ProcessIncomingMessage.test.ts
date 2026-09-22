@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ProcessIncomingMessage } from '../../../src/core/use-cases/ProcessIncomingMessage';
+import {
+  ProcessIncomingMessage,
+  ProcessIncomingMessageConfig,
+} from '../../../src/core/use-cases/ProcessIncomingMessage';
 import { MessageSenderPort } from '../../../src/core/ports/MessageSenderPort';
 import { LLMPort } from '../../../src/core/ports/LLMPort';
 import { PluginRegistryPort, Plugin } from '../../../src/core/ports/PluginRegistryPort';
@@ -15,6 +18,24 @@ describe('ProcessIncomingMessage', () => {
   let mockChatRepository: ChatRepositoryPort;
   let mockLogger: LoggerPort;
   let mockChildLogger: LoggerPort;
+
+  const defaultSystemPrompt = 'You are Iny, a friendly assistant.';
+
+  const createUseCase = (
+    configOverrides?: Partial<ProcessIncomingMessageConfig>
+  ): ProcessIncomingMessage => {
+    return new ProcessIncomingMessage(
+      mockSender,
+      mockLLM,
+      mockRegistry,
+      mockChatRepository,
+      mockLogger,
+      {
+        systemPrompt: defaultSystemPrompt,
+        ...configOverrides,
+      }
+    );
+  };
 
   const createMockLogger = (): LoggerPort => ({
     debug: vi.fn(),
@@ -46,13 +67,7 @@ describe('ProcessIncomingMessage', () => {
       thought: 'Greeting the user',
     });
 
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger
-    );
+    const useCase = createUseCase();
 
     const message: UserMessage = {
       id: 'msg-1',
@@ -67,7 +82,7 @@ describe('ProcessIncomingMessage', () => {
     expect(mockLogger.child).toHaveBeenCalledWith({ userId: 'user1', messageId: 'msg-1' });
     expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith('user1', 10);
     expect(mockLLM.generateResponse).toHaveBeenCalledWith(
-      expect.stringContaining('Iny'),
+      defaultSystemPrompt,
       [message],
       []
     );
@@ -113,13 +128,7 @@ describe('ProcessIncomingMessage', () => {
         content: 'The answer is 4.',
       });
 
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger
-    );
+    const useCase = createUseCase();
 
     const message: UserMessage = {
       id: 'msg-2',
@@ -177,13 +186,7 @@ describe('ProcessIncomingMessage', () => {
         content: 'Tokyo is sunny and 3 PM.',
       });
 
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger
-    );
+    const useCase = createUseCase();
 
     const message: UserMessage = {
       id: 'msg-3',
@@ -230,13 +233,7 @@ describe('ProcessIncomingMessage', () => {
         content: 'Sorry, the service experienced a network timeout.',
       });
 
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger
-    );
+    const useCase = createUseCase();
 
     const message: UserMessage = {
       id: 'msg-4',
@@ -280,14 +277,7 @@ describe('ProcessIncomingMessage', () => {
         content: 'Synthesized conclusion after hitting limit.',
       });
 
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger,
-      { maxToolIterations: 2 }
-    );
+    const useCase = createUseCase({ maxToolIterations: 2 });
 
     const message: UserMessage = {
       id: 'msg-5',
@@ -327,14 +317,7 @@ describe('ProcessIncomingMessage', () => {
         content: '   ',
       });
 
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger,
-      { maxToolIterations: 1 }
-    );
+    const useCase = createUseCase({ maxToolIterations: 1 });
 
     const message: UserMessage = {
       id: 'msg-empty-synthesis',
@@ -376,14 +359,7 @@ describe('ProcessIncomingMessage', () => {
       content: 'Your name is Alice.',
     });
 
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger,
-      { maxHistoryTurns: 5 }
-    );
+    const useCase = createUseCase({ maxHistoryTurns: 5 });
 
     const message: UserMessage = {
       id: 'msg-6',
@@ -421,13 +397,7 @@ describe('ProcessIncomingMessage', () => {
     const crashError = new Error('Database connection dropped');
     vi.mocked(mockChatRepository.getRecentTurns).mockRejectedValue(crashError);
 
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger
-    );
+    const useCase = createUseCase();
 
     const message: UserMessage = {
       id: 'msg-7',
@@ -450,13 +420,7 @@ describe('ProcessIncomingMessage', () => {
     vi.mocked(mockChatRepository.getRecentTurns).mockRejectedValue(crashError);
     vi.mocked(mockSender.sendMessage).mockRejectedValue(sendError);
 
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger
-    );
+    const useCase = createUseCase();
 
     const message: UserMessage = {
       id: 'msg-err-delivery',
@@ -482,14 +446,7 @@ describe('ProcessIncomingMessage', () => {
     });
 
     const customPrompt = 'You are a specialized math tutor. Explain steps thoroughly.';
-    const useCase = new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger,
-      { systemPrompt: customPrompt }
-    );
+    const useCase = createUseCase({ systemPrompt: customPrompt });
 
     const message: UserMessage = {
       id: 'msg-custom-prompt',
@@ -506,5 +463,33 @@ describe('ProcessIncomingMessage', () => {
       [message],
       []
     );
+  });
+
+  it('should throw if systemPrompt is missing or undefined in config', () => {
+    expect(
+      () =>
+        new ProcessIncomingMessage(
+          mockSender,
+          mockLLM,
+          mockRegistry,
+          mockChatRepository,
+          mockLogger,
+          {} as any
+        )
+    ).toThrow('systemPrompt is required');
+  });
+
+  it('should throw if systemPrompt is empty or whitespace', () => {
+    expect(
+      () =>
+        new ProcessIncomingMessage(
+          mockSender,
+          mockLLM,
+          mockRegistry,
+          mockChatRepository,
+          mockLogger,
+          { systemPrompt: '   ' }
+        )
+    ).toThrow('systemPrompt is required');
   });
 });

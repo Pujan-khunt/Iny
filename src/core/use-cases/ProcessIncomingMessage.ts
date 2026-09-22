@@ -7,9 +7,9 @@ import { ChatRepositoryPort } from '../ports/ChatRepositoryPort';
 import { LoggerPort } from '../ports/LoggerPort';
 
 export interface ProcessIncomingMessageConfig {
+  systemPrompt: string;
   maxToolIterations?: number;
   maxHistoryTurns?: number;
-  systemPrompt?: string;
 }
 
 export class ProcessIncomingMessage {
@@ -23,13 +23,14 @@ export class ProcessIncomingMessage {
     private registry: PluginRegistryPort,
     private chatRepository: ChatRepositoryPort,
     private logger: LoggerPort,
-    config?: ProcessIncomingMessageConfig
+    config: ProcessIncomingMessageConfig
   ) {
-    this.maxToolIterations = config?.maxToolIterations ?? 5;
-    this.maxHistoryTurns = config?.maxHistoryTurns ?? 10;
-    this.systemPrompt =
-      config?.systemPrompt ??
-      'You are Iny, a friendly and highly concise assistant for college students. Never use emojis and keep answers under 2 sentences.';
+    if (!config?.systemPrompt || config.systemPrompt.trim() === '') {
+      throw new Error('systemPrompt is required');
+    }
+    this.systemPrompt = config.systemPrompt.trim();
+    this.maxToolIterations = config.maxToolIterations ?? 5;
+    this.maxHistoryTurns = config.maxHistoryTurns ?? 10;
   }
 
   async execute(message: UserMessage): Promise<void> {
