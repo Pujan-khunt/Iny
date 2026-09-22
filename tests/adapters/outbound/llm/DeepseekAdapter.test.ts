@@ -131,6 +131,39 @@ describe('DeepseekAdapter', () => {
     );
   });
 
+  it('should normalize whitespace-only assistant content to null when toolCalls are present', async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ finish_reason: 'stop', message: { content: 'OK' } }],
+    });
+
+    const adapter = new DeepseekAdapter('fake_key');
+    const historyWithWhitespaceToolAssistant: Message[] = [
+      defaultUserMessage,
+      {
+        id: 'whitespace-assistant',
+        userId: 'u1',
+        role: 'assistant',
+        content: '   ',
+        toolCalls: [{ id: 'call_1', name: 'calc', arguments: {} }],
+        timestamp: new Date(),
+      },
+    ];
+
+    await adapter.generateResponse('System prompt', historyWithWhitespaceToolAssistant, []);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          {
+            role: 'assistant',
+            content: null,
+            tool_calls: expect.any(Array),
+          },
+        ]),
+      })
+    );
+  });
+
   it('should generate text response when no tool calls are returned', async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ finish_reason: 'stop', message: { content: 'Mock response' } }],

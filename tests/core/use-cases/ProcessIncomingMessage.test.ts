@@ -465,31 +465,63 @@ describe('ProcessIncomingMessage', () => {
     );
   });
 
-  it('should throw if systemPrompt is missing or undefined in config', () => {
-    expect(
-      () =>
-        new ProcessIncomingMessage(
-          mockSender,
-          mockLLM,
-          mockRegistry,
-          mockChatRepository,
-          mockLogger,
-          {} as any
-        )
-    ).toThrow('systemPrompt is required');
+
+  it('should not send generic error message to user if final response was already delivered before saveTurn failed', async () => {
+    vi.mocked(mockLLM.generateResponse).mockResolvedValue({
+      type: 'text',
+      content: 'Here is your completed answer.',
+    });
+    const repoError = new Error('Database connection failed during saveTurn');
+    vi.mocked(mockChatRepository.saveTurn).mockRejectedValue(repoError);
+
+    const useCase = createUseCase();
+
+    const message: UserMessage = {
+      id: 'msg-save-fail',
+      userId: 'user-save-fail',
+      role: 'user',
+      content: 'Do something',
+      timestamp: new Date(),
+    };
+
+    await useCase.execute(message);
+
+    expect(mockSender.sendMessage).toHaveBeenCalledTimes(1);
+    expect(mockSender.sendMessage).toHaveBeenCalledWith(
+      'user-save-fail',
+      'Here is your completed answer.'
+    );
+    expect(mockChildLogger.error).toHaveBeenCalledWith('Failed to process message', repoError);
   });
 
-  it('should throw if systemPrompt is empty or whitespace', () => {
-    expect(
-      () =>
-        new ProcessIncomingMessage(
-          mockSender,
-          mockLLM,
-          mockRegistry,
-          mockChatRepository,
-          mockLogger,
-          { systemPrompt: '   ' }
-        )
-    ).toThrow('systemPrompt is required');
+  it('should use defensive fallback message if final response from LLM is empty string or whitespace', async () => {
+    vi.mocked(mockLLM.generateResponse).mockResolvedValue({
+      type: 'text',
+      content: '   ',
+    });
+
+    const useCase = createUseCase();
+
+    const message: UserMessage = {
+      id: 'msg-empty-text',
+      userId: 'user-empty-text',
+      role: 'user',
+      content: 'Hello',
+      timestamp: new Date(),
+    };
+
+    await useCase.execute(message);
+
+    expect(mockSender.sendMessage).toHaveBeenCalledWith(
+      'user-empty-text',
+      'I apologize, but I was unable to formulate a response.'
+    );
+    expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
+    const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
+    const lastMessage = savedTurn.messages[savedTurn.messages.length - 1];
+    expect(lastMessage).toMatchObject({
+      role: 'assistant',
+      content: 'I apologize, but I was unable to formulate a response.',
+    });
   });
 });

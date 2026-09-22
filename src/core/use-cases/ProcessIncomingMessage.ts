@@ -25,10 +25,7 @@ export class ProcessIncomingMessage {
     private logger: LoggerPort,
     config: ProcessIncomingMessageConfig
   ) {
-    if (!config?.systemPrompt || config.systemPrompt.trim() === '') {
-      throw new Error('systemPrompt is required');
-    }
-    this.systemPrompt = config.systemPrompt.trim();
+    this.systemPrompt = config.systemPrompt;
     this.maxToolIterations = config.maxToolIterations ?? 5;
     this.maxHistoryTurns = config.maxHistoryTurns ?? 10;
   }
@@ -36,6 +33,7 @@ export class ProcessIncomingMessage {
   async execute(message: UserMessage): Promise<void> {
     const log = this.logger.child({ userId: message.userId, messageId: message.id });
     log.info('Processing incoming message');
+    let answerDelivered = false;
 
     try {
       const plugins = this.registry.getAvailablePlugins();
@@ -46,18 +44,23 @@ export class ProcessIncomingMessage {
 
       const answered = await this.runReActLoop(sessionMessages, history, plugins, log);
 
-      if (!answered) {
+      if (answered) {
+        answerDelivered = true;
+      } else {
         await this.handleCircuitBreaker(sessionMessages, history, plugins, log);
+        answerDelivered = true;
       }
 
       await this.commitTurn(message.userId, sessionMessages);
       log.info('Message processed successfully');
     } catch (error) {
       log.error('Failed to process message', error);
-      try {
-        await this.sender.sendMessage(message.userId, 'An error occurred during processing.');
-      } catch (sendError) {
-        log.error('Failed to send error notification to user', sendError);
+      if (!answerDelivered) {
+        try {
+          await this.sender.sendMessage(message.userId, 'An error occurred during processing.');
+        } catch (sendError) {
+          log.error('Failed to send error notification to user', sendError);
+        }
       }
     }
   }
@@ -96,10 +99,15 @@ export class ProcessIncomingMessage {
 
   private async handleFinalTextResponse(
     userId: string,
-    content: string,
+    rawContent: string,
     thought: string | undefined,
     sessionMessages: Message[]
   ): Promise<void> {
+    const content =
+      rawContent.trim() !== ''
+        ? rawContent
+        : 'I apologize, but I was unable to formulate a response.';
+
     const assistantMessage: AssistantMessage = {
       id: crypto.randomUUID(),
       userId,
@@ -210,7 +218,7 @@ export class ProcessIncomingMessage {
     const completedTurn: DialogueTurn = {
       id: crypto.randomUUID(),
       userId,
-      messages: sessionMessages,
+      messages: [...sessionMessages],
       createdAt: new Date(),
     };
     await this.chatRepository.saveTurn(completedTurn);

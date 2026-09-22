@@ -93,4 +93,17 @@ describe('InMemoryChatRepository', () => {
     expect(turnsAfter).toHaveLength(2);
     expect(turnsBefore).toHaveLength(1);
   });
+
+  it('should trim oldest turns when exceeding maxRetainedTurns', async () => {
+    const cappedRepo = new InMemoryChatRepository(3);
+    for (let i = 1; i <= 5; i++) {
+      await cappedRepo.saveTurn(createTurn(i.toString(), 'user-capped', `Msg ${i}`));
+    }
+
+    const turns = await cappedRepo.getRecentTurns('user-capped', 10);
+    expect(turns).toHaveLength(3);
+    expect(turns[0].id).toBe('3');
+    expect(turns[1].id).toBe('4');
+    expect(turns[2].id).toBe('5');
+  });
 });

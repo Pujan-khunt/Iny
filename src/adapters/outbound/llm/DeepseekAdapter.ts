@@ -96,9 +96,10 @@ export class DeepseekAdapter implements LLMPort {
           content: msg.content,
         };
       case 'assistant': {
+        const hasContent = typeof msg.content === 'string' && msg.content.trim() !== '';
         const assistantMsg: OpenAI.Chat.ChatCompletionAssistantMessageParam = {
           role: 'assistant',
-          content: msg.content ?? (msg.toolCalls?.length ? null : ''),
+          content: hasContent ? msg.content! : (msg.toolCalls?.length ? null : ''),
         };
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
