@@ -646,6 +646,45 @@ describe('DeepseekAdapter', () => {
         {
           id: 'call_1',
           name: 'calculate',
+          arguments: {
+            _parseError: expect.stringContaining('Malformed JSON arguments'),
+          },
+        },
+      ],
+      thought: undefined,
+    });
+  });
+
+  it('should default to empty object when tool arguments are empty string or whitespace', async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            tool_calls: [
+              {
+                id: 'call_empty',
+                type: 'function',
+                function: {
+                  name: 'get_time',
+                  arguments: '   ',
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const adapter = new DeepseekAdapter('test-key');
+    const response = await adapter.generateResponse('system', [defaultUserMessage], []);
+
+    expect(response).toEqual({
+      type: 'tool_calls',
+      toolCalls: [
+        {
+          id: 'call_empty',
+          name: 'get_time',
           arguments: {},
         },
       ],
@@ -653,7 +692,7 @@ describe('DeepseekAdapter', () => {
     });
   });
 
-  it('should parse arguments defensively and default to empty object when tool arguments parse to non-object JSON values', async () => {
+  it('should parse arguments defensively and include _parseError when tool arguments parse to non-object JSON values', async () => {
     const mockLogger = createMockLogger();
 
     mockCreate.mockResolvedValueOnce({
@@ -694,12 +733,16 @@ describe('DeepseekAdapter', () => {
         {
           id: 'call_1',
           name: 'calculate',
-          arguments: {},
+          arguments: {
+            _parseError: expect.stringContaining('Malformed JSON arguments'),
+          },
         },
         {
           id: 'call_2',
           name: 'calculate',
-          arguments: {},
+          arguments: {
+            _parseError: expect.stringContaining('Malformed JSON arguments'),
+          },
         },
       ],
       thought: undefined,

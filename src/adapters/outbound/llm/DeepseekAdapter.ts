@@ -241,6 +241,9 @@ export class DeepseekAdapter implements LLMPort {
   }
 
   private parseToolArguments(rawArguments: string): Record<string, unknown> {
+    if (!rawArguments || rawArguments.trim() === '') {
+      return {};
+    }
     try {
       const raw = JSON.parse(rawArguments);
       if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
@@ -248,12 +251,15 @@ export class DeepseekAdapter implements LLMPort {
       }
       throw new Error('Tool arguments must be a JSON object');
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       if (this.logger) {
         this.logger.error('Failed to parse tool arguments', error);
       } else {
         console.error('Failed to parse tool arguments:', error);
       }
-      return {};
+      return {
+        _parseError: `Malformed JSON arguments (${errorMessage}): "${rawArguments}"`,
+      };
     }
   }
 }

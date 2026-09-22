@@ -86,10 +86,11 @@ export class ProcessIncomingMessage {
       if (response.type === 'text') {
         await this.handleFinalTextResponse(userId, response.content, response.thought, sessionMessages);
         return true;
-      }
-
-      if (response.type === 'tool_calls') {
+      } else if (response.type === 'tool_calls') {
         await this.handleToolCallsStep(userId, response.toolCalls, response.thought, sessionMessages, log);
+        iteration++;
+      } else {
+        log.error('Unexpected LLM response type received in ReAct loop', { response });
         iteration++;
       }
     }
@@ -150,6 +151,9 @@ export class ProcessIncomingMessage {
       toolCalls.map(async (tc): Promise<ToolMessage> => {
         try {
           log.info('Executing tool call', { toolName: tc.name });
+          if (typeof tc.arguments?._parseError === 'string') {
+            throw new Error(`Failed to parse tool arguments: ${tc.arguments._parseError}`);
+          }
           const result = await this.registry.executePlugin(tc.name, tc.arguments);
           return {
             id: crypto.randomUUID(),

@@ -524,4 +524,87 @@ describe('ProcessIncomingMessage', () => {
       content: 'I apologize, but I was unable to formulate a response.',
     });
   });
+
+  it('should increment iteration, log error, and trigger circuit breaker if LLM returns unexpected response type', async () => {
+    vi.mocked(mockLLM.generateResponse)
+      .mockResolvedValueOnce({
+        type: 'unexpected_type' as any,
+      })
+      .mockResolvedValueOnce({
+        type: 'text',
+        content: 'Fallback response after unexpected type',
+      });
+
+    const useCase = createUseCase({ maxToolIterations: 1 });
+
+    const message: UserMessage = {
+      id: 'msg-unexpected',
+      userId: 'user-unexpected',
+      role: 'user',
+      content: 'Trigger unexpected',
+      timestamp: new Date(),
+    };
+
+    await useCase.execute(message);
+
+    expect(mockChildLogger.error).toHaveBeenCalledWith(
+      'Unexpected LLM response type received in ReAct loop',
+      expect.objectContaining({ response: { type: 'unexpected_type' } })
+    );
+    // After 1 iteration, circuit breaker forcedSynthesis is triggered
+    expect(mockSender.sendMessage).toHaveBeenCalledWith(
+      'user-unexpected',
+      'Fallback response after unexpected type'
+    );
+  });
+
+  it('should reflect explicit argument parse error into ToolMessage when tool arguments contain _parseError', async () => {
+    vi.mocked(mockLLM.generateResponse)
+      .mockResolvedValueOnce({
+        type: 'tool_calls',
+        toolCalls: [
+          {
+            id: 'call_bad_json',
+            name: 'calculate',
+            arguments: {
+              _parseError: 'Malformed JSON arguments (SyntaxError: Unexpected end of JSON): "{"expr": 2+"',
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        type: 'text',
+        content: 'Your expression had a syntax error. Please provide a valid expression.',
+      });
+
+    const useCase = createUseCase();
+
+    const message: UserMessage = {
+      id: 'msg-bad-args',
+      userId: 'user-bad-args',
+      role: 'user',
+      content: 'Calculate something with broken json',
+      timestamp: new Date(),
+    };
+
+    await useCase.execute(message);
+
+    expect(mockRegistry.executePlugin).not.toHaveBeenCalled();
+    expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
+
+    const secondHistory = vi.mocked(mockLLM.generateResponse).mock.calls[1][1];
+    const toolResultMsg = secondHistory[secondHistory.length - 1];
+    expect(toolResultMsg).toMatchObject({
+      role: 'tool',
+      toolCallId: 'call_bad_json',
+      name: 'calculate',
+      content: expect.stringContaining(
+        "Error executing tool 'calculate': Failed to parse tool arguments: Malformed JSON arguments"
+      ),
+    });
+    expect(mockSender.sendMessage).toHaveBeenCalledWith(
+      'user-bad-args',
+      'Your expression had a syntax error. Please provide a valid expression.'
+    );
+  });
 });
