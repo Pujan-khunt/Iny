@@ -101,6 +101,9 @@ export class DeepseekAdapter implements LLMPort {
           role: 'assistant',
           content: hasContent ? msg.content! : (msg.toolCalls?.length ? null : ''),
         };
+        if (msg.thought) {
+          (assistantMsg as any).reasoning_content = msg.thought;
+        }
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           assistantMsg.tool_calls = msg.toolCalls.map((tc) => ({
             id: tc.id,

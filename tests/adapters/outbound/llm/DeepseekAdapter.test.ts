@@ -164,6 +164,39 @@ describe('DeepseekAdapter', () => {
     );
   });
 
+  it('should map thought to reasoning_content on assistant message when replaying history', async () => {
+    mockCreate.mockResolvedValueOnce({
+      choices: [{ finish_reason: 'stop', message: { content: 'OK' } }],
+    });
+
+    const adapter = new DeepseekAdapter('fake_key');
+    const historyWithThought: Message[] = [
+      defaultUserMessage,
+      {
+        id: 'assistant-with-thought',
+        userId: 'u1',
+        role: 'assistant',
+        thought: 'I need to calculate the sum first',
+        toolCalls: [{ id: 'call_1', name: 'calc', arguments: { a: 1, b: 2 } }],
+        timestamp: new Date(),
+      },
+    ];
+
+    await adapter.generateResponse('System prompt', historyWithThought, []);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: 'assistant',
+            reasoning_content: 'I need to calculate the sum first',
+            tool_calls: expect.any(Array),
+          }),
+        ]),
+      })
+    );
+  });
+
   it('should generate text response when no tool calls are returned', async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [{ finish_reason: 'stop', message: { content: 'Mock response' } }],
@@ -257,6 +290,7 @@ describe('DeepseekAdapter', () => {
           {
             role: 'assistant',
             content: null,
+            reasoning_content: 'I need to use calculator and weather plugins',
             tool_calls: [
               {
                 id: 'call_1',

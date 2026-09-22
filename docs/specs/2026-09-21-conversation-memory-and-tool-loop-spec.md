@@ -188,6 +188,7 @@ export interface LLMPort {
 ### 5.1. Dependencies & Initialization
 ```typescript
 export interface ProcessIncomingMessageConfig {
+  systemPrompt: string;
   maxToolIterations?: number;
   maxHistoryTurns?: number;
 }
@@ -195,6 +196,7 @@ export interface ProcessIncomingMessageConfig {
 export class ProcessIncomingMessage {
   private maxToolIterations: number;
   private maxHistoryTurns: number;
+  private readonly systemPrompt: string;
 
   constructor(
     private sender: MessageSenderPort,
@@ -202,10 +204,11 @@ export class ProcessIncomingMessage {
     private registry: PluginRegistryPort,
     private chatRepository: ChatRepositoryPort,
     private logger: LoggerPort,
-    config?: ProcessIncomingMessageConfig
+    config: ProcessIncomingMessageConfig
   ) {
-    this.maxToolIterations = config?.maxToolIterations ?? 5;
-    this.maxHistoryTurns = config?.maxHistoryTurns ?? 10;
+    this.systemPrompt = config.systemPrompt;
+    this.maxToolIterations = config.maxToolIterations ?? 5;
+    this.maxHistoryTurns = config.maxHistoryTurns ?? 10;
   }
   // ...
 }
@@ -272,11 +275,13 @@ If `registry.executePlugin()` throws an exception or rejects:
 - **Responsibilities:**
   - Implements `ChatRepositoryPort`.
   - Holds state in `private turns = new Map<string, DialogueTurn[]>()`.
+  - Configurable `maxRetainedTurns` (default 200) to cap in-memory storage and prevent unbounded growth.
   - `getRecentTurns(userId, maxTurns)`:
     - Retrieves turns array for `userId` (or empty array if not found).
     - Returns `userTurns.slice(-maxTurns)`.
   - `saveTurn(turn)`:
-    - Appends `turn` to user's array in map.
+    - Appends `turn` immutably to user's array in map (`[...userTurns, turn]`).
+    - Evicts oldest turns if array length exceeds `maxRetainedTurns`.
   - `clearHistory(userId)`:
     - Deletes key from map.
 
@@ -289,7 +294,8 @@ If `registry.executePlugin()` throws an exception or rejects:
       ```typescript
       {
         role: 'assistant',
-        content: msg.content ?? null,
+        content: msg.content ?? (msg.toolCalls?.length ? null : ''),
+        ...(msg.thought ? { reasoning_content: msg.thought } : {}),
         tool_calls: msg.toolCalls?.map(tc => ({
           id: tc.id,
           type: 'function',
@@ -300,6 +306,7 @@ If `registry.executePlugin()` throws an exception or rejects:
         }))
       }
       ```
+      Replays `reasoning_content` from `msg.thought` when present to comply with DeepSeek thinking mode multi-turn tool calling protocol, preventing HTTP 400 Bad Request.
     - `role === 'tool'`: `{ role: 'tool', tool_call_id: msg.toolCallId, content: msg.content }`
   - Parses incoming `response.choices[0]`:
     - Inspects `finish_reason === 'tool_calls'` and `message.tool_calls`.
@@ -316,11 +323,14 @@ If `registry.executePlugin()` throws an exception or rejects:
 ### 7.1. `src/config.ts`
 Update Zod schema:
 ```typescript
-export const envSchema = z.object({
+export const configSchema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1, 'DEEPSEEK_API_KEY is required'),
+  DEEPSEEK_BASE_URL: z.url().default('https://api.deepseek.com'),
+  DEEPSEEK_MODEL: z.string().default('deepseek-flash'),
+  SYSTEM_PROMPT: z.string().min(1, 'SYSTEM_PROMPT is required'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  MAX_TOOL_ITERATIONS: z.coerce.number().int().positive().default(5),
-  MAX_HISTORY_TURNS: z.coerce.number().int().positive().default(10),
+  MAX_TOOL_ITERATIONS: z.coerce.number().int().positive().max(20).default(5),
+  MAX_HISTORY_TURNS: z.coerce.number().int().positive().max(100).default(10),
 });
 ```
 
