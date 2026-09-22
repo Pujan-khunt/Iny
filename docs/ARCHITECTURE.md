@@ -6,16 +6,20 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
 
 ## 2. Mental Model & Core Concepts
 
-- **Entity**: Central data structures representing domain concepts, like `src/core/entities/Message.ts`.
-- **Use Case**: Application-specific business rules. `src/core/use-cases/ProcessIncomingMessage.ts` orchestrates the flow of reading a message, fetching tools, querying the LLM, and sending the response.
+- **Entity**: Central data structures representing domain concepts:
+  - `src/core/entities/Message.ts`: Discriminated union of `UserMessage`, `AssistantMessage` (`AssistantTextMessage` | `AssistantToolCallMessage`), and `ToolMessage`.
+  - `src/core/entities/DialogueTurn.ts`: Encapsulates a complete, turn-atomic interaction boundary (`UserMessage`, intermediate tool calls/results, and final `AssistantMessage`).
+- **Use Case**: Application-specific business rules. `src/core/use-cases/ProcessIncomingMessage.ts` orchestrates loading historical turns, the iterative ReAct tool loop, concurrent tool execution, circuit breaker forced synthesis, user message delivery, and atomic turn persistence.
 - **Ports**: Interfaces that define how the core communicates with the outside world without knowing implementation details.
   - `src/core/ports/MessageSenderPort.ts`
   - `src/core/ports/LLMPort.ts`
+  - `src/core/ports/ChatRepositoryPort.ts`
   - `src/core/ports/LoggerPort.ts`
   - `src/core/ports/PluginRegistryPort.ts`
 - **Inbound Adapters**: Entry points that trigger core use cases. For example, `src/adapters/inbound/cli/CLIAdapter.ts` simulates user interaction via the command line.
 - **Outbound Adapters**: Concrete implementations of our core ports that interact with external services.
   - `src/adapters/outbound/llm/DeepseekAdapter.ts`
+  - `src/adapters/outbound/chat-repository/InMemoryChatRepository.ts`
   - `src/adapters/outbound/logger/PinoLoggerAdapter.ts`
   - `src/adapters/outbound/plugin-registry/InMemoryPluginRegistry.ts`
 - **Plugins**: Modular tool extensions available to the LLM, such as `src/plugins/CalculatorPlugin.ts`.
@@ -26,14 +30,16 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
 src/
 ├── core/                           # The Pure Domain Core (Zero External Dependencies)
 │   ├── entities/
-│   │   └── Message.ts              # Domain entities
+│   │   ├── Message.ts              # Message discriminated union
+│   │   └── DialogueTurn.ts         # Turn-atomic conversation unit
 │   ├── use-cases/
-│   │   └── ProcessIncomingMessage.ts # Core business logic
+│   │   └── ProcessIncomingMessage.ts # ReAct loop & memory orchestration
 │   ├── ports/                      # Interfaces for external dependencies
-│   │   ├── LLMPort.ts
-│   │   ├── LoggerPort.ts
-│   │   ├── MessageSenderPort.ts
-│   │   └── PluginRegistryPort.ts
+│   │   ├── ChatRepositoryPort.ts   # Conversation history persistence port
+│   │   ├── LLMPort.ts              # Language model reasoning & tool call port
+│   │   ├── LoggerPort.ts           # Structured logging port
+│   │   ├── MessageSenderPort.ts    # Outbound messaging transport port
+│   │   └── PluginRegistryPort.ts   # Dynamic tool registry port
 │   └── errors/
 │       └── LLMErrors.ts            # Custom domain errors
 ├── adapters/                       # Interaction with the outside world
@@ -41,10 +47,12 @@ src/
 │   │   └── cli/
 │   │       └── CLIAdapter.ts       # Command line interface for manual testing
 │   └── outbound/
+│       ├── chat-repository/
+│       │   └── InMemoryChatRepository.ts # In-memory sliding window turn storage
 │       ├── llm/
-│       │   └── DeepseekAdapter.ts  # Deepseek LLM integration
+│       │   └── DeepseekAdapter.ts  # DeepSeek V4.1 Flash OpenAI-compatible adapter
 │       ├── logger/
-│       │   └── PinoLoggerAdapter.ts# Logging using Pino
+│       │   └── PinoLoggerAdapter.ts# Structured logging using Pino
 │       └── plugin-registry/
 │           └── InMemoryPluginRegistry.ts # Manages available plugins
 ├── plugins/
@@ -60,6 +68,7 @@ sequenceDiagram
     participant Input as CLI [WhatsApp planned]
     participant CLI as CLIAdapter.ts
     participant UC as ProcessIncomingMessage.ts
+    participant Repo as ChatRepositoryPort.ts
     participant Reg as PluginRegistryPort.ts
     participant LLM as LLMPort.ts
     participant Sender as MessageSenderPort.ts
@@ -67,22 +76,33 @@ sequenceDiagram
 
     Input->>CLI: User sends message
     CLI->>UC: execute(message)
-    UC->>Log: logger.info("Processing message")
+    UC->>Log: logger.info("Processing incoming message")
+    UC->>Repo: chatRepository.getRecentTurns(userId, maxHistoryTurns)
+    Repo-->>UC: DialogueTurn[] (history)
     UC->>Reg: registry.getAvailablePlugins()
     Reg-->>UC: Array of plugins
-    UC->>LLM: llm.generateResponse(systemPrompt, history, message, plugins)
-    opt Text response
-        LLM-->>UC: response.text
-        UC->>Sender: sender.sendMessage(message.userId, response.text)
+
+    loop ReAct Tool Loop (up to maxToolIterations)
+        UC->>LLM: llm.generateResponse(systemPrompt, workingHistory, plugins)
+        alt Response: Text
+            LLM-->>UC: { type: 'text', content, thought }
+            UC->>Sender: sender.sendMessage(userId, content)
+            Note over UC: Break loop
+        else Response: Tool Calls
+            LLM-->>UC: { type: 'tool_calls', toolCalls, thought }
+            UC->>Reg: Promise.all(plugins.executePlugin(...))
+            Reg-->>UC: Tool results / reflected errors
+            Note over UC: Append tool messages to workingHistory & iterate
+        end
     end
-    opt Tool call
-        LLM-->>UC: response.toolCall
-        UC->>Log: logger.info("Executing tool call")
-        UC->>Reg: registry.executePlugin(toolName, arguments)
-        Reg-->>UC: toolResult
-        UC->>Sender: sender.sendMessage(message.userId, toolResult)
+
+    opt Circuit Breaker (if max iterations reached without text)
+        UC->>LLM: llm.generateResponse(systemPrompt, workingHistory, plugins, { forcedSynthesis: true })
+        LLM-->>UC: { type: 'text', content }
+        UC->>Sender: sender.sendMessage(userId, content)
     end
-    Sender-->>UC: delivery success
+
+    UC->>Repo: chatRepository.saveTurn(completedTurn)
     UC->>Log: logger.info("Message processed successfully")
     UC-->>CLI: Done
 ```
@@ -90,6 +110,7 @@ sequenceDiagram
 ## 5. Architectural Invariants
 
 - **Pure Core**: `src/core/` must never import from outside of itself. It contains solely TypeScript interfaces, classes, and types.
+- **Turn-Atomic Conversation Memory**: History persistence is partitioned into complete `DialogueTurn` boundaries. Sliding windows and retention limits prune complete turns, never bisecting an assistant tool call from its corresponding tool response.
 - **Single Composition Root**: In production runtime code, `src/index.ts` is the only place where adapters and the core are stitched together. Dependency injection is wired up here (unit tests and internal adapter factory methods like `PinoLoggerAdapter.child()` may instantiate adapters directly).
 - **Fail-Fast Startup**: `src/config.ts` uses Zod to validate all environment variables at startup. If configuration is invalid, the application fails immediately before any business logic is executed.
 

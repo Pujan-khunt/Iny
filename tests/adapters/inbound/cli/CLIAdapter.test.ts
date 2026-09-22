@@ -54,6 +54,7 @@ describe('CLIAdapter', () => {
     expect(mockUseCase.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'cli-user',
+        role: 'user',
         content: 'hello world',
         id: expect.any(String),
         timestamp: expect.any(Date)
