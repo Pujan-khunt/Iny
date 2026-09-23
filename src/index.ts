@@ -2,7 +2,7 @@ import { ProcessIncomingMessage } from './core/use-cases/ProcessIncomingMessage'
 import { CLIAdapter } from './adapters/inbound/cli/CLIAdapter';
 import { config } from './config';
 import { DeepseekAdapter } from './adapters/outbound/llm/DeepseekAdapter';
-import { InMemoryPluginRegistry } from './adapters/outbound/plugin-registry/InMemoryPluginRegistry';
+import { InMemoryToolRegistry } from './adapters/outbound/tool-registry/InMemoryToolRegistry';
 import { CalculatorTool } from './tools/CalculatorTool';
 import { PinoLoggerAdapter } from './adapters/outbound/logger/PinoLoggerAdapter';
 import { InMemoryChatRepository } from './adapters/outbound/chat-repository/InMemoryChatRepository';
@@ -15,7 +15,7 @@ const mockSender = {
   }
 };
 
-const registry = new InMemoryPluginRegistry(logger);
+const registry = new InMemoryToolRegistry(logger);
 registry.register(new CalculatorTool());
 
 const chatRepository = new InMemoryChatRepository();
