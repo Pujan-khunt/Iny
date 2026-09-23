@@ -1,67 +1,74 @@
-import { Message, UserMessage, AssistantMessage, ToolMessage, ToolCall } from '../entities/Message';
+import { Message, UserMessage } from '../entities/Message';
 import { DialogueTurn } from '../entities/DialogueTurn';
 import { MessageSenderPort } from '../ports/MessageSenderPort';
-import { LLMPort } from '../ports/LLMPort';
-import { PluginRegistryPort, Plugin } from '../ports/PluginRegistryPort';
 import { ChatRepositoryPort } from '../ports/ChatRepositoryPort';
+import { ToolRegistryPort } from '../ports/ToolRegistryPort';
 import { LoggerPort } from '../ports/LoggerPort';
+import { AgentLoop, AgentLoopResult } from './AgentLoop';
+import {
+  LLMError,
+  LLMAuthenticationError,
+  LLMInsufficientBalanceError,
+  LLMRateLimitError,
+  LLMServerOverloadedError,
+} from '../errors/LLMErrors';
 
 export interface ProcessIncomingMessageConfig {
-  systemPrompt: string;
-  maxToolIterations?: number;
   maxHistoryTurns?: number;
 }
 
 export class ProcessIncomingMessage {
-  private maxToolIterations: number;
-  private maxHistoryTurns: number;
-  private readonly systemPrompt: string;
+  private readonly maxHistoryTurns: number;
 
   constructor(
     private sender: MessageSenderPort,
-    private llm: LLMPort,
-    private registry: PluginRegistryPort,
     private chatRepository: ChatRepositoryPort,
+    private agentLoop: AgentLoop,
+    private toolRegistry: ToolRegistryPort,
     private logger: LoggerPort,
-    config: ProcessIncomingMessageConfig
+    config?: ProcessIncomingMessageConfig
   ) {
-    this.systemPrompt = config.systemPrompt;
-    this.maxToolIterations = config.maxToolIterations ?? 5;
-    this.maxHistoryTurns = config.maxHistoryTurns ?? 10;
+    this.maxHistoryTurns = config?.maxHistoryTurns ?? 10;
   }
 
   async execute(message: UserMessage): Promise<void> {
     const log = this.logger.child({ userId: message.userId, messageId: message.id });
     log.info('Processing incoming message');
-    let answerDelivered = false;
 
+    // 1. REASONING PHASE
+    let loopResult: AgentLoopResult;
     try {
-      const plugins = this.registry.getAvailablePlugins();
-      log.debug('Available tools discovered', { count: plugins.length });
-
       const history = await this.loadHistoricalMessages(message.userId);
-      const sessionMessages: Message[] = [message];
+      const tools = this.toolRegistry.getToolDefinitions();
+      loopResult = await this.agentLoop.run(message, history, tools, log);
+    } catch (reasoningError) {
+      this.handleReasoningError(reasoningError, log);
+      await this.safeSendFallback(message.userId, reasoningError, log);
+      return;
+    }
 
-      const answered = await this.runReActLoop(sessionMessages, history, plugins, log);
+    // 2. DELIVERY PHASE
+    try {
+      await this.sender.sendMessage(message.userId, loopResult.finalText);
+    } catch (deliveryError) {
+      log.error('Failed to deliver message to user via transport', deliveryError);
+      // Transport failed: do not attempt to send error notification through the dead transport.
+      return;
+    }
 
-      if (answered) {
-        answerDelivered = true;
-      } else {
-        await this.handleCircuitBreaker(sessionMessages, history, plugins, log);
-        answerDelivered = true;
-      }
-
-      await this.commitTurn(message.userId, sessionMessages);
+    // 3. PERSISTENCE PHASE
+    try {
+      const turn: DialogueTurn = {
+        id: crypto.randomUUID(),
+        userId: message.userId,
+        messages: loopResult.sessionMessages,
+        createdAt: new Date(),
+      };
+      await this.chatRepository.saveTurn(turn);
       log.info('Message processed successfully');
-    } catch (error) {
-      log.error('Failed to process message', error);
-      if (!answerDelivered) {
-        try {
-          await this.sender.sendMessage(message.userId, 'An error occurred during processing.');
-        } catch (sendError) {
-          log.error('Failed to send error notification to user', sendError);
-        }
-      }
+    } catch (persistenceError) {
+      log.error('Failed to persist dialogue turn', persistenceError);
+      // User already received their message, so do not crash or message user.
     }
   }
 
@@ -70,161 +77,29 @@ export class ProcessIncomingMessage {
     return recentTurns.flatMap((turn) => turn.messages);
   }
 
-  private async runReActLoop(
-    sessionMessages: Message[],
-    history: Message[],
-    plugins: Plugin[],
-    log: LoggerPort
-  ): Promise<boolean> {
-    const userId = sessionMessages[0].userId;
-    let iteration = 0;
-
-    while (iteration < this.maxToolIterations) {
-      const workingHistory = [...history, ...sessionMessages];
-      const response = await this.llm.generateResponse(this.systemPrompt, workingHistory, plugins);
-
-      if (response.type === 'text') {
-        await this.handleFinalTextResponse(userId, response.content, response.thought, sessionMessages);
-        return true;
-      } else if (response.type === 'tool_calls') {
-        await this.handleToolCallsStep(userId, response.toolCalls, response.thought, sessionMessages, log);
-        iteration++;
-      } else {
-        log.error('Unexpected LLM response type received in ReAct loop', { response });
-        iteration++;
-      }
+  private handleReasoningError(error: unknown, log: LoggerPort): void {
+    if (error instanceof LLMAuthenticationError || error instanceof LLMInsufficientBalanceError) {
+      log.fatal('Unrecoverable LLM account or authentication failure', error, {
+        status: error.status,
+        code: error.code,
+      });
+    } else {
+      log.error('Failed during reasoning loop', error, {
+        status: error instanceof LLMError ? error.status : undefined,
+        code: error instanceof LLMError ? error.code : undefined,
+      });
     }
-
-    return false;
   }
 
-  private async handleFinalTextResponse(
-    userId: string,
-    rawContent: string,
-    thought: string | undefined,
-    sessionMessages: Message[]
-  ): Promise<void> {
-    const content =
-      rawContent.trim() !== ''
-        ? rawContent
-        : 'I apologize, but I was unable to formulate a response.';
-
-    const assistantMessage: AssistantMessage = {
-      id: crypto.randomUUID(),
-      userId,
-      role: 'assistant',
-      content,
-      thought,
-      timestamp: new Date(),
-    };
-    sessionMessages.push(assistantMessage);
-    await this.sender.sendMessage(userId, content);
-  }
-
-  private async handleToolCallsStep(
-    userId: string,
-    toolCalls: ToolCall[],
-    thought: string | undefined,
-    sessionMessages: Message[],
-    log: LoggerPort
-  ): Promise<void> {
-    const assistantMessage: AssistantMessage = {
-      id: crypto.randomUUID(),
-      userId,
-      role: 'assistant',
-      thought,
-      toolCalls,
-      timestamp: new Date(),
-    };
-    sessionMessages.push(assistantMessage);
-
-    const toolMessages = await this.executeToolsConcurrently(userId, toolCalls, log);
-    sessionMessages.push(...toolMessages);
-  }
-
-  private async executeToolsConcurrently(
-    userId: string,
-    toolCalls: ToolCall[],
-    log: LoggerPort
-  ): Promise<ToolMessage[]> {
-    return Promise.all(
-      toolCalls.map(async (tc): Promise<ToolMessage> => {
-        try {
-          log.info('Executing tool call', { toolName: tc.name });
-          if (typeof tc.arguments?._parseError === 'string') {
-            throw new Error(`Failed to parse tool arguments: ${tc.arguments._parseError}`);
-          }
-          const result = await this.registry.executePlugin(tc.name, tc.arguments);
-          return {
-            id: crypto.randomUUID(),
-            userId,
-            role: 'tool',
-            toolCallId: tc.id,
-            name: tc.name,
-            content: result,
-            timestamp: new Date(),
-          };
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          log.warn('Tool execution failed', { toolName: tc.name, error: errorMessage });
-          return {
-            id: crypto.randomUUID(),
-            userId,
-            role: 'tool',
-            toolCallId: tc.id,
-            name: tc.name,
-            content: `Error executing tool '${tc.name}': ${errorMessage}`,
-            timestamp: new Date(),
-          };
-        }
-      })
-    );
-  }
-
-  private async handleCircuitBreaker(
-    sessionMessages: Message[],
-    history: Message[],
-    plugins: Plugin[],
-    log: LoggerPort
-  ): Promise<void> {
-    const userId = sessionMessages[0].userId;
-    log.warn('Max tool iterations reached, forcing synthesis', {
-      maxIterations: this.maxToolIterations,
-    });
-
-    const workingHistory = [...history, ...sessionMessages];
-    const forcedResponse = await this.llm.generateResponse(
-      this.systemPrompt,
-      workingHistory,
-      plugins,
-      { forcedSynthesis: true }
-    );
-
-    const rawContent = forcedResponse.type === 'text' ? forcedResponse.content : '';
-    const content =
-      rawContent.trim() !== ''
-        ? rawContent
-        : "I've reached the maximum number of tool iterations and was unable to complete your request.";
-
-    const assistantMessage: AssistantMessage = {
-      id: crypto.randomUUID(),
-      userId,
-      role: 'assistant',
-      content,
-      thought: forcedResponse.thought,
-      timestamp: new Date(),
-    };
-    sessionMessages.push(assistantMessage);
-    await this.sender.sendMessage(userId, content);
-  }
-
-  private async commitTurn(userId: string, sessionMessages: Message[]): Promise<void> {
-    const completedTurn: DialogueTurn = {
-      id: crypto.randomUUID(),
-      userId,
-      messages: [...sessionMessages],
-      createdAt: new Date(),
-    };
-    await this.chatRepository.saveTurn(completedTurn);
+  private async safeSendFallback(userId: string, error: unknown, log: LoggerPort): Promise<void> {
+    try {
+      const userMessage =
+        error instanceof LLMRateLimitError || error instanceof LLMServerOverloadedError
+          ? 'Iny is experiencing heavy traffic right now. Please try again in a moment.'
+          : 'An error occurred during processing.';
+      await this.sender.sendMessage(userId, userMessage);
+    } catch (fallbackError) {
+      log.error('Failed to send error notification to user', fallbackError);
+    }
   }
 }

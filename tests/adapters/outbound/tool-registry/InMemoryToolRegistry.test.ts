@@ -99,15 +99,4 @@ describe('InMemoryToolRegistry', () => {
 
     expect(mockLogger.debug).toHaveBeenCalledWith('Tool registered', { toolName: 'test_tool' });
   });
-
-  it('should support transitional methods executePlugin and getAvailablePlugins', async () => {
-    registry.register(dummyTool);
-
-    const plugins = registry.getAvailablePlugins();
-    expect(plugins).toHaveLength(1);
-    expect(plugins[0]).toBe(dummyTool);
-
-    const result = await registry.executePlugin('test_tool', { key: 'val' });
-    expect(result).toBe('tool success result');
-  });
 });

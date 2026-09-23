@@ -29,14 +29,4 @@ export class InMemoryToolRegistry implements ToolRegistryPort {
     }
     return await tool.execute(args);
   }
-
-  /** Transitional alias for backward compatibility until Task 6 refactors ProcessIncomingMessage. */
-  async executePlugin(name: string, args: Record<string, unknown>): Promise<string> {
-    return this.executeTool(name, args);
-  }
-
-  /** Transitional alias for backward compatibility until Task 6 refactors ProcessIncomingMessage. */
-  getAvailablePlugins(): Tool[] {
-    return Array.from(this.tools.values());
-  }
 }
