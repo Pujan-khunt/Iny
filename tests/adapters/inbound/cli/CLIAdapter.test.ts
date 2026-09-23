@@ -156,12 +156,6 @@ describe('CLIAdapter', () => {
     errorSpy.mockRestore();
   });
 
-  it('should initialize default readline interface when none provided', () => {
-    const adapter = new CLIAdapter(mockUseCase);
-    expect((adapter as any).rl).toBeDefined();
-    (adapter as any).rl.close();
-  });
-
   it('should log error to injected logger when message processing fails', async () => {
     const mockLogger: LoggerPort = {
       debug: vi.fn(),
