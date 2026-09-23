@@ -22,7 +22,7 @@ Every task (new feature, subsystem modification, or structural refactor) must fo
 5. **Worktree Execution & Atomic Archival**:
    - Create an isolated git worktree under `.worktrees/<branch>`.
    - Execute the plan with strict Red-Green-Refactor TDD.
-   - **Atomic Archival**: Right before PR completion/merge, move the spec from `docs/specs/` to `docs/specs/archive/` within the same branch.
+   - **Atomic Archival**: Move the spec from `docs/specs/` to `docs/specs/archive/` ONLY when the user gives EXPLICIT instruction or approval to do so. Never archive automatically.
 
 ## 4. Architectural Invariants
 - **Hexagonal Purity**: `src/core/` must have **zero** external runtime dependencies. Core entities, use cases, and ports are 100% pure TypeScript.
