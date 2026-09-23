@@ -3,7 +3,7 @@ import { CLIAdapter } from './adapters/inbound/cli/CLIAdapter';
 import { config } from './config';
 import { DeepseekAdapter } from './adapters/outbound/llm/DeepseekAdapter';
 import { InMemoryPluginRegistry } from './adapters/outbound/plugin-registry/InMemoryPluginRegistry';
-import { CalculatorPlugin } from './plugins/CalculatorPlugin';
+import { CalculatorTool } from './tools/CalculatorTool';
 import { PinoLoggerAdapter } from './adapters/outbound/logger/PinoLoggerAdapter';
 import { InMemoryChatRepository } from './adapters/outbound/chat-repository/InMemoryChatRepository';
 
@@ -16,7 +16,7 @@ const mockSender = {
 };
 
 const registry = new InMemoryPluginRegistry(logger);
-registry.register(new CalculatorPlugin());
+registry.register(new CalculatorTool());
 
 const chatRepository = new InMemoryChatRepository();
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, logger, {
