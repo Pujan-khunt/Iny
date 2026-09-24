@@ -9,55 +9,35 @@ export class PinoLoggerAdapter implements LoggerPort {
   }
 
   debug(message: string, context?: LogContext): void {
-    if (context !== undefined) {
-      this.pino.debug(context, message);
-    } else {
-      this.pino.debug(message);
-    }
+    this.emit('debug', message, undefined, context);
   }
 
   info(message: string, context?: LogContext): void {
-    if (context !== undefined) {
-      this.pino.info(context, message);
-    } else {
-      this.pino.info(message);
-    }
+    this.emit('info', message, undefined, context);
   }
 
-  warn(message: string, context?: LogContext): void {
-    if (context !== undefined) {
-      this.pino.warn(context, message);
-    } else {
-      this.pino.warn(message);
-    }
+  warn(message: string, error?: unknown, context?: LogContext): void {
+    this.emit('warn', message, error, context);
   }
 
-  error(message: string, error: unknown, context?: LogContext): void;
-  error(message: string, context?: LogContext): void;
-  error(message: string, errorOrContext?: unknown, context?: LogContext): void {
-    this.logErrorOrFatal('error', message, errorOrContext, context);
+  error(message: string, error?: unknown, context?: LogContext): void {
+    this.emit('error', message, error, context);
   }
 
-  fatal(message: string, error: unknown, context?: LogContext): void;
-  fatal(message: string, context?: LogContext): void;
-  fatal(message: string, errorOrContext?: unknown, context?: LogContext): void {
-    this.logErrorOrFatal('fatal', message, errorOrContext, context);
+  fatal(message: string, error?: unknown, context?: LogContext): void {
+    this.emit('fatal', message, error, context);
   }
 
-  private logErrorOrFatal(
-    level: 'error' | 'fatal',
+  private emit(
+    level: 'debug' | 'info' | 'warn' | 'error' | 'fatal',
     message: string,
-    errorOrContext?: unknown,
+    error?: unknown,
     context?: LogContext
   ): void {
-    if (context !== undefined) {
-      this.pino[level]({ ...context, err: errorOrContext }, message);
-    } else if (errorOrContext instanceof Error) {
-      this.pino[level]({ err: errorOrContext }, message);
-    } else if (typeof errorOrContext === 'object' && errorOrContext !== null) {
-      this.pino[level](errorOrContext as Record<string, unknown>, message);
-    } else if (errorOrContext !== undefined) {
-      this.pino[level]({ err: errorOrContext }, message);
+    if (error !== undefined) {
+      this.pino[level]({ ...context, err: error }, message);
+    } else if (context !== undefined) {
+      this.pino[level](context, message);
     } else {
       this.pino[level](message);
     }

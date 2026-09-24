@@ -32,17 +32,48 @@ describe('PinoLoggerAdapter', () => {
     expect(logs[0].userId).toBe('u123');
   });
 
-  it('should emit debug and warn logs', () => {
+  it('should emit debug logs with message and context', () => {
     adapter.debug('Debugging detail', { step: 1 });
-    adapter.warn('Warning detail', { reason: 'slow' });
 
-    expect(logs).toHaveLength(2);
+    expect(logs).toHaveLength(1);
     expect(logs[0].level).toBe(20); // debug
     expect(logs[0].msg).toBe('Debugging detail');
     expect(logs[0].step).toBe(1);
-    expect(logs[1].level).toBe(40); // warn
-    expect(logs[1].msg).toBe('Warning detail');
+  });
+
+  it('should emit debug and info logs with only message', () => {
+    adapter.debug('Simple debug message');
+    adapter.info('Simple info message');
+
+    expect(logs).toHaveLength(2);
+    expect(logs[0].level).toBe(20);
+    expect(logs[0].msg).toBe('Simple debug message');
+    expect(logs[1].level).toBe(30);
+    expect(logs[1].msg).toBe('Simple info message');
+  });
+
+  it('should emit warn logs with optional error and context', () => {
+    adapter.warn('Simple warning');
+    adapter.warn('Warning with context', undefined, { reason: 'slow' });
+
+    const warnErr = new Error('Disk getting full');
+    adapter.warn('Storage warning', warnErr, { disk: '/dev/sda1' });
+
+    expect(logs).toHaveLength(3);
+    expect(logs[0].level).toBe(40);
+    expect(logs[0].msg).toBe('Simple warning');
+    expect(logs[0].err).toBeUndefined();
+
+    expect(logs[1].level).toBe(40);
+    expect(logs[1].msg).toBe('Warning with context');
     expect(logs[1].reason).toBe('slow');
+    expect(logs[1].err).toBeUndefined();
+
+    expect(logs[2].level).toBe(40);
+    expect(logs[2].msg).toBe('Storage warning');
+    expect(logs[2].disk).toBe('/dev/sda1');
+    const err = logs[2].err as Record<string, unknown>;
+    expect(err.message).toBe('Disk getting full');
   });
 
   it('should filter logs below configured log level', () => {
@@ -55,7 +86,7 @@ describe('PinoLoggerAdapter', () => {
     expect(logs[0].msg).toBe('This should be logged');
   });
 
-  it('should handle error overload with Error object and context', () => {
+  it('should handle error with Error object and context', () => {
     const testError = new Error('Database connection failed');
 
     adapter.error('Operation failed', testError, { attempt: 3 });
@@ -81,7 +112,7 @@ describe('PinoLoggerAdapter', () => {
     expect(err.message).toBe('Explicit failure');
   });
 
-  it('should handle error overload with only Error object', () => {
+  it('should handle error with only Error object', () => {
     const testError = new Error('Network timeout');
 
     adapter.error('Request failed', testError);
@@ -94,17 +125,7 @@ describe('PinoLoggerAdapter', () => {
     expect(err.message).toBe('Network timeout');
   });
 
-  it('should handle error overload with plain context object (no Error)', () => {
-    adapter.error('Request rejected', { statusCode: 403 });
-
-    expect(logs).toHaveLength(1);
-    expect(logs[0].level).toBe(50);
-    expect(logs[0].msg).toBe('Request rejected');
-    expect(logs[0].statusCode).toBe(403);
-    expect(logs[0].err).toBeUndefined();
-  });
-
-  it('should handle error overload with only message', () => {
+  it('should handle error with only message', () => {
     adapter.error('Simple error occurred');
 
     expect(logs).toHaveLength(1);
@@ -113,7 +134,7 @@ describe('PinoLoggerAdapter', () => {
     expect(logs[0].err).toBeUndefined();
   });
 
-  it('should handle fatal overload with Error object and context', () => {
+  it('should handle fatal with Error object and context', () => {
     const fatalError = new Error('Out of memory');
 
     adapter.fatal('Process crashing', fatalError, { exitCode: 1 });
@@ -123,9 +144,11 @@ describe('PinoLoggerAdapter', () => {
     expect(logs[0].msg).toBe('Process crashing');
     expect(logs[0].exitCode).toBe(1);
     expect(logs[0].err).toBeDefined();
+    const err = logs[0].err as Record<string, unknown>;
+    expect(err.message).toBe('Out of memory');
   });
 
-  it('should handle fatal overload with only Error object', () => {
+  it('should handle fatal with only Error object', () => {
     const fatalError = new Error('Out of memory');
 
     adapter.fatal('Process crashing', fatalError);
@@ -138,17 +161,7 @@ describe('PinoLoggerAdapter', () => {
     expect(err.message).toBe('Out of memory');
   });
 
-  it('should handle fatal overload with plain context object (no Error)', () => {
-    adapter.fatal('Unrecoverable state', { subsystem: 'database' });
-
-    expect(logs).toHaveLength(1);
-    expect(logs[0].level).toBe(60);
-    expect(logs[0].msg).toBe('Unrecoverable state');
-    expect(logs[0].subsystem).toBe('database');
-    expect(logs[0].err).toBeUndefined();
-  });
-
-  it('should handle fatal overload with only message', () => {
+  it('should handle fatal with only message', () => {
     adapter.fatal('Unrecoverable failure');
 
     expect(logs).toHaveLength(1);

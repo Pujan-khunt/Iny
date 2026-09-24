@@ -1,4 +1,5 @@
-import { Plugin } from '../core/ports/PluginRegistryPort';
+import { z } from 'zod';
+import { BaseTool } from './BaseTool';
 
 export class DivisionByZeroError extends Error {
   constructor(message = 'Division by zero.') {
@@ -7,27 +8,25 @@ export class DivisionByZeroError extends Error {
   }
 }
 
-export class CalculatorPlugin implements Plugin {
+export const calculatorSchema = z.object({
+  expression: z
+    .string()
+    .trim()
+    .min(1, 'Expression cannot be empty')
+    .describe('The math expression to calculate'),
+});
+
+/**
+ * Tool for evaluating mathematical expressions using safe recursive descent.
+ */
+export class CalculatorTool extends BaseTool<typeof calculatorSchema> {
   readonly name = 'calculate';
-  readonly description = 'Evaluates a basic mathematical expression (e.g. "2 + 2", "15 * 3 - 4")';
-  readonly schema = {
-    type: 'object',
-    properties: {
-      expression: {
-        type: 'string',
-        description: 'The math expression to calculate',
-      },
-    },
-    required: ['expression'],
-  };
+  readonly description =
+    'Evaluates a basic mathematical expression (e.g. "2 + 2", "15 * 3 - 4")';
+  readonly schema = calculatorSchema as typeof calculatorSchema & Record<string, unknown>;
 
-  async execute(args: Record<string, unknown>): Promise<string> {
-    const expr = args?.expression;
-    if (typeof expr !== 'string' || expr.trim() === '') {
-      return 'Error: Missing expression argument.';
-    }
-
-    const trimmed = expr.trim();
+  protected async run(args: z.infer<typeof calculatorSchema>): Promise<string> {
+    const trimmed = args.expression.trim();
     if (!/^[0-9+\-*/().\s]+$/.test(trimmed)) {
       return 'Error: Expression contains invalid characters.';
     }

@@ -3,11 +3,20 @@ import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingM
 import { LoggerPort } from '../../../core/ports/LoggerPort';
 import { UserMessage } from '../../../core/entities/Message';
 
+/**
+ * Configuration options for CLIAdapter.
+ */
 export interface CLIAdapterOptions {
+  /** Optional logger port for recording adapter events and errors. */
   logger?: LoggerPort;
+  /** Optional readline interface: useful for injecting test doubles. */
   rl?: readline.Interface;
 }
 
+/**
+ * Inbound CLI driving adapter that reads user input from stdin,
+ * dispatches messages to the ProcessIncomingMessage use case, and prompts iteratively.
+ */
 export class CLIAdapter {
   private rl: readline.Interface;
   private logger?: LoggerPort;
@@ -25,12 +34,18 @@ export class CLIAdapter {
       });
   }
 
-  start() {
+  /**
+   * Starts the interactive command-line prompt loop.
+   */
+  start(): void {
     console.log("Iny CLI started. Type your message (or 'exit' to quit):");
     this.prompt();
   }
 
-  private prompt() {
+  /**
+   * Prompts the user for input and dispatches messages to the use case.
+   */
+  private prompt(): void {
     this.rl.question('> ', async (input) => {
       switch (input.trim().toLowerCase()) {
         case 'exit':
@@ -43,7 +58,7 @@ export class CLIAdapter {
 
       try {
         const message: UserMessage = {
-          id: Date.now().toString(),
+          id: crypto.randomUUID(),
           userId: 'cli-user',
           role: 'user',
           content: input.trim(),
@@ -62,3 +77,4 @@ export class CLIAdapter {
     });
   }
 }
+

@@ -4,37 +4,51 @@ import {
   ProcessIncomingMessageConfig,
 } from '../../../src/core/use-cases/ProcessIncomingMessage';
 import { MessageSenderPort } from '../../../src/core/ports/MessageSenderPort';
-import { LLMPort } from '../../../src/core/ports/LLMPort';
-import { PluginRegistryPort, Plugin } from '../../../src/core/ports/PluginRegistryPort';
 import { ChatRepositoryPort } from '../../../src/core/ports/ChatRepositoryPort';
-import { UserMessage } from '../../../src/core/entities/Message';
-import { DialogueTurn } from '../../../src/core/entities/DialogueTurn';
+import { ToolRegistryPort, ToolDefinition } from '../../../src/core/ports/ToolRegistryPort';
 import { LoggerPort } from '../../../src/core/ports/LoggerPort';
+import { AgentLoop } from '../../../src/core/use-cases/AgentLoop';
+import { UserMessage, AssistantTextMessage } from '../../../src/core/entities/Message';
+import { DialogueTurn } from '../../../src/core/entities/DialogueTurn';
+import {
+  LLMAuthenticationError,
+  LLMInsufficientBalanceError,
+  LLMRateLimitError,
+  LLMServerOverloadedError,
+  LLMServerError,
+} from '../../../src/core/errors/LLMErrors';
 
 describe('ProcessIncomingMessage', () => {
   let mockSender: MessageSenderPort;
-  let mockLLM: LLMPort;
-  let mockRegistry: PluginRegistryPort;
   let mockChatRepository: ChatRepositoryPort;
+  let mockAgentLoop: AgentLoop;
+  let mockToolRegistry: ToolRegistryPort;
   let mockLogger: LoggerPort;
   let mockChildLogger: LoggerPort;
 
-  const defaultSystemPrompt = 'You are Iny, a friendly assistant.';
+  const sampleTools: ToolDefinition[] = [
+    {
+      name: 'calculator',
+      description: 'Calculates math expressions',
+      schema: { type: 'object' },
+    },
+  ];
 
-  const createUseCase = (
-    configOverrides?: Partial<ProcessIncomingMessageConfig>
-  ): ProcessIncomingMessage => {
-    return new ProcessIncomingMessage(
-      mockSender,
-      mockLLM,
-      mockRegistry,
-      mockChatRepository,
-      mockLogger,
-      {
-        systemPrompt: defaultSystemPrompt,
-        ...configOverrides,
-      }
-    );
+  const sampleUserMessage: UserMessage = {
+    id: 'msg-1',
+    userId: 'user1',
+    role: 'user',
+    content: 'Hello Iny',
+    timestamp: new Date('2026-09-23T10:00:00Z'),
+  };
+
+  const sampleAssistantMessage: AssistantTextMessage = {
+    id: 'asst-msg-1',
+    userId: 'user1',
+    role: 'assistant',
+    content: 'Hello! How can I help you today?',
+    thought: 'Friendly greeting',
+    timestamp: new Date('2026-09-23T10:00:01Z'),
   };
 
   const createMockLogger = (): LoggerPort => ({
@@ -46,565 +60,219 @@ describe('ProcessIncomingMessage', () => {
     child: vi.fn(),
   });
 
+  const createUseCase = (
+    config?: ProcessIncomingMessageConfig
+  ): ProcessIncomingMessage => {
+    return new ProcessIncomingMessage(
+      mockSender,
+      mockChatRepository,
+      mockAgentLoop,
+      mockToolRegistry,
+      mockLogger,
+      config
+    );
+  };
+
   beforeEach(() => {
     mockSender = { sendMessage: vi.fn().mockResolvedValue(undefined) };
-    mockLLM = { generateResponse: vi.fn() };
-    mockRegistry = { getAvailablePlugins: vi.fn().mockReturnValue([]), executePlugin: vi.fn() };
     mockChatRepository = {
       getRecentTurns: vi.fn().mockResolvedValue([]),
       saveTurn: vi.fn().mockResolvedValue(undefined),
       clearHistory: vi.fn().mockResolvedValue(undefined),
+    };
+    mockAgentLoop = {
+      run: vi.fn().mockResolvedValue({
+        finalText: sampleAssistantMessage.content,
+        thought: sampleAssistantMessage.thought,
+        sessionMessages: [sampleUserMessage, sampleAssistantMessage],
+      }),
+    } as unknown as AgentLoop;
+    mockToolRegistry = {
+      getToolDefinitions: vi.fn().mockReturnValue(sampleTools),
+      executeTool: vi.fn(),
     };
     mockChildLogger = createMockLogger();
     mockLogger = createMockLogger();
     vi.mocked(mockLogger.child).mockReturnValue(mockChildLogger);
   });
 
-  it('should process a message, send text response, and save dialogue turn', async () => {
-    vi.mocked(mockLLM.generateResponse).mockResolvedValue({
-      type: 'text',
-      content: 'Hello back!',
-      thought: 'Greeting the user',
-    });
-
-    const useCase = createUseCase();
-
-    const message: UserMessage = {
-      id: 'msg-1',
-      userId: 'user1',
-      role: 'user',
-      content: 'Hi',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockLogger.child).toHaveBeenCalledWith({ userId: 'user1', messageId: 'msg-1' });
-    expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith('user1', 10);
-    expect(mockLLM.generateResponse).toHaveBeenCalledWith(
-      defaultSystemPrompt,
-      [message],
-      []
-    );
-    expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'Hello back!');
-    expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
-    const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
-    expect(savedTurn.userId).toBe('user1');
-    expect(savedTurn.messages).toHaveLength(2);
-    expect(savedTurn.messages[0]).toEqual(message);
-    expect(savedTurn.messages[1]).toMatchObject({
-      role: 'assistant',
-      content: 'Hello back!',
-      thought: 'Greeting the user',
-      userId: 'user1',
-    });
-    expect(mockChildLogger.info).toHaveBeenCalledWith('Message processed successfully');
-  });
-
-  it('should execute tool and feed result back to LLM before delivering final response', async () => {
-    const mockPlugin: Plugin = {
-      name: 'calculator',
-      description: 'Calculate expressions',
-      schema: {},
-      execute: vi.fn().mockResolvedValue('4'),
-    };
-    vi.mocked(mockRegistry.getAvailablePlugins).mockReturnValue([mockPlugin]);
-    vi.mocked(mockRegistry.executePlugin).mockResolvedValue('4');
-
-    vi.mocked(mockLLM.generateResponse)
-      .mockResolvedValueOnce({
-        type: 'tool_calls',
-        toolCalls: [
-          {
-            id: 'call-1',
-            name: 'calculator',
-            arguments: { expr: '2+2' },
-          },
+  describe('Happy path (Reasoning -> Delivery -> Persistence)', () => {
+    it('should coordinate all 4 phases and persist valid dialogue turn', async () => {
+      const historicalTurn: DialogueTurn = {
+        id: 'turn-old',
+        userId: 'user1',
+        messages: [
+          { id: 'm-old-1', userId: 'user1', role: 'user', content: 'Prior question', timestamp: new Date() },
+          { id: 'm-old-2', userId: 'user1', role: 'assistant', content: 'Prior answer', timestamp: new Date() },
         ],
-        thought: 'Need to compute 2+2',
-      })
-      .mockResolvedValueOnce({
-        type: 'text',
-        content: 'The answer is 4.',
+        createdAt: new Date(),
+      };
+      vi.mocked(mockChatRepository.getRecentTurns).mockResolvedValueOnce([historicalTurn]);
+
+      const useCase = createUseCase();
+      await useCase.execute(sampleUserMessage);
+
+      // Child logger created with user context
+      expect(mockLogger.child).toHaveBeenCalledWith({
+        userId: 'user1',
+        messageId: 'msg-1',
       });
 
-    const useCase = createUseCase();
+      // Phase 1: Reasoning
+      expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith('user1', 10);
+      expect(mockToolRegistry.getToolDefinitions).toHaveBeenCalledTimes(1);
+      expect(mockAgentLoop.run).toHaveBeenCalledWith(
+        sampleUserMessage,
+        historicalTurn.messages,
+        sampleTools,
+        mockChildLogger
+      );
 
-    const message: UserMessage = {
-      id: 'msg-2',
-      userId: 'user2',
-      role: 'user',
-      content: 'What is 2+2?',
-      timestamp: new Date(),
-    };
+      // Phase 2: Delivery
+      expect(mockSender.sendMessage).toHaveBeenCalledTimes(1);
+      expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'Hello! How can I help you today?');
 
-    await useCase.execute(message);
-
-    expect(mockRegistry.executePlugin).toHaveBeenCalledWith('calculator', { expr: '2+2' });
-    expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
-
-    const secondCallHistory = vi.mocked(mockLLM.generateResponse).mock.calls[1][1];
-    expect(secondCallHistory).toHaveLength(3);
-    expect(secondCallHistory[0]).toEqual(message);
-    expect(secondCallHistory[1]).toMatchObject({
-      role: 'assistant',
-      thought: 'Need to compute 2+2',
-      toolCalls: [{ id: 'call-1', name: 'calculator', arguments: { expr: '2+2' } }],
-    });
-    expect(secondCallHistory[2]).toMatchObject({
-      role: 'tool',
-      toolCallId: 'call-1',
-      name: 'calculator',
-      content: '4',
+      // Phase 3: Persistence
+      expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
+      const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
+      expect(savedTurn.userId).toBe('user1');
+      expect(savedTurn.messages).toEqual([sampleUserMessage, sampleAssistantMessage]);
+      expect(savedTurn.createdAt).toBeInstanceOf(Date);
     });
 
-    expect(mockSender.sendMessage).toHaveBeenCalledWith('user2', 'The answer is 4.');
-    expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
-    const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
-    expect(savedTurn.messages).toHaveLength(4);
+    it('should respect custom maxHistoryTurns configuration', async () => {
+      const useCase = createUseCase({ maxHistoryTurns: 3 });
+      await useCase.execute(sampleUserMessage);
+
+      expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith('user1', 3);
+    });
   });
 
-  it('should execute parallel tool calls concurrently via Promise.all and feed all results back to LLM', async () => {
-    const executionOrder: string[] = [];
-    vi.mocked(mockRegistry.executePlugin).mockImplementation(async (name) => {
-      executionOrder.push(`start:${name}`);
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      executionOrder.push(`end:${name}`);
-      return `result-${name}`;
+  describe('Phase 1: Reasoning error handling', () => {
+    it('should handle generic reasoning error and send fallback notification', async () => {
+      const reasoningError = new LLMServerError('Service unavailable', { status: 503 });
+      vi.mocked(mockAgentLoop.run).mockRejectedValueOnce(reasoningError);
+
+      const useCase = createUseCase();
+      await useCase.execute(sampleUserMessage);
+
+      expect(mockChildLogger.error).toHaveBeenCalled();
+      expect(mockSender.sendMessage).toHaveBeenCalledTimes(1);
+      expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'An error occurred during processing.');
+      expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
     });
 
-    vi.mocked(mockLLM.generateResponse)
-      .mockResolvedValueOnce({
-        type: 'tool_calls',
-        toolCalls: [
-          { id: 'call-1', name: 'weather', arguments: { city: 'Tokyo' } },
-          { id: 'call-2', name: 'time', arguments: { timezone: 'Asia/Tokyo' } },
-        ],
-      })
-      .mockResolvedValueOnce({
-        type: 'text',
-        content: 'Tokyo is sunny and 3 PM.',
+    it('should log fatal error when authentication fails during reasoning', async () => {
+      const authError = new LLMAuthenticationError('Invalid API key', {
+        status: 401,
+        code: 'invalid_api_key',
       });
+      vi.mocked(mockAgentLoop.run).mockRejectedValueOnce(authError);
 
-    const useCase = createUseCase();
+      const useCase = createUseCase();
+      await useCase.execute(sampleUserMessage);
 
-    const message: UserMessage = {
-      id: 'msg-3',
-      userId: 'user3',
-      role: 'user',
-      content: 'Tokyo weather and time',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(executionOrder[0]).toBe('start:weather');
-    expect(executionOrder[1]).toBe('start:time');
-
-    expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
-    const secondCallHistory = vi.mocked(mockLLM.generateResponse).mock.calls[1][1];
-    expect(secondCallHistory).toHaveLength(4);
-    expect(secondCallHistory[2]).toMatchObject({
-      role: 'tool',
-      toolCallId: 'call-1',
-      name: 'weather',
-      content: 'result-weather',
-    });
-    expect(secondCallHistory[3]).toMatchObject({
-      role: 'tool',
-      toolCallId: 'call-2',
-      name: 'time',
-      content: 'result-time',
+      expect(mockChildLogger.fatal).toHaveBeenCalledWith(
+        expect.any(String),
+        authError,
+        { status: 401, code: 'invalid_api_key' }
+      );
+      expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'An error occurred during processing.');
+      expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
     });
 
-    expect(mockSender.sendMessage).toHaveBeenCalledWith('user3', 'Tokyo is sunny and 3 PM.');
-  });
-
-  it('should serialize plugin execution error into ToolMessage and allow LLM to self-correct', async () => {
-    vi.mocked(mockRegistry.executePlugin).mockRejectedValue(new Error('Network timeout'));
-
-    vi.mocked(mockLLM.generateResponse)
-      .mockResolvedValueOnce({
-        type: 'tool_calls',
-        toolCalls: [{ id: 'call-fail', name: 'flakyApi', arguments: {} }],
-      })
-      .mockResolvedValueOnce({
-        type: 'text',
-        content: 'Sorry, the service experienced a network timeout.',
+    it('should log fatal error when LLM account has insufficient balance', async () => {
+      const balanceError = new LLMInsufficientBalanceError('Quota exceeded', {
+        status: 402,
+        code: 'insufficient_balance',
       });
+      vi.mocked(mockAgentLoop.run).mockRejectedValueOnce(balanceError);
 
-    const useCase = createUseCase();
+      const useCase = createUseCase();
+      await useCase.execute(sampleUserMessage);
 
-    const message: UserMessage = {
-      id: 'msg-4',
-      userId: 'user4',
-      role: 'user',
-      content: 'Get data',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
-    const secondCallHistory = vi.mocked(mockLLM.generateResponse).mock.calls[1][1];
-    expect(secondCallHistory[2]).toMatchObject({
-      role: 'tool',
-      toolCallId: 'call-fail',
-      name: 'flakyApi',
-      content: "Error executing tool 'flakyApi': Network timeout",
+      expect(mockChildLogger.fatal).toHaveBeenCalledWith(
+        expect.any(String),
+        balanceError,
+        { status: 402, code: 'insufficient_balance' }
+      );
+      expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'An error occurred during processing.');
+      expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
     });
-    expect(mockSender.sendMessage).toHaveBeenCalledWith(
-      'user4',
-      'Sorry, the service experienced a network timeout.'
-    );
-    expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
-  });
 
-  it('should hit circuit breaker when maxToolIterations is reached and trigger forced synthesis', async () => {
-    vi.mocked(mockRegistry.executePlugin).mockResolvedValue('ok');
+    it('should inform user of high traffic on rate limit errors', async () => {
+      const rateLimitError = new LLMRateLimitError('Too many requests', { status: 429 });
+      vi.mocked(mockAgentLoop.run).mockRejectedValueOnce(rateLimitError);
 
-    vi.mocked(mockLLM.generateResponse)
-      .mockResolvedValueOnce({
-        type: 'tool_calls',
-        toolCalls: [{ id: 'c1', name: 'loopTool', arguments: {} }],
-      })
-      .mockResolvedValueOnce({
-        type: 'tool_calls',
-        toolCalls: [{ id: 'c2', name: 'loopTool', arguments: {} }],
-      })
-      .mockResolvedValueOnce({
-        type: 'text',
-        content: 'Synthesized conclusion after hitting limit.',
-      });
+      const useCase = createUseCase();
+      await useCase.execute(sampleUserMessage);
 
-    const useCase = createUseCase({ maxToolIterations: 2 });
+      expect(mockSender.sendMessage).toHaveBeenCalledWith(
+        'user1',
+        'Iny is experiencing heavy traffic right now. Please try again in a moment.'
+      );
+      expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
+    });
 
-    const message: UserMessage = {
-      id: 'msg-5',
-      userId: 'user5',
-      role: 'user',
-      content: 'Infinite loop please',
-      timestamp: new Date(),
-    };
+    it('should inform user of high traffic on server overloaded errors', async () => {
+      const overloadedError = new LLMServerOverloadedError('Server overloaded', { status: 503 });
+      vi.mocked(mockAgentLoop.run).mockRejectedValueOnce(overloadedError);
 
-    await useCase.execute(message);
+      const useCase = createUseCase();
+      await useCase.execute(sampleUserMessage);
 
-    expect(mockLLM.generateResponse).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(mockLLM.generateResponse).mock.calls[2][3]).toEqual({ forcedSynthesis: true });
-    expect(mockSender.sendMessage).toHaveBeenCalledWith(
-      'user5',
-      'Synthesized conclusion after hitting limit.'
-    );
-    expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
-    const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
-    const lastMessage = savedTurn.messages[savedTurn.messages.length - 1];
-    expect(lastMessage).toMatchObject({
-      role: 'assistant',
-      content: 'Synthesized conclusion after hitting limit.',
+      expect(mockSender.sendMessage).toHaveBeenCalledWith(
+        'user1',
+        'Iny is experiencing heavy traffic right now. Please try again in a moment.'
+      );
+      expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
+    });
+
+    it('should safely catch and log error if sending fallback message also fails', async () => {
+      vi.mocked(mockAgentLoop.run).mockRejectedValueOnce(new Error('Reasoning crashed'));
+      vi.mocked(mockSender.sendMessage).mockRejectedValueOnce(new Error('Transport disconnected'));
+
+      const useCase = createUseCase();
+      await expect(useCase.execute(sampleUserMessage)).resolves.toBeUndefined();
+
+      expect(mockChildLogger.error).toHaveBeenCalled();
+      expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
     });
   });
 
-  it('should use fallback message if forced synthesis returns empty string or whitespace', async () => {
-    vi.mocked(mockRegistry.executePlugin).mockResolvedValue('ok');
+  describe('Phase 2: Delivery error handling', () => {
+    it('should log transport error and not attempt retry or turn persistence', async () => {
+      const transportError = new Error('WhatsApp socket closed');
+      vi.mocked(mockSender.sendMessage).mockRejectedValueOnce(transportError);
 
-    vi.mocked(mockLLM.generateResponse)
-      .mockResolvedValueOnce({
-        type: 'tool_calls',
-        toolCalls: [{ id: 'c1', name: 'loopTool', arguments: {} }],
-      })
-      .mockResolvedValueOnce({
-        type: 'text',
-        content: '   ',
-      });
+      const useCase = createUseCase();
+      await useCase.execute(sampleUserMessage);
 
-    const useCase = createUseCase({ maxToolIterations: 1 });
-
-    const message: UserMessage = {
-      id: 'msg-empty-synthesis',
-      userId: 'user-empty',
-      role: 'user',
-      content: 'Loop forever',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockSender.sendMessage).toHaveBeenCalledWith(
-      'user-empty',
-      "I've reached the maximum number of tool iterations and was unable to complete your request."
-    );
-    expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
-    const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
-    const lastMessage = savedTurn.messages[savedTurn.messages.length - 1];
-    expect(lastMessage).toMatchObject({
-      role: 'assistant',
-      content: "I've reached the maximum number of tool iterations and was unable to complete your request.",
+      expect(mockSender.sendMessage).toHaveBeenCalledTimes(1);
+      expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'Hello! How can I help you today?');
+      expect(mockChildLogger.error).toHaveBeenCalledWith(
+        'Failed to deliver message to user via transport',
+        transportError
+      );
+      // Turn must NOT be saved when delivery fails
+      expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
     });
   });
 
-  it('should retrieve historical turns from repository and prepend to LLM working history', async () => {
-    const previousTurn: DialogueTurn = {
-      id: 'turn-old',
-      userId: 'user6',
-      messages: [
-        { id: 'm1', userId: 'user6', role: 'user', content: 'My name is Alice', timestamp: new Date() },
-        { id: 'm2', userId: 'user6', role: 'assistant', content: 'Hello Alice!', timestamp: new Date() },
-      ],
-      createdAt: new Date(),
-    };
+  describe('Phase 3: Persistence error handling', () => {
+    it('should log persistence error without sending duplicate message to user', async () => {
+      const dbError = new Error('Database write constraint failed');
+      vi.mocked(mockChatRepository.saveTurn).mockRejectedValueOnce(dbError);
 
-    vi.mocked(mockChatRepository.getRecentTurns).mockResolvedValue([previousTurn]);
-    vi.mocked(mockLLM.generateResponse).mockResolvedValue({
-      type: 'text',
-      content: 'Your name is Alice.',
+      const useCase = createUseCase();
+      await useCase.execute(sampleUserMessage);
+
+      // User received response once
+      expect(mockSender.sendMessage).toHaveBeenCalledTimes(1);
+      expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'Hello! How can I help you today?');
+
+      // Persistence failed, error logged
+      expect(mockChildLogger.error).toHaveBeenCalledWith('Failed to persist dialogue turn', dbError);
     });
-
-    const useCase = createUseCase({ maxHistoryTurns: 5 });
-
-    const message: UserMessage = {
-      id: 'msg-6',
-      userId: 'user6',
-      role: 'user',
-      content: 'What is my name?',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith('user6', 5);
-    expect(mockLLM.generateResponse).toHaveBeenCalledWith(
-      expect.any(String),
-      [
-        previousTurn.messages[0],
-        previousTurn.messages[1],
-        message,
-      ],
-      []
-    );
-    expect(mockSender.sendMessage).toHaveBeenCalledWith('user6', 'Your name is Alice.');
-
-    expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
-    const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
-    expect(savedTurn.messages).toHaveLength(2);
-    expect(savedTurn.messages[0]).toEqual(message);
-    expect(savedTurn.messages[1]).toMatchObject({
-      role: 'assistant',
-      content: 'Your name is Alice.',
-    });
-  });
-
-  it('should log error and send generic error message if an unhandled error occurs', async () => {
-    const crashError = new Error('Database connection dropped');
-    vi.mocked(mockChatRepository.getRecentTurns).mockRejectedValue(crashError);
-
-    const useCase = createUseCase();
-
-    const message: UserMessage = {
-      id: 'msg-7',
-      userId: 'user7',
-      role: 'user',
-      content: 'Crash test',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockChildLogger.error).toHaveBeenCalledWith('Failed to process message', crashError);
-    expect(mockSender.sendMessage).toHaveBeenCalledWith('user7', 'An error occurred during processing.');
-    expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
-  });
-
-  it('should catch and log error if sender.sendMessage fails while delivering generic error message', async () => {
-    const crashError = new Error('Database connection dropped');
-    const sendError = new Error('WhatsApp transport disconnected');
-    vi.mocked(mockChatRepository.getRecentTurns).mockRejectedValue(crashError);
-    vi.mocked(mockSender.sendMessage).mockRejectedValue(sendError);
-
-    const useCase = createUseCase();
-
-    const message: UserMessage = {
-      id: 'msg-err-delivery',
-      userId: 'user-err',
-      role: 'user',
-      content: 'Crash test with failing sender',
-      timestamp: new Date(),
-    };
-
-    await expect(useCase.execute(message)).resolves.toBeUndefined();
-
-    expect(mockChildLogger.error).toHaveBeenCalledWith('Failed to process message', crashError);
-    expect(mockChildLogger.error).toHaveBeenCalledWith(
-      'Failed to send error notification to user',
-      sendError
-    );
-  });
-
-  it('should use custom systemPrompt when provided in config', async () => {
-    vi.mocked(mockLLM.generateResponse).mockResolvedValue({
-      type: 'text',
-      content: 'Custom response',
-    });
-
-    const customPrompt = 'You are a specialized math tutor. Explain steps thoroughly.';
-    const useCase = createUseCase({ systemPrompt: customPrompt });
-
-    const message: UserMessage = {
-      id: 'msg-custom-prompt',
-      userId: 'user-prompt',
-      role: 'user',
-      content: 'Hello',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockLLM.generateResponse).toHaveBeenCalledWith(
-      customPrompt,
-      [message],
-      []
-    );
-  });
-
-
-  it('should not send generic error message to user if final response was already delivered before saveTurn failed', async () => {
-    vi.mocked(mockLLM.generateResponse).mockResolvedValue({
-      type: 'text',
-      content: 'Here is your completed answer.',
-    });
-    const repoError = new Error('Database connection failed during saveTurn');
-    vi.mocked(mockChatRepository.saveTurn).mockRejectedValue(repoError);
-
-    const useCase = createUseCase();
-
-    const message: UserMessage = {
-      id: 'msg-save-fail',
-      userId: 'user-save-fail',
-      role: 'user',
-      content: 'Do something',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockSender.sendMessage).toHaveBeenCalledTimes(1);
-    expect(mockSender.sendMessage).toHaveBeenCalledWith(
-      'user-save-fail',
-      'Here is your completed answer.'
-    );
-    expect(mockChildLogger.error).toHaveBeenCalledWith('Failed to process message', repoError);
-  });
-
-  it('should use defensive fallback message if final response from LLM is empty string or whitespace', async () => {
-    vi.mocked(mockLLM.generateResponse).mockResolvedValue({
-      type: 'text',
-      content: '   ',
-    });
-
-    const useCase = createUseCase();
-
-    const message: UserMessage = {
-      id: 'msg-empty-text',
-      userId: 'user-empty-text',
-      role: 'user',
-      content: 'Hello',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockSender.sendMessage).toHaveBeenCalledWith(
-      'user-empty-text',
-      'I apologize, but I was unable to formulate a response.'
-    );
-    expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
-    const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
-    const lastMessage = savedTurn.messages[savedTurn.messages.length - 1];
-    expect(lastMessage).toMatchObject({
-      role: 'assistant',
-      content: 'I apologize, but I was unable to formulate a response.',
-    });
-  });
-
-  it('should increment iteration, log error, and trigger circuit breaker if LLM returns unexpected response type', async () => {
-    vi.mocked(mockLLM.generateResponse)
-      .mockResolvedValueOnce({
-        type: 'unexpected_type' as any,
-      })
-      .mockResolvedValueOnce({
-        type: 'text',
-        content: 'Fallback response after unexpected type',
-      });
-
-    const useCase = createUseCase({ maxToolIterations: 1 });
-
-    const message: UserMessage = {
-      id: 'msg-unexpected',
-      userId: 'user-unexpected',
-      role: 'user',
-      content: 'Trigger unexpected',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockChildLogger.error).toHaveBeenCalledWith(
-      'Unexpected LLM response type received in ReAct loop',
-      expect.objectContaining({ response: { type: 'unexpected_type' } })
-    );
-    // After 1 iteration, circuit breaker forcedSynthesis is triggered
-    expect(mockSender.sendMessage).toHaveBeenCalledWith(
-      'user-unexpected',
-      'Fallback response after unexpected type'
-    );
-  });
-
-  it('should reflect explicit argument parse error into ToolMessage when tool arguments contain _parseError', async () => {
-    vi.mocked(mockLLM.generateResponse)
-      .mockResolvedValueOnce({
-        type: 'tool_calls',
-        toolCalls: [
-          {
-            id: 'call_bad_json',
-            name: 'calculate',
-            arguments: {
-              _parseError: 'Malformed JSON arguments (SyntaxError: Unexpected end of JSON): "{"expr": 2+"',
-            },
-          },
-        ],
-      })
-      .mockResolvedValueOnce({
-        type: 'text',
-        content: 'Your expression had a syntax error. Please provide a valid expression.',
-      });
-
-    const useCase = createUseCase();
-
-    const message: UserMessage = {
-      id: 'msg-bad-args',
-      userId: 'user-bad-args',
-      role: 'user',
-      content: 'Calculate something with broken json',
-      timestamp: new Date(),
-    };
-
-    await useCase.execute(message);
-
-    expect(mockRegistry.executePlugin).not.toHaveBeenCalled();
-    expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
-
-    const secondHistory = vi.mocked(mockLLM.generateResponse).mock.calls[1][1];
-    const toolResultMsg = secondHistory[secondHistory.length - 1];
-    expect(toolResultMsg).toMatchObject({
-      role: 'tool',
-      toolCallId: 'call_bad_json',
-      name: 'calculate',
-      content: expect.stringContaining(
-        "Error executing tool 'calculate': Failed to parse tool arguments: Malformed JSON arguments"
-      ),
-    });
-    expect(mockSender.sendMessage).toHaveBeenCalledWith(
-      'user-bad-args',
-      'Your expression had a syntax error. Please provide a valid expression.'
-    );
   });
 });
