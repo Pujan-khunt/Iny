@@ -10,7 +10,7 @@ Before proposing or implementing any changes, agents must consult the documentat
    - Note: `docs/specs/archive/` contains completed historical blueprints. Archived specs never override the active codebase.
 3. **Implementation Plans (`docs/plans/`)**: Ephemeral step-by-step TDD execution plans (gitignored).
 
-## 3. Mandatory 5-Step Workflow
+## 3. Mandatory 6-Step Workflow
 Every task (new feature, subsystem modification, or structural refactor) must follow this lifecycle:
 1. **Brainstorming Session**: Discuss user intent, scope, and technical trade-offs collaboratively with the user.
 2. **Spec Creation**: Draft `docs/specs/YYYY-MM-DD-<topic>-spec.md` focusing strictly on requirements, domain logic, edge cases, and API contracts.
@@ -19,10 +19,14 @@ Every task (new feature, subsystem modification, or structural refactor) must fo
    - Hard Gate: No implementation plan may be drafted until the user explicitly approves the spec.
 4. **Implementation Plan**:
    - Draft step-by-step TDD plan in `docs/plans/YYYY-MM-DD-<topic>-plan.md`.
-5. **Worktree Execution & Atomic Archival**:
+5. **Worktree Execution**:
    - Create an isolated git worktree under `.worktrees/<branch>`.
    - Execute the plan with strict Red-Green-Refactor TDD.
-   - **Atomic Archival**: Move the spec from `docs/specs/` to `docs/specs/archive/` ONLY when the user gives EXPLICIT instruction or approval to do so. Never archive automatically.
+6. **Pre-Merge Review & Archival Ritual (Hard Stop)**:
+   - At the conclusion of implementation, right before PR merge, and ONLY with explicit user intention and instruction, execute this completion ritual:
+     1. **In-Depth Code Review**: Initiate a thorough, in-depth review of all changes across the PR (architecture, correctness, test coverage, and code hygiene).
+     2. **Architecture Synchronization**: Review and update `docs/ARCHITECTURE.md` (if necessary) to ensure the architectural documentation accurately reflects all newly introduced or modified boundaries, ports, adapters, entities, and flow of control.
+     3. **Atomic Spec Archival**: Move the completed specification from `docs/specs/` to `docs/specs/archive/` within the same branch. Never archive automatically without explicit user instruction.
 
 ## 4. Architectural Invariants
 - **Hexagonal Purity**: `src/core/` must have **zero** external runtime dependencies. Core entities, use cases, and ports are 100% pure TypeScript.

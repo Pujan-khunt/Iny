@@ -5,9 +5,7 @@ import {
 } from '../../../../src/adapters/outbound/llm/DeepseekMessageMapper';
 import {
   Message,
-  UserMessage,
   AssistantTextMessage,
-  AssistantToolCallMessage,
   ToolMessage,
 } from '../../../../src/core/entities/Message';
 import { ToolDefinition } from '../../../../src/core/ports/ToolRegistryPort';

@@ -7,7 +7,7 @@ import { MessageSenderPort } from '../../../src/core/ports/MessageSenderPort';
 import { ChatRepositoryPort } from '../../../src/core/ports/ChatRepositoryPort';
 import { ToolRegistryPort, ToolDefinition } from '../../../src/core/ports/ToolRegistryPort';
 import { LoggerPort } from '../../../src/core/ports/LoggerPort';
-import { AgentLoop, AgentLoopResult } from '../../../src/core/use-cases/AgentLoop';
+import { AgentLoop } from '../../../src/core/use-cases/AgentLoop';
 import { UserMessage, AssistantTextMessage } from '../../../src/core/entities/Message';
 import { DialogueTurn } from '../../../src/core/entities/DialogueTurn';
 import {

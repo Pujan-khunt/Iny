@@ -158,7 +158,7 @@ describe('AgentLoop', () => {
     };
 
     const callOrder: string[] = [];
-    vi.mocked(mockRegistry.executeTool).mockImplementation(async (name, args) => {
+    vi.mocked(mockRegistry.executeTool).mockImplementation(async (_name, args) => {
       callOrder.push(`start:${args.expr}`);
       await new Promise((resolve) => setTimeout(resolve, 10));
       callOrder.push(`end:${args.expr}`);
