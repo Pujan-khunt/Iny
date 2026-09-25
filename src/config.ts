@@ -3,6 +3,18 @@ import { z } from 'zod';
 export const envSchema = z.object({
   DEEPSEEK_API_KEY: z.string().min(1, 'DEEPSEEK_API_KEY is required'),
   SYSTEM_PROMPT: z.string().min(1, 'SYSTEM_PROMPT is required'),
+  BOT_PHONE_NUMBER: z
+    .string()
+    .regex(/^\d+$/, 'BOT_PHONE_NUMBER must contain digits only with country code'),
+  ALLOWED_USERS: z
+    .string()
+    .transform((val) =>
+      val
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+    .pipe(z.array(z.string()).min(1, 'At least one allowed user must be configured')),
   DEEPSEEK_BASE_URL: z.url().default('https://api.deepseek.com'),
   DEEPSEEK_MODEL: z.string().min(1).default('deepseek-flash'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'fatal']).default('info'),

@@ -22,8 +22,13 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
     "openai": "^7.15.0",
     "pino": "^10.3.1",
     "zod": "^4.6.5"
+  },
+  "overrides": {
+    "whatsapp-rust-bridge": "0.5.5"
   }
 }
