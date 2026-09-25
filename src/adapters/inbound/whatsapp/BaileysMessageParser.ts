@@ -1,77 +1,26 @@
-import * as crypto from 'crypto';
 import { proto } from '@whiskeysockets/baileys';
 import { UserMessage } from '../../../core/entities/Message';
+import { EligibleWebMessageInfo } from './BaileysMessageFilter';
 
 /**
- * Pure parser that extracts plain text and domain metadata from raw Baileys WAMessages.
+ * Pure translator that maps a raw Baileys WhatsApp message into a domain UserMessage entity.
  */
 export class BaileysMessageParser {
-  /**
-   * Parses a raw Baileys proto.IWebMessageInfo into a domain UserMessage entity.
-   * Returns null if the message should be ignored (e.g. self messages, groups,
-   * broadcasts, or non-text payloads).
-   *
-   * @param raw The raw WebMessageInfo from Baileys.
-   * @returns A valid UserMessage or null if discarded.
-   */
-  parse(raw: proto.IWebMessageInfo): UserMessage | null {
-    if (!raw.key || raw.key.fromMe) {
-      return null;
-    }
-
-    const remoteJid = raw.key.remoteJid;
-    if (
-      !remoteJid ||
-      remoteJid.endsWith('@g.us') ||
-      remoteJid === 'status@broadcast' ||
-      remoteJid.endsWith('@broadcast')
-    ) {
-      return null;
-    }
-
+  parse(raw: EligibleWebMessageInfo): UserMessage {
     const text = this.extractText(raw.message);
-    if (!text || !text.trim()) {
-      return null;
-    }
-
-    let timestampSeconds: number;
-    if (typeof raw.messageTimestamp === 'number' && raw.messageTimestamp > 0) {
-      timestampSeconds = raw.messageTimestamp;
-    } else if (
-      raw.messageTimestamp &&
-      typeof raw.messageTimestamp === 'object' &&
-      'low' in raw.messageTimestamp &&
-      typeof (raw.messageTimestamp as { low: number }).low === 'number' &&
-      (raw.messageTimestamp as { low: number }).low > 0
-    ) {
-      timestampSeconds = (raw.messageTimestamp as { low: number }).low;
-    } else if (
-      raw.messageTimestamp &&
-      typeof (raw.messageTimestamp as { toNumber?: () => number }).toNumber === 'function'
-    ) {
-      const num = (raw.messageTimestamp as { toNumber: () => number }).toNumber();
-      timestampSeconds = num > 0 ? num : Math.floor(Date.now() / 1000);
-    } else {
-      const parsedNum = Number(raw.messageTimestamp);
-      timestampSeconds =
-        Number.isFinite(parsedNum) && parsedNum > 0
-          ? parsedNum
-          : Math.floor(Date.now() / 1000);
-    }
+    const timestampSeconds = this.resolveTimestamp(raw.messageTimestamp);
 
     return {
-      id: raw.key.id || crypto.randomUUID(),
-      userId: remoteJid,
-      role: 'user',
-      content: text.trim(),
+      id: raw.key.id,
+      userId: raw.key.remoteJid,
+      content: text ? text.trim() : '',
       timestamp: new Date(timestampSeconds * 1000),
+      role: 'user',
     };
   }
 
   private extractText(message?: proto.IMessage | null): string | null {
-    if (!message) {
-      return null;
-    }
+    if (!message) return null;
     if (message.conversation) {
       return message.conversation;
     }
@@ -79,5 +28,57 @@ export class BaileysMessageParser {
       return message.extendedTextMessage.text;
     }
     return null;
+  }
+
+  /**
+   * Resolves the raw WhatsApp message timestamp into Unix epoch seconds.
+   *
+   * Background & Schema:
+   * In WhatsApp Protocol Buffers (`WAProto.proto`), messageTimestamp is defined as:
+   *   `optional uint64 messageTimestamp = 3;` (Unix epoch seconds).
+   *
+   * Because JavaScript's native Number is an IEEE-754 double (64 bits) with a 53-bit safe integer
+   * limit (`Number.MAX_SAFE_INTEGER`), `protobuf.js` uses `Long.js` to represent 64-bit
+   * values as split 32-bit words: `{ low: number, high: number, unsigned: boolean }`.
+   *
+   * Consequently, Baileys emits `messageTimestamp` in multiple inconsistent runtime shapes:
+   * 1. Primitive `number`: When parsed directly from XML stanza attributes (e.g. `+stanza.attrs.t`).
+   * 2. `Long` class instance: When decoded from binary protobufs, exposing a `.toNumber()` method.
+   * 3. Plain object `{ low, high }`: When deserialized from JSON or disk cache where prototype
+   *    methods like `.toNumber()` were stripped.
+   * 4. String or undefined/null: In synthetic, webhook, or malformed mock payloads.
+   *
+   * Baileys itself employs this identical normalization pattern internally in its utilities:
+   * `toNumber = (t) => typeof t === 'object' && t ? ('toNumber' in t ? t.toNumber() : t.low) : t || 0;`
+   */
+  private resolveTimestamp(rawTimestamp: proto.IWebMessageInfo['messageTimestamp']): number {
+    // 1. Primitive number: Already converted to a native JS number (Unix seconds).
+    if (typeof rawTimestamp === 'number') {
+      return rawTimestamp;
+    }
+
+    // 2. Object representations from Long.js / protobuf deserialization.
+    if (rawTimestamp && typeof rawTimestamp === 'object') {
+      // 2a. Plain object `{ low: number, high: number }` (e.g. prototypes stripped by JSON.parse).
+      // Since current Unix epoch seconds (~1.75e9) easily fit within 32 bits (up to 4.29e9),
+      // the `low` word contains the complete timestamp without needing 64-bit math.
+      if ('low' in rawTimestamp && typeof (rawTimestamp as { low: number }).low === 'number') {
+        return (rawTimestamp as { low: number }).low;
+      }
+
+      // 2b. Long.js instance with active prototype methods.
+      if (
+        'toNumber' in rawTimestamp &&
+        typeof (rawTimestamp as { toNumber: () => number }).toNumber === 'function'
+      ) {
+        return (rawTimestamp as { toNumber: () => number }).toNumber();
+      }
+    }
+
+    // 3. String numeric coercion (e.g. "1758807200").
+    const parsed = Number(rawTimestamp);
+
+    // 4. Safe fallback: If missing, null, NaN, or non-positive, fallback to current system time.
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : Math.floor(Date.now() / 1000);
   }
 }

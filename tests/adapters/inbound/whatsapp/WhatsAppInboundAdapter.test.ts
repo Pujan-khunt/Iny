@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { proto } from '@whiskeysockets/baileys';
 import { WhatsAppInboundAdapter } from '../../../../src/adapters/inbound/whatsapp/WhatsAppInboundAdapter';
 import { WhatsAppAllowlist } from '../../../../src/adapters/common/access-control/WhatsAppAllowlist';
+import { BaileysMessageFilter } from '../../../../src/adapters/inbound/whatsapp/BaileysMessageFilter';
 import { BaileysMessageParser } from '../../../../src/adapters/inbound/whatsapp/BaileysMessageParser';
 import { ProcessIncomingMessage } from '../../../../src/core/use-cases/ProcessIncomingMessage';
 import { BaileysConnectionManager } from '../../../../src/adapters/outbound/whatsapp/BaileysConnectionManager';
@@ -12,6 +13,7 @@ describe('WhatsAppInboundAdapter', () => {
   let mockUseCase: ProcessIncomingMessage;
   let mockConnManager: BaileysConnectionManager;
   let allowlist: WhatsAppAllowlist;
+  let filter: BaileysMessageFilter;
   let parser: BaileysMessageParser;
   let adapter: WhatsAppInboundAdapter;
 
@@ -31,18 +33,20 @@ describe('WhatsAppInboundAdapter', () => {
       onIncomingMessages: vi.fn(),
     } as unknown as BaileysConnectionManager;
     allowlist = new WhatsAppAllowlist(['919876543210']);
+    filter = new BaileysMessageFilter();
     parser = new BaileysMessageParser();
     adapter = new WhatsAppInboundAdapter(
       mockUseCase,
       mockConnManager,
       allowlist,
+      filter,
       parser,
       mockLogger
     );
   });
 
   describe('start', () => {
-    it('should register message upsert callback on connection manager and log info', () => {
+    it('should register incoming messages callback on connection manager and log info', () => {
       adapter.start();
 
       expect(mockConnManager.onIncomingMessages).toHaveBeenCalledWith(expect.any(Function));
@@ -51,7 +55,7 @@ describe('WhatsAppInboundAdapter', () => {
       );
     });
 
-    it('should handle incoming messages when registered message upsert callback is fired', async () => {
+    it('should handle incoming messages when registered incoming messages callback is fired', async () => {
       let registeredCallback: ((messages: proto.IWebMessageInfo[]) => Promise<void>) | null = null;
       (mockConnManager.onIncomingMessages as any).mockImplementation((cb: any) => {
         registeredCallback = cb;
@@ -85,16 +89,30 @@ describe('WhatsAppInboundAdapter', () => {
       expect(mockUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('should skip messages without a remoteJid', async () => {
-      const msgWithoutJid: proto.IWebMessageInfo = {
-        key: { fromMe: false, id: 'no-jid' },
-        message: { conversation: 'Where am I from?' },
+    it('should skip ineligible messages (e.g. fromMe === true)', async () => {
+      const selfMsg: proto.IWebMessageInfo = {
+        key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: true, id: 'self-1' },
+        message: { conversation: 'I sent this' },
       };
 
-      await adapter.handleMessages([msgWithoutJid]);
+      await adapter.handleMessages([selfMsg]);
 
       expect(mockUseCase.execute).not.toHaveBeenCalled();
-      expect(mockLogger.debug).not.toHaveBeenCalled();
+    });
+
+    it('should skip ineligible messages without text or from groups without calling use case', async () => {
+      const nonTextMessage: proto.IWebMessageInfo = {
+        key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm2' },
+        message: { imageMessage: { caption: '' } },
+      };
+      const groupMessage: proto.IWebMessageInfo = {
+        key: { remoteJid: '123456789-987654@g.us', fromMe: false, id: 'm-grp' },
+        message: { conversation: 'Group text' },
+      };
+
+      await adapter.handleMessages([nonTextMessage, groupMessage]);
+
+      expect(mockUseCase.execute).not.toHaveBeenCalled();
     });
 
     it('should ignore incoming messages from unauthorized senders, log debug, and not call use case', async () => {
@@ -110,17 +128,6 @@ describe('WhatsAppInboundAdapter', () => {
         'Ignored message from unauthorized sender',
         { senderJid: '919999888877@s.whatsapp.net' }
       );
-    });
-
-    it('should ignore messages that fail parsing (e.g. non-text, fromMe, or groups) without calling use case', async () => {
-      const nonTextMessage: proto.IWebMessageInfo = {
-        key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm2' },
-        message: { imageMessage: { caption: '' } },
-      };
-
-      await adapter.handleMessages([nonTextMessage]);
-
-      expect(mockUseCase.execute).not.toHaveBeenCalled();
     });
 
     it('should dispatch valid, authorized user messages to ProcessIncomingMessage.execute', async () => {
@@ -139,6 +146,35 @@ describe('WhatsAppInboundAdapter', () => {
           content: 'Calculate 10 + 20',
         })
       );
+    });
+
+    it('should catch parsing errors, log error, and not crash', async () => {
+      const badParser = {
+        parse: vi.fn().mockImplementation(() => {
+          throw new Error('Corrupt message payload');
+        }),
+      } as unknown as BaileysMessageParser;
+
+      const badAdapter = new WhatsAppInboundAdapter(
+        mockUseCase,
+        mockConnManager,
+        allowlist,
+        filter,
+        badParser,
+        mockLogger
+      );
+
+      const validLookingMsg: proto.IWebMessageInfo = {
+        key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm-corrupt' },
+        message: { conversation: 'Looks valid to filter' },
+      };
+
+      await expect(badAdapter.handleMessages([validLookingMsg])).resolves.not.toThrow();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to parse eligible WhatsApp message',
+        expect.any(Error)
+      );
+      expect(mockUseCase.execute).not.toHaveBeenCalled();
     });
 
     it('should catch unhandled errors from ProcessIncomingMessage.execute, log error, and not crash', async () => {

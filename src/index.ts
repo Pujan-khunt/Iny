@@ -11,6 +11,7 @@ import { BaileysSessionManager } from './adapters/outbound/whatsapp/BaileysSessi
 import { BaileysPairingManager } from './adapters/outbound/whatsapp/BaileysPairingManager';
 import { BaileysConnectionManager } from './adapters/outbound/whatsapp/BaileysConnectionManager';
 import { BaileysMessageSenderAdapter } from './adapters/outbound/whatsapp/BaileysMessageSenderAdapter';
+import { BaileysMessageFilter } from './adapters/inbound/whatsapp/BaileysMessageFilter';
 import { BaileysMessageParser } from './adapters/inbound/whatsapp/BaileysMessageParser';
 import { WhatsAppInboundAdapter } from './adapters/inbound/whatsapp/WhatsAppInboundAdapter';
 
@@ -61,11 +62,13 @@ const useCase = new ProcessIncomingMessage(
 );
 
 // 8. Inbound WhatsApp Driving Adapter
+const filter = new BaileysMessageFilter();
 const parser = new BaileysMessageParser();
 const inboundAdapter = new WhatsAppInboundAdapter(
   useCase,
   connectionManager,
   allowlist,
+  filter,
   parser,
   logger
 );
