@@ -14,6 +14,8 @@ export interface DialogueTurn {
    * Invariant: [UserMessage, ...(AssistantToolCallMessage + ToolMessage[])*, AssistantTextMessage]
    */
   messages: Message[];
-  /** Timestamp when the turn was completed and persisted. */
-  createdAt: Date;
+  /** Timestamp when Iny began processing the incoming user message. */
+  startedAt: Date;
+  /** Timestamp when the final assistant response was delivered to the user. */
+  completedAt: Date;
 }

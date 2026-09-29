@@ -105,7 +105,8 @@ describe('ProcessIncomingMessage', () => {
           { id: 'm-old-1', userId: 'user1', role: 'user', content: 'Prior question', timestamp: new Date() },
           { id: 'm-old-2', userId: 'user1', role: 'assistant', content: 'Prior answer', timestamp: new Date() },
         ],
-        createdAt: new Date(),
+        startedAt: new Date(),
+        completedAt: new Date(),
       };
       vi.mocked(mockChatRepository.getRecentTurns).mockResolvedValueOnce([historicalTurn]);
 
@@ -137,7 +138,8 @@ describe('ProcessIncomingMessage', () => {
       const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
       expect(savedTurn.userId).toBe('user1');
       expect(savedTurn.messages).toEqual([sampleUserMessage, sampleAssistantMessage]);
-      expect(savedTurn.createdAt).toBeInstanceOf(Date);
+      expect(savedTurn.startedAt).toBeInstanceOf(Date);
+      expect(savedTurn.completedAt).toBeInstanceOf(Date);
     });
 
     it('should respect custom maxHistoryTurns configuration', async () => {
@@ -145,6 +147,37 @@ describe('ProcessIncomingMessage', () => {
       await useCase.execute(sampleUserMessage);
 
       expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith('user1', 3);
+    });
+
+    it('should save completed turn with startedAt and completedAt timestamps', async () => {
+      vi.useFakeTimers();
+      try {
+        const startTime = new Date('2026-09-29T10:00:00.000Z');
+        const endTime = new Date('2026-09-29T10:00:02.500Z');
+        vi.setSystemTime(startTime);
+
+        mockSender.sendMessage.mockImplementationOnce(async () => {
+          vi.setSystemTime(endTime);
+        });
+
+        const useCase = createUseCase();
+        await useCase.execute(sampleUserMessage);
+
+        expect(mockChatRepository.saveTurn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: 'user1',
+            messages: [sampleUserMessage, sampleAssistantMessage],
+            startedAt: startTime,
+            completedAt: endTime,
+          })
+        );
+
+        const savedTurn = (mockChatRepository.saveTurn as any).mock.calls[0][0];
+        expect(savedTurn.startedAt).toEqual(startTime);
+        expect(savedTurn.completedAt).toEqual(endTime);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

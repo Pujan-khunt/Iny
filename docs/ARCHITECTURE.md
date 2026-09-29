@@ -9,9 +9,9 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
 - **Entities**: Pure data structures representing domain concepts:
   - `src/core/entities/Message.ts`: Discriminated union of `UserMessage`, `AssistantMessage` (`AssistantTextMessage` | `AssistantToolCallMessage`), and `ToolMessage`.
   - `src/core/entities/ToolCall.ts`: Discriminated union of `ValidToolCall` and `MalformedToolCall` modeling parsed LLM function invocations.
-  - `src/core/entities/DialogueTurn.ts`: Encapsulates a complete, turn-atomic interaction boundary (`UserMessage`, intermediate tool calls and results, and final `AssistantMessage`).
+  - `src/core/entities/DialogueTurn.ts`: Encapsulates a complete, turn-atomic interaction boundary (`UserMessage`, intermediate tool calls and results, final `AssistantTextMessage`, `startedAt`, and `completedAt`).
 - **Use Cases & Domain Services**: Application-specific business rules:
-  - `src/core/use-cases/ProcessIncomingMessage.ts`: 3-phase orchestrator separating Reasoning, Delivery, and Persistence phases. Isolates dead transport failures and prevents ghost turns in conversation memory.
+  - `src/core/use-cases/ProcessIncomingMessage.ts`: 3-phase orchestrator separating Reasoning, Delivery, and Persistence phases. Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
   - `src/core/use-cases/AgentLoop.ts`: Pure domain service executing the ReAct (Reasoning + Acting) loop. Manages concurrent tool execution via `Promise.all`, circuit breaker forced synthesis, and malformed tool error injection.
 - **Ports**: Interfaces that define how the core communicates with the outside world without knowing implementation details:
   - `src/core/ports/MessageSenderPort.ts`: Outbound messaging transport.
@@ -35,7 +35,11 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
     - `DeepseekMessageMapper.ts`: Pure message translation to OpenAI-compatible format with DeepSeek `reasoning_content` support.
     - `DeepseekResponseParser.ts`: Pure parser extracting `ValidToolCall` and `MalformedToolCall` domain entities.
     - `DeepseekErrorTranslator.ts`: Pure HTTP error status translator.
-  - `src/adapters/outbound/chat-repository/InMemoryChatRepository.ts`: In-memory sliding-window turn repository preserving chronological order and tenant isolation.
+  - `src/adapters/outbound/chat-repository/postgres/PostgresChatRepository.ts`: Persistent conversation history repository implementing `ChatRepositoryPort` using Drizzle ORM and `postgres.js` under the Hybrid Envelope pattern with sliding-window queries and database-level invariant enforcement.
+  - `src/adapters/outbound/chat-repository/postgres/schema.ts`: Drizzle ORM table schema defining `dialogue_turns` with stored generated `duration_ms`, composite index on `(user_id, completed_at DESC)`, and PostgreSQL `CHECK` constraints.
+  - `src/adapters/outbound/chat-repository/postgres/validation.ts`: Pure assertion validating dialogue turn structural and temporal invariants.
+  - `src/adapters/outbound/chat-repository/postgres/metadata.ts`: Pure extractor mapping domain `DialogueTurn` entities into first-class relational columns (`userQuery`, `assistantResponse`, `toolNames`).
+  - `src/adapters/outbound/chat-repository/postgres/migrator.ts`: Startup database migration runner executing Drizzle migrations before service startup.
   - `src/adapters/outbound/logger/PinoLoggerAdapter.ts`: Structured logging wrapper around Pino with unambiguous signature routing.
   - `src/adapters/outbound/tool-registry/InMemoryToolRegistry.ts`: In-memory tool storage exposing clean tool definitions.
 - **Shared Adapter Collaborators**: Reusable access control and identity validation components:
@@ -78,7 +82,12 @@ src/
 │   │       └── WhatsAppInboundAdapter.ts   # WhatsApp event driver for ProcessIncomingMessage
 │   └── outbound/
 │       ├── chat-repository/
-│       │   └── InMemoryChatRepository.ts   # In-memory sliding window turn storage
+│       │   └── postgres/                   # PostgreSQL conversation memory adapter
+│       │       ├── schema.ts               # Drizzle ORM schema & table constraints
+│       │       ├── validation.ts           # Turn structural & temporal invariants
+│       │       ├── metadata.ts             # Relational envelope metadata extractor
+│       │       ├── PostgresChatRepository.ts # Outbound adapter implementing ChatRepositoryPort
+│       │       └── migrator.ts             # Startup Drizzle migration runner
 │       ├── llm/
 │       │   ├── DeepseekAdapter.ts          # Lean coordinator for DeepSeek completions
 │       │   ├── DeepseekMessageMapper.ts    # Pure domain to OpenAI message mapper
@@ -196,6 +205,7 @@ sequenceDiagram
 - **Single Composition Root**: In production runtime code, `src/index.ts` is the only place where adapters and the core are stitched together. Dependency injection is wired up here (unit tests and internal adapter factory methods like `PinoLoggerAdapter.child()` may instantiate adapters directly).
 - **Fail-Fast Startup**: `src/config.ts` uses Zod to validate all environment variables at startup. Pure `parseConfig()` is exported for direct testing without dynamic module reloading.
 - **Defense-in-Depth Transport Security**: Outbound messaging verifies recipient authorization against `WhatsAppAllowlist` before dispatching to the Baileys socket, ensuring no unauthorized communication occurs even if triggered programmatically.
+- **Hybrid Envelope Persistence**: Conversation turns are persisted with first-class relational columns for operational queries (`user_query`, `assistant_response`, `tool_names`, `started_at`, `completed_at`, and generated `duration_ms`) while preserving the full fidelity ordered `Message[]` sequence in a `JSONB` payload validated by database-level PostgreSQL `CHECK` constraints.
 
 ## 6. "How Do I..." Recipe Guide
 
