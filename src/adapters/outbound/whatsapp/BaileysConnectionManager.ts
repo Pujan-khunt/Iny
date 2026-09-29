@@ -7,7 +7,7 @@ import makeWASocket, {
 import pino from 'pino';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
 import { BaileysPairingManager } from './BaileysPairingManager';
-import { BaileysSession, BaileysSessionManager } from './BaileysSessionManager';
+import { BaileysSession, BaileysSessionManagerPort } from './PostgresBaileysSessionManager';
 
 export interface StartConnectionOptions {
   session: BaileysSession;
@@ -29,7 +29,7 @@ export class BaileysConnectionManager {
   constructor(
     private logger: LoggerPort,
     private pairingManager: BaileysPairingManager,
-    private sessionManager: BaileysSessionManager
+    private sessionManager: BaileysSessionManagerPort
   ) {}
 
   isConnected(): boolean {
