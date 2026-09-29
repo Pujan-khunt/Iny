@@ -1,3 +1,5 @@
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { ProcessIncomingMessage } from './core/use-cases/ProcessIncomingMessage';
 import { AgentLoop } from './core/use-cases/AgentLoop';
 import { config } from './config';
@@ -5,7 +7,9 @@ import { DeepseekAdapter } from './adapters/outbound/llm/DeepseekAdapter';
 import { InMemoryToolRegistry } from './adapters/outbound/tool-registry/InMemoryToolRegistry';
 import { CalculatorTool } from './tools/CalculatorTool';
 import { PinoLoggerAdapter } from './adapters/outbound/logger/PinoLoggerAdapter';
-import { InMemoryChatRepository } from './adapters/outbound/chat-repository/InMemoryChatRepository';
+import * as schema from './adapters/outbound/chat-repository/postgres/schema';
+import { PostgresChatRepository } from './adapters/outbound/chat-repository/postgres/PostgresChatRepository';
+import { runDatabaseMigrations } from './adapters/outbound/chat-repository/postgres/migrator';
 import { WhatsAppAllowlist } from './adapters/common/access-control/WhatsAppAllowlist';
 import { BaileysSessionManager } from './adapters/outbound/whatsapp/BaileysSessionManager';
 import { BaileysPairingManager } from './adapters/outbound/whatsapp/BaileysPairingManager';
@@ -14,10 +18,6 @@ import { BaileysMessageSenderAdapter } from './adapters/outbound/whatsapp/Bailey
 import { BaileysMessageFilter } from './adapters/inbound/whatsapp/BaileysMessageFilter';
 import { BaileysMessageParser } from './adapters/inbound/whatsapp/BaileysMessageParser';
 import { WhatsAppInboundAdapter } from './adapters/inbound/whatsapp/WhatsAppInboundAdapter';
-
-/**
- * Composition root for the Iny WhatsApp application.
- */
 
 // 1. Logger
 const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
@@ -29,27 +29,35 @@ const allowlist = new WhatsAppAllowlist(config.ALLOWED_USERS);
 const registry = new InMemoryToolRegistry(logger);
 registry.register(new CalculatorTool());
 
-// 4. Conversation history repository & LLM adapter
-const chatRepository = new InMemoryChatRepository();
+// 4. PostgreSQL Connection Pool & Drizzle ORM
+const sqlClient = postgres(config.DATABASE_URL, {
+  max: config.DB_MAX_CONNECTIONS,
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
+const db = drizzle(sqlClient, { schema });
+const chatRepository = new PostgresChatRepository(db, logger);
+
+// 5. LLM Adapter
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
   baseURL: config.DEEPSEEK_BASE_URL,
   model: config.DEEPSEEK_MODEL,
   logger,
 });
 
-// 5. WhatsApp Infrastructure & Message Sender
+// 6. WhatsApp Infrastructure & Message Sender
 const sessionManager = new BaileysSessionManager(logger);
 const pairingManager = new BaileysPairingManager(logger);
 const connectionManager = new BaileysConnectionManager(logger, pairingManager, sessionManager);
 const messageSender = new BaileysMessageSenderAdapter(connectionManager, allowlist, logger);
 
-// 6. Autonomous AgentLoop
+// 7. Autonomous AgentLoop
 const agentLoop = new AgentLoop(deepseekAdapter, registry, {
   maxToolIterations: config.MAX_TOOL_ITERATIONS,
   systemPrompt: config.SYSTEM_PROMPT,
 });
 
-// 7. Orchestrating ProcessIncomingMessage use case
+// 8. Orchestrating ProcessIncomingMessage use case
 const useCase = new ProcessIncomingMessage(
   messageSender,
   chatRepository,
@@ -61,7 +69,7 @@ const useCase = new ProcessIncomingMessage(
   }
 );
 
-// 8. Inbound WhatsApp Driving Adapter
+// 9. Inbound WhatsApp Driving Adapter
 const filter = new BaileysMessageFilter();
 const parser = new BaileysMessageParser();
 const inboundAdapter = new WhatsAppInboundAdapter(
@@ -73,18 +81,36 @@ const inboundAdapter = new WhatsAppInboundAdapter(
   logger
 );
 
-inboundAdapter.start();
+// Graceful Shutdown
+async function shutdown(signal: string) {
+  logger.info(`Received ${signal}. Closing connections gracefully...`);
+  try {
+    await sqlClient.end({ timeout: 5 });
+    logger.info('Database connection pool closed');
+  } catch (err) {
+    logger.error('Error closing database connection pool', err);
+  }
+  process.exit(0);
+}
 
-logger.info('Starting Iny WhatsApp connection...');
-sessionManager
-  .initSession()
-  .then((session) =>
-    connectionManager.start({
-      session,
-      botPhoneNumber: config.BOT_PHONE_NUMBER,
-    })
-  )
-  .catch((err) => {
-    logger.fatal('Failed to initialize WhatsApp connection', err);
-    process.exit(1);
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// Startup Sequence
+async function start() {
+  await runDatabaseMigrations(db, logger);
+
+  inboundAdapter.start();
+
+  logger.info('Starting Iny WhatsApp connection...');
+  const session = await sessionManager.initSession();
+  await connectionManager.start({
+    session,
+    botPhoneNumber: config.BOT_PHONE_NUMBER,
   });
+}
+
+start().catch((err) => {
+  logger.fatal('Fatal application startup failure', err);
+  sqlClient.end({ timeout: 2 }).finally(() => process.exit(1));
+});
