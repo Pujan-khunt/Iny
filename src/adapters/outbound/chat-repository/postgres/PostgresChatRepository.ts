@@ -1,4 +1,5 @@
 import { eq, desc } from 'drizzle-orm';
+import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { ChatRepositoryPort } from '../../../../core/ports/ChatRepositoryPort';
 import { DialogueTurn } from '../../../../core/entities/DialogueTurn';
 import { LoggerPort } from '../../../../core/ports/LoggerPort';
@@ -8,7 +9,7 @@ import { extractTurnMetadata } from './metadata';
 
 export class PostgresChatRepository implements ChatRepositoryPort {
   constructor(
-    private db: any,
+    private db: PgDatabase<any, any, any>,
     private logger: LoggerPort
   ) {}
 

@@ -150,27 +150,34 @@ describe('ProcessIncomingMessage', () => {
     });
 
     it('should save completed turn with startedAt and completedAt timestamps', async () => {
-      const startTime = new Date('2026-09-29T10:00:00.000Z');
-      const endTime = new Date('2026-09-29T10:00:02.500Z');
+      vi.useFakeTimers();
+      try {
+        const startTime = new Date('2026-09-29T10:00:00.000Z');
+        const endTime = new Date('2026-09-29T10:00:02.500Z');
+        vi.setSystemTime(startTime);
 
-      vi.spyOn(Date, 'now')
-        .mockReturnValueOnce(startTime.getTime())
-        .mockReturnValueOnce(endTime.getTime());
+        mockSender.sendMessage.mockImplementationOnce(async () => {
+          vi.setSystemTime(endTime);
+        });
 
-      const useCase = createUseCase();
-      await useCase.execute(sampleUserMessage);
+        const useCase = createUseCase();
+        await useCase.execute(sampleUserMessage);
 
-      expect(mockChatRepository.saveTurn).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: 'user1',
-          messages: [sampleUserMessage, sampleAssistantMessage],
-          startedAt: expect.any(Date),
-          completedAt: expect.any(Date),
-        })
-      );
+        expect(mockChatRepository.saveTurn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            userId: 'user1',
+            messages: [sampleUserMessage, sampleAssistantMessage],
+            startedAt: startTime,
+            completedAt: endTime,
+          })
+        );
 
-      const savedTurn = (mockChatRepository.saveTurn as any).mock.calls[0][0];
-      expect(savedTurn.completedAt.getTime()).toBeGreaterThanOrEqual(savedTurn.startedAt.getTime());
+        const savedTurn = (mockChatRepository.saveTurn as any).mock.calls[0][0];
+        expect(savedTurn.startedAt).toEqual(startTime);
+        expect(savedTurn.completedAt).toEqual(endTime);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

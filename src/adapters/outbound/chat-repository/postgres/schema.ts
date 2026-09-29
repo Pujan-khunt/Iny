@@ -1,5 +1,15 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, uuid, varchar, text, timestamp, integer, jsonb, index } from 'drizzle-orm/pg-core';
+import {
+  check,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+  varchar,
+} from 'drizzle-orm/pg-core';
 import { Message } from '../../../../core/entities/Message';
 
 export const dialogueTurns = pgTable(
@@ -22,6 +32,11 @@ export const dialogueTurns = pgTable(
   },
   (table) => [
     index('idx_dialogue_turns_user_completed').on(table.userId, table.completedAt.desc()),
+    check('chk_dialogue_turns_timing', sql`${table.completedAt} >= ${table.startedAt}`),
+    check(
+      'chk_dialogue_turns_messages',
+      sql`jsonb_array_length(${table.messages}) >= 2 AND (${table.messages}->0->>'role') = 'user' AND (${table.messages}->-1->>'role') = 'assistant' AND (${table.messages}->-1->'toolCalls') IS NULL`
+    ),
   ]
 );
 

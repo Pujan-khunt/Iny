@@ -1,5 +1,5 @@
 {
-  "id": "4e2482d3-1884-4786-bac8-8e72892def04",
+  "id": "6899a427-452a-4cbc-b603-1638380ebdcd",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -95,7 +95,16 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "chk_dialogue_turns_timing": {
+          "name": "chk_dialogue_turns_timing",
+          "value": "\"dialogue_turns\".\"completed_at\" >= \"dialogue_turns\".\"started_at\""
+        },
+        "chk_dialogue_turns_messages": {
+          "name": "chk_dialogue_turns_messages",
+          "value": "jsonb_array_length(\"dialogue_turns\".\"messages\") >= 2 AND (\"dialogue_turns\".\"messages\"->0->>'role') = 'user' AND (\"dialogue_turns\".\"messages\"->-1->>'role') = 'assistant' AND (\"dialogue_turns\".\"messages\"->-1->'toolCalls') IS NULL"
+        }
+      },
       "isRLSEnabled": false
     }
   },

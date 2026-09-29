@@ -43,6 +43,31 @@ describe('Config', () => {
     expect(config.DB_MAX_CONNECTIONS).toBe(25);
   });
 
+  it('should throw an error and log failure when required variables are missing', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => parseConfig({})).toThrow('Invalid environment variables');
+    expect(errorSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+  });
+
+  it('should reject invalid BOT_PHONE_NUMBER containing non-digit characters', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() =>
+      parseConfig({
+        DEEPSEEK_API_KEY: 'test-key',
+        SYSTEM_PROMPT: 'test-prompt',
+        BOT_PHONE_NUMBER: '+91 (987) 654-3210',
+        ALLOWED_USERS: '919876543211',
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+      })
+    ).toThrow('Invalid environment variables');
+
+    errorSpy.mockRestore();
+  });
+
   it('should throw an error when DATABASE_URL is missing', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
