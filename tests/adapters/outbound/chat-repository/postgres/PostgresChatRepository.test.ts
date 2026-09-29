@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { newDb } from 'pg-mem';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PostgresChatRepository } from '../../../../../src/adapters/outbound/chat-repository/postgres/PostgresChatRepository';
 import { DialogueTurn } from '../../../../../src/core/entities/DialogueTurn';
 import { LoggerPort } from '../../../../../src/core/ports/LoggerPort';
 
 describe('PostgresChatRepository', () => {
   let repository: PostgresChatRepository;
-  let db: any;
+  let db: NodePgDatabase;
   const mockLogger: LoggerPort = {
     debug: vi.fn(),
     info: vi.fn(),

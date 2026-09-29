@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { runDatabaseMigrations } from '../../../../../src/adapters/outbound/chat-repository/postgres/migrator';
 import { LoggerPort } from '../../../../../src/core/ports/LoggerPort';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 vi.mock('drizzle-orm/postgres-js/migrator', () => ({
   migrate: vi.fn(),
@@ -17,7 +18,7 @@ describe('runDatabaseMigrations', () => {
     child: vi.fn().mockReturnThis(),
   };
 
-  const mockDb = {} as any;
+  const mockDb = {} as PostgresJsDatabase<Record<string, unknown>>;
 
   beforeEach(() => {
     vi.clearAllMocks();

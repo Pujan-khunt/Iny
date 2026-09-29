@@ -85,6 +85,14 @@ const inboundAdapter = new WhatsAppInboundAdapter(
 async function shutdown(signal: string) {
   logger.info(`Received ${signal}. Closing connections gracefully...`);
   try {
+    const socket = connectionManager.getSocket();
+    if (socket) {
+      socket.end(undefined);
+    }
+  } catch (err) {
+    logger.error('Error closing WhatsApp socket during shutdown', err);
+  }
+  try {
     await sqlClient.end({ timeout: 5 });
     logger.info('Database connection pool closed');
   } catch (err) {

@@ -2,8 +2,9 @@ import { eq, desc } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { ChatRepositoryPort } from '../../../../core/ports/ChatRepositoryPort';
 import { DialogueTurn } from '../../../../core/entities/DialogueTurn';
+import { Message } from '../../../../core/entities/Message';
 import { LoggerPort } from '../../../../core/ports/LoggerPort';
-import { dialogueTurns } from './schema';
+import { dialogueTurns, DialogueTurnRow } from './schema';
 import { assertValidDialogueTurn } from './validation';
 import { extractTurnMetadata } from './metadata';
 
@@ -19,18 +20,18 @@ export class PostgresChatRepository implements ChatRepositoryPort {
     }
 
     try {
-      const rows = await this.db
+      const rows = (await this.db
         .select()
         .from(dialogueTurns)
         .where(eq(dialogueTurns.userId, userId))
         .orderBy(desc(dialogueTurns.completedAt))
-        .limit(maxTurns);
+        .limit(maxTurns)) as DialogueTurnRow[];
 
-      const turns: DialogueTurn[] = rows.map((row: any) => ({
+      const turns: DialogueTurn[] = rows.map((row: DialogueTurnRow) => ({
         id: row.id,
         userId: row.userId,
         messages: Array.isArray(row.messages)
-          ? row.messages.map((m: any) => ({
+          ? row.messages.map((m: Message) => ({
               ...m,
               ...(m.timestamp ? { timestamp: new Date(m.timestamp) } : {}),
             }))
