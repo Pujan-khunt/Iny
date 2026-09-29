@@ -18,7 +18,7 @@ CHECK (
   AND jsonb_array_length("messages") >= 2
   AND ("messages"->0->>'role') = 'user'
   AND ("messages"->-1->>'role') = 'assistant'
-  AND ("messages"->-1->>'type') = 'text'
+  AND ("messages"->-1->'toolCalls') IS NULL
 );
 --> statement-breakpoint
 ALTER TABLE "dialogue_turns" ADD CONSTRAINT "chk_dialogue_turns_timing"

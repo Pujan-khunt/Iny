@@ -11,7 +11,7 @@ describe('extractTurnMetadata', () => {
       completedAt: new Date(),
       messages: [
         { id: 'm1', userId: 'user1', role: 'user', content: 'Hello Iny', timestamp: new Date() },
-        { id: 'm2', role: 'assistant', type: 'text', content: 'Hello! How can I help?' },
+        { id: 'm2', userId: 'user1', role: 'assistant', content: 'Hello! How can I help?', timestamp: new Date() },
       ],
     };
 
@@ -31,16 +31,17 @@ describe('extractTurnMetadata', () => {
         { id: 'm1', userId: 'user1', role: 'user', content: 'Calculate 2+2 and 3+3', timestamp: new Date() },
         {
           id: 'm2',
+          userId: 'user1',
           role: 'assistant',
-          type: 'tool_calls',
           toolCalls: [
-            { id: 'c1', name: 'CalculatorTool', args: { expr: '2+2' } },
-            { id: 'c2', name: 'CalculatorTool', args: { expr: '3+3' } },
+            { type: 'valid', id: 'c1', name: 'CalculatorTool', arguments: { expr: '2+2' } },
+            { type: 'valid', id: 'c2', name: 'CalculatorTool', arguments: { expr: '3+3' } },
           ],
+          timestamp: new Date(),
         },
-        { id: 'm3', role: 'tool', toolCallId: 'c1', toolName: 'CalculatorTool', result: '4' },
-        { id: 'm4', role: 'tool', toolCallId: 'c2', toolName: 'CalculatorTool', result: '6' },
-        { id: 'm5', role: 'assistant', type: 'text', content: 'Results are 4 and 6.' },
+        { id: 'm3', userId: 'user1', role: 'tool', toolCallId: 'c1', name: 'CalculatorTool', content: '4', timestamp: new Date() },
+        { id: 'm4', userId: 'user1', role: 'tool', toolCallId: 'c2', name: 'CalculatorTool', content: '6', timestamp: new Date() },
+        { id: 'm5', userId: 'user1', role: 'assistant', content: 'Results are 4 and 6.', timestamp: new Date() },
       ],
     };
 

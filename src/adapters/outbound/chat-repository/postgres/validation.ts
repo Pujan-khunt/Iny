@@ -14,10 +14,12 @@ export function assertValidDialogueTurn(turn: DialogueTurn): void {
     throw new Error(`Invalid turn: first message must be UserMessage, got role '${first.role}'`);
   }
 
-  const last = msgs[msgs.length - 1] as any;
-  if (last.role !== 'assistant' || last.type !== 'text') {
+  const last = msgs[msgs.length - 1];
+  if (last.role !== 'assistant' || ('toolCalls' in last && last.toolCalls !== undefined)) {
     throw new Error(
-      `Invalid turn: final message must be AssistantTextMessage, got role '${last.role}'`
+      `Invalid turn: final message must be AssistantTextMessage, got ${
+        last.role === 'assistant' ? 'AssistantToolCallMessage' : `role '${last.role}'`
+      }`
     );
   }
 

@@ -16,9 +16,8 @@ export function extractTurnMetadata(turn: DialogueTurn): TurnMetadata {
 
   const toolNamesSet = new Set<string>();
   for (const msg of turn.messages) {
-    const m = msg as any;
-    if (m.role === 'assistant' && m.type === 'tool_calls' && Array.isArray(m.toolCalls)) {
-      for (const call of m.toolCalls) {
+    if (msg.role === 'assistant' && 'toolCalls' in msg && Array.isArray(msg.toolCalls)) {
+      for (const call of msg.toolCalls) {
         toolNamesSet.add(call.name);
       }
     }
