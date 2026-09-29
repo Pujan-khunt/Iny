@@ -4,6 +4,8 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PostgresBaileysSessionManager } from '../../../../src/adapters/outbound/whatsapp/PostgresBaileysSessionManager';
 import { LoggerPort } from '../../../../src/core/ports/LoggerPort';
 import { proto } from '@whiskeysockets/baileys';
+import { eq, and, inArray } from 'drizzle-orm';
+import { whatsappAuth } from '../../../../src/adapters/outbound/whatsapp/postgres/schema';
 
 describe('PostgresBaileysSessionManager', () => {
   let db: NodePgDatabase;
@@ -142,6 +144,47 @@ describe('PostgresBaileysSessionManager', () => {
 
       const after = await session.state.keys.get('session', ['user-1']);
       expect(after['user-1']).toBeUndefined();
+    });
+
+    it('should properly upsert falsy non-null values and not delete them', async () => {
+      const session = await manager.initSession();
+
+      // First insert an existing key to verify updating to falsy non-null does not delete it
+      await session.state.keys.set({
+        session: {
+          'existing-bool': true,
+        },
+      });
+
+      // Update existing key to false, and set other falsy non-null values (number 0, empty string "")
+      await session.state.keys.set({
+        session: {
+          'existing-bool': false,
+          'num-zero': 0,
+          'empty-string': '',
+        },
+      });
+
+      // Direct DB query verifying that falsy non-null values were upserted and not deleted
+      const rows = await db
+        .select()
+        .from(whatsappAuth)
+        .where(
+          and(
+            eq(whatsappAuth.sessionId, 'default'),
+            inArray(whatsappAuth.key, [
+              'session-existing-bool',
+              'session-num-zero',
+              'session-empty-string',
+            ])
+          )
+        );
+
+      expect(rows).toHaveLength(3);
+      const rowMap = new Map(rows.map((r) => [r.key, r.value]));
+      expect(rowMap.get('session-existing-bool')).toBe(false);
+      expect(rowMap.get('session-num-zero')).toBe(0);
+      expect(rowMap.get('session-empty-string')).toBe('');
     });
 
     it('should serve hot keys from the in-memory cache without hitting the database', async () => {

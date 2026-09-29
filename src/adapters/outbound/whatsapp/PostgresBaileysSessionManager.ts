@@ -93,7 +93,7 @@ export class PostgresBaileysSessionManager implements BaileysSessionManagerPort 
           for (const id in data[category]) {
             const value = data[category][id];
             const dbKey = `${category}-${id}`;
-            if (value) {
+            if (value !== null && value !== undefined) {
               const serialized = JSON.parse(JSON.stringify(value, BufferJSON.replacer));
               toUpsert.push({
                 sessionId: this.sessionId,
