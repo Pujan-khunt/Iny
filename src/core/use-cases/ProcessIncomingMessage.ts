@@ -32,6 +32,7 @@ export class ProcessIncomingMessage {
   }
 
   async execute(message: UserMessage): Promise<void> {
+    const startedAt = new Date();
     const log = this.logger.child({ userId: message.userId, messageId: message.id });
     log.info('Processing incoming message');
 
@@ -55,6 +56,7 @@ export class ProcessIncomingMessage {
       // Transport failed: do not attempt to send error notification through the dead transport.
       return;
     }
+    const completedAt = new Date();
 
     // 3. PERSISTENCE PHASE
     try {
@@ -62,7 +64,8 @@ export class ProcessIncomingMessage {
         id: crypto.randomUUID(),
         userId: message.userId,
         messages: loopResult.sessionMessages,
-        createdAt: new Date(),
+        startedAt,
+        completedAt,
       };
       await this.chatRepository.saveTurn(turn);
       log.info('Message processed successfully');

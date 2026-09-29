@@ -16,7 +16,8 @@ describe('InMemoryChatRepository', () => {
       { id: `u-${id}`, userId, role: 'user', content: text, timestamp: new Date() },
       { id: `a-${id}`, userId, role: 'assistant', content: `Echo: ${text}`, timestamp: new Date() }
     ],
-    createdAt: new Date()
+    startedAt: new Date(),
+    completedAt: new Date(),
   });
 
   it('should return an empty array if no turns exist for a user', async () => {
