@@ -32,3 +32,6 @@ Thumbs.db
 # Ephemeral Plans
 /docs/plans/*
 !/docs/plans/.gitkeep
+
+# WhatsApp Session
+.baileys_auth/

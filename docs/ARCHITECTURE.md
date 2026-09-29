@@ -2,7 +2,7 @@
 
 ## 1. System Vision & The Hexagonal Boundary
 
-Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. Our core philosophy relies heavily on Hexagonal Architecture (Ports and Adapters). The **Domain Core** (`src/core`) contains zero external runtime dependencies and remains pure. It dictates the business logic and how messages should be processed. Adapters handle all interaction with the outside world (like WhatsApp, CLI, LLMs, and tool registries) by implementing interfaces (ports) defined by the core.
+Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. Our core philosophy relies heavily on Hexagonal Architecture (Ports and Adapters). The **Domain Core** (`src/core`) contains zero external runtime dependencies and remains pure. It dictates the business logic and how messages should be processed. Adapters handle all interaction with the outside world (like WhatsApp Web via Baileys, LLMs, and tool registries) by implementing interfaces (ports) defined by the core.
 
 ## 2. Mental Model & Core Concepts
 
@@ -23,8 +23,14 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/tools/BaseTool.ts`: Abstract base class using the Template Method pattern, declarative Zod schemas, automatic JSON Schema generation, and self-correcting error string returns.
   - `src/tools/CalculatorTool.ts`: Safe arithmetic evaluation tool using recursive descent parsing (zero `eval`).
 - **Inbound Adapters**: Entry points that trigger core use cases:
-  - `src/adapters/inbound/cli/CLIAdapter.ts`: Interactive command line interface with standardized UUID message identity and signal handling.
+  - `src/adapters/inbound/whatsapp/WhatsAppInboundAdapter.ts`: Driving adapter listening for incoming WhatsApp messages via Baileys, coordinating eligibility filtering and message parsing, enforcing allowlist security, and dispatching valid user messages to `ProcessIncomingMessage`.
+  - `src/adapters/inbound/whatsapp/BaileysMessageFilter.ts`: Evaluates incoming raw WhatsApp message eligibility (rejecting self-messages, non-text messages, groups `@g.us`, and broadcasts `@broadcast`).
+  - `src/adapters/inbound/whatsapp/BaileysMessageParser.ts`: Pure translator mapping eligible raw Baileys messages into domain `UserMessage` entities with normalized epoch timestamps.
 - **Outbound Adapters**: Concrete implementations of our core ports:
+  - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` with defense-in-depth allowlist verification before transmitting text payloads over the active WhatsApp socket.
+  - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution.
+  - `src/adapters/outbound/whatsapp/BaileysSessionManager.ts`: Manages multi-file auth credentials lifecycle on disk (`.baileys_auth/`) and purges credentials upon logout.
+  - `src/adapters/outbound/whatsapp/BaileysPairingManager.ts`: Coordinates first-time device registration and 8-digit pairing code generation for unregistered sessions.
   - `src/adapters/outbound/llm/DeepseekAdapter.ts`: Lean coordinator delegating to pure collaborators:
     - `DeepseekMessageMapper.ts`: Pure message translation to OpenAI-compatible format with DeepSeek `reasoning_content` support.
     - `DeepseekResponseParser.ts`: Pure parser extracting `ValidToolCall` and `MalformedToolCall` domain entities.
@@ -32,6 +38,9 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/outbound/chat-repository/InMemoryChatRepository.ts`: In-memory sliding-window turn repository preserving chronological order and tenant isolation.
   - `src/adapters/outbound/logger/PinoLoggerAdapter.ts`: Structured logging wrapper around Pino with unambiguous signature routing.
   - `src/adapters/outbound/tool-registry/InMemoryToolRegistry.ts`: In-memory tool storage exposing clean tool definitions.
+- **Shared Adapter Collaborators**: Reusable access control and identity validation components:
+  - `src/adapters/common/access-control/WhatsAppAllowlist.ts`: Enforces access control authorization by verifying identities against configured allowed users.
+  - `src/adapters/common/whatsapp/WhatsAppJid.ts`: Pure utility for normalizing phone numbers and JIDs to standard `number@s.whatsapp.net` format and classifying JID types (user, group, broadcast).
 
 ## 3. Codebase Directory Map
 
@@ -57,9 +66,16 @@ src/
 │   ├── BaseTool.ts                         # Declarative base tool with Zod schema reflection
 │   └── CalculatorTool.ts                   # Safe recursive descent arithmetic evaluator
 ├── adapters/                               # Interaction with the outside world
+│   ├── common/                             # Shared adapter utilities and access control
+│   │   ├── access-control/
+│   │   │   └── WhatsAppAllowlist.ts        # Access control allowlist enforcement
+│   │   └── whatsapp/
+│   │       └── WhatsAppJid.ts              # WhatsApp JID validation and normalization
 │   ├── inbound/
-│   │   └── cli/
-│   │       └── CLIAdapter.ts               # Command line interface for manual testing
+│   │   └── whatsapp/
+│   │       ├── BaileysMessageFilter.ts     # Reception eligibility filter (reject fromMe, groups, non-text)
+│   │       ├── BaileysMessageParser.ts     # Pure domain UserMessage translator
+│   │       └── WhatsAppInboundAdapter.ts   # WhatsApp event driver for ProcessIncomingMessage
 │   └── outbound/
 │       ├── chat-repository/
 │       │   └── InMemoryChatRepository.ts   # In-memory sliding window turn storage
@@ -70,8 +86,13 @@ src/
 │       │   └── DeepseekErrorTranslator.ts  # Pure HTTP and SDK error translator
 │       ├── logger/
 │       │   └── PinoLoggerAdapter.ts        # Structured logging using Pino
-│       └── tool-registry/
-│           └── InMemoryToolRegistry.ts     # In-memory tool registry implementation
+│       ├── tool-registry/
+│       │   └── InMemoryToolRegistry.ts     # In-memory tool registry implementation
+│       └── whatsapp/
+│           ├── BaileysConnectionManager.ts # WebSocket lifecycle & reconnection coordinator
+│           ├── BaileysMessageSenderAdapter.ts # Outbound transport implementing MessageSenderPort
+│           ├── BaileysPairingManager.ts    # First-time device pairing code coordinator
+│           └── BaileysSessionManager.ts    # Multi-file auth credentials lifecycle & purge
 ├── config.ts                               # Fail-fast configuration with pure parseConfig
 └── index.ts                                # The Composition Root
 ```
@@ -80,66 +101,92 @@ src/
 
 ```mermaid
 sequenceDiagram
-    participant Input as CLI [WhatsApp planned]
-    participant CLI as CLIAdapter.ts
+    participant WA as WhatsApp Network
+    participant Inbound as WhatsAppInboundAdapter.ts
+    participant Filter as BaileysMessageFilter.ts
+    participant Allowlist as WhatsAppAllowlist.ts
+    participant Parser as BaileysMessageParser.ts
     participant UC as ProcessIncomingMessage.ts
     participant Loop as AgentLoop.ts
     participant Repo as ChatRepositoryPort.ts
     participant Reg as ToolRegistryPort.ts
     participant LLM as LLMPort.ts
-    participant Sender as MessageSenderPort.ts
+    participant Sender as BaileysMessageSenderAdapter.ts
+    participant Conn as BaileysConnectionManager.ts
     participant Log as LoggerPort.ts
 
-    Input->>CLI: User sends message
-    CLI->>UC: execute(message)
-    UC->>Log: logger.child({ userId, messageId })
-    UC->>Log: log.info("Processing incoming message")
+    WA->>Inbound: messages.upsert (messages)
+    
+    loop For each message in batch
+        Inbound->>Filter: isEligible(rawMessage)
+        alt Ineligible (fromMe / non-text / group / broadcast)
+            Filter-->>Inbound: false
+            Note over Inbound: Discard (zero token cost)
+        else Eligible
+            Filter-->>Inbound: true
+            Inbound->>Allowlist: isAllowed(senderJid)
+            alt Unauthorized Sender
+                Allowlist-->>Inbound: false
+                Note over Inbound: Discard & log debug
+            else Authorized
+                Allowlist-->>Inbound: true
+                Inbound->>Parser: parse(rawMessage)
+                Parser-->>Inbound: userMessage
 
-    rect rgb(240, 248, 255)
-        Note over UC,Loop: Phase 1: Reasoning Phase
-        UC->>Repo: chatRepository.getRecentTurns(userId, maxHistoryTurns)
-        Repo-->>UC: DialogueTurn[] (history)
-        UC->>Reg: toolRegistry.getToolDefinitions()
-        Reg-->>UC: ToolDefinition[]
-        UC->>Loop: loop.run(message, history, tools, log)
+                Inbound->>UC: execute(userMessage)
+                UC->>Log: logger.child({ userId, messageId })
+                UC->>Log: log.info("Processing incoming message")
 
-        loop ReAct Tool Loop (up to maxToolIterations)
-            Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools)
-            alt Response: Text
-                LLM-->>Loop: { type: 'text', content, thought }
-                Note over Loop: Break loop
-            else Response: Tool Calls
-                LLM-->>Loop: { type: 'tool_calls', toolCalls, thought }
-                Loop->>Reg: Promise.all(toolCalls.map(executeTool))
-                Reg-->>Loop: Tool results / reflected error strings
-                Note over Loop: Append tool messages to workingHistory & iterate
+                rect rgb(240, 248, 255)
+                    Note over UC,Loop: Phase 1: Reasoning Phase
+                    UC->>Repo: chatRepository.getRecentTurns(userId, maxHistoryTurns)
+                    Repo-->>UC: DialogueTurn[] (history)
+                    UC->>Reg: toolRegistry.getToolDefinitions()
+                    Reg-->>UC: ToolDefinition[]
+                    UC->>Loop: loop.run(userMessage, history, tools, log)
+
+                    loop ReAct Tool Loop (up to maxToolIterations)
+                        Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools)
+                        alt Response: Text
+                            LLM-->>Loop: { type: 'text', content, thought }
+                            Note over Loop: Break loop
+                        else Response: Tool Calls
+                            LLM-->>Loop: { type: 'tool_calls', toolCalls, thought }
+                            Loop->>Reg: Promise.all(toolCalls.map(executeTool))
+                            Reg-->>Loop: Tool results / reflected error strings
+                            Note over Loop: Append tool messages to workingHistory & iterate
+                        end
+                    end
+
+                    opt Circuit Breaker (if max iterations reached without text)
+                        Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools, { forcedSynthesis: true })
+                        LLM-->>Loop: { type: 'text', content }
+                    end
+                    Loop-->>UC: loopResult (finalText, thought, sessionMessages)
+                end
+
+                rect rgb(240, 255, 240)
+                    Note over UC,Sender: Phase 2: Delivery Phase
+                    UC->>Sender: sender.sendMessage(userId, finalText)
+                    Sender->>Allowlist: isAllowed(userId) [Defense-in-depth]
+                    Sender->>Conn: getSocket()
+                    Conn-->>Sender: activeSocket
+                    Sender->>WA: sock.sendMessage(userId, { text: finalText })
+                    alt Delivery Fails
+                        Sender-->>UC: Transport Error
+                        UC->>Log: log.error("Failed to deliver message...")
+                        Note over UC: Abort (do not retry over dead transport; do not save turn)
+                    end
+                end
+
+                rect rgb(255, 250, 240)
+                    Note over UC,Repo: Phase 3: Persistence Phase
+                    UC->>Repo: chatRepository.saveTurn(turn)
+                    UC->>Log: log.info("Message processed successfully")
+                end
             end
         end
-
-        opt Circuit Breaker (if max iterations reached without text)
-            Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools, { forcedSynthesis: true })
-            LLM-->>Loop: { type: 'text', content }
-        end
-        Loop-->>UC: loopResult (finalText, thought, sessionMessages)
     end
-
-    rect rgb(240, 255, 240)
-        Note over UC,Sender: Phase 2: Delivery Phase
-        UC->>Sender: sender.sendMessage(userId, finalText)
-        alt Delivery Fails
-            Sender-->>UC: Transport Error
-            UC->>Log: log.error("Failed to deliver message...")
-            Note over UC: Abort (do not retry over dead transport; do not save turn)
-        end
-    end
-
-    rect rgb(255, 250, 240)
-        Note over UC,Repo: Phase 3: Persistence Phase
-        UC->>Repo: chatRepository.saveTurn(turn)
-        UC->>Log: log.info("Message processed successfully")
-    end
-
-    UC-->>CLI: Return
 ```
 
 ## 5. Architectural Invariants
@@ -148,11 +195,12 @@ sequenceDiagram
 - **Turn-Atomic Conversation Memory**: History persistence is partitioned into complete `DialogueTurn` boundaries. Sliding windows and retention limits prune complete turns, never bisecting an assistant tool call from its corresponding tool response.
 - **Single Composition Root**: In production runtime code, `src/index.ts` is the only place where adapters and the core are stitched together. Dependency injection is wired up here (unit tests and internal adapter factory methods like `PinoLoggerAdapter.child()` may instantiate adapters directly).
 - **Fail-Fast Startup**: `src/config.ts` uses Zod to validate all environment variables at startup. Pure `parseConfig()` is exported for direct testing without dynamic module reloading.
+- **Defense-in-Depth Transport Security**: Outbound messaging verifies recipient authorization against `WhatsAppAllowlist` before dispatching to the Baileys socket, ensuring no unauthorized communication occurs even if triggered programmatically.
 
 ## 6. "How Do I..." Recipe Guide
 
 ### Recipe 1: Add Inbound Adapter
-1. Create a new directory in `src/adapters/inbound/` (e.g., `whatsapp/`).
+1. Create a new directory in `src/adapters/inbound/` (e.g., `telegram/`).
 2. Write an adapter class that takes use cases (e.g., `ProcessIncomingMessage`) as dependencies.
 3. Listen to external events (like a webhook or socket message) and invoke the use case.
 4. Wire it up in `src/index.ts`.
