@@ -8,8 +8,6 @@ import { LoggerPort } from '../../../core/ports/LoggerPort';
 import { UserMessage } from '../../../core/entities/Message';
 import { WhatsAppJid } from '../../common/whatsapp/WhatsAppJid';
 
-import { WhatsAppAllowlist } from '../../common/access-control/WhatsAppAllowlist';
-
 /**
  * Driving adapter that listens for incoming WhatsApp messages from Baileys,
  * enforces eligibility policy and allowlist authorization, parses payloads,
@@ -19,7 +17,7 @@ export class WhatsAppInboundAdapter {
   constructor(
     private processIncomingMessage: ProcessIncomingMessage,
     private connectionManager: BaileysConnectionManager,
-    private allowlist: AllowlistPort | WhatsAppAllowlist,
+    private allowlist: AllowlistPort,
     private filter: BaileysMessageFilter,
     private parser: BaileysMessageParser,
     private logger: LoggerPort

@@ -36,6 +36,14 @@ describe('allowedUsers Drizzle Schema', () => {
     expect(indexNames).toContain('idx_allowed_users_jid');
     expect(indexNames).toContain('idx_allowed_users_lid');
     expect(indexNames).toContain('idx_allowed_users_is_active');
+
+    const jidIdx = config.indexes.find((idx) => idx.config.name === 'idx_allowed_users_jid');
+    const lidIdx = config.indexes.find((idx) => idx.config.name === 'idx_allowed_users_lid');
+    const isActiveIdx = config.indexes.find((idx) => idx.config.name === 'idx_allowed_users_is_active');
+
+    expect(jidIdx?.config.unique).toBe(true);
+    expect(lidIdx?.config.unique).toBe(true);
+    expect(isActiveIdx?.config.unique).toBe(false);
   });
 
   it('should define check constraints for phone digits and role', () => {

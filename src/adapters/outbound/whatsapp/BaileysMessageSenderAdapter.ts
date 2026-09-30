@@ -2,7 +2,6 @@ import { MessageSenderPort } from '../../../core/ports/MessageSenderPort';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
 import { BaileysConnectionManager } from './BaileysConnectionManager';
 import { AllowlistPort } from '../access-control/AllowlistPort';
-import { WhatsAppAllowlist } from '../../common/access-control/WhatsAppAllowlist';
 
 /**
  * Outbound transport adapter implementing MessageSenderPort with defense-in-depth
@@ -11,7 +10,7 @@ import { WhatsAppAllowlist } from '../../common/access-control/WhatsAppAllowlist
 export class BaileysMessageSenderAdapter implements MessageSenderPort {
   constructor(
     private connectionManager: BaileysConnectionManager,
-    private allowlist: AllowlistPort | WhatsAppAllowlist,
+    private allowlist: AllowlistPort,
     private logger: LoggerPort
   ) {}
 

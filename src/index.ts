@@ -9,9 +9,10 @@ import { CalculatorTool } from './tools/CalculatorTool';
 import { PinoLoggerAdapter } from './adapters/outbound/logger/PinoLoggerAdapter';
 import * as chatSchema from './adapters/outbound/chat-repository/postgres/schema';
 import * as whatsappSchema from './adapters/outbound/whatsapp/postgres/schema';
+import * as accessControlSchema from './adapters/outbound/access-control/postgres/schema';
 import { PostgresChatRepository } from './adapters/outbound/chat-repository/postgres/PostgresChatRepository';
 import { runDatabaseMigrations } from './adapters/outbound/chat-repository/postgres/migrator';
-import { WhatsAppAllowlist } from './adapters/common/access-control/WhatsAppAllowlist';
+import { PostgresAllowlistAdapter } from './adapters/outbound/access-control/postgres/PostgresAllowlistAdapter';
 import { PostgresBaileysSessionManager } from './adapters/outbound/whatsapp/PostgresBaileysSessionManager';
 import { BaileysPairingManager } from './adapters/outbound/whatsapp/BaileysPairingManager';
 import { BaileysConnectionManager } from './adapters/outbound/whatsapp/BaileysConnectionManager';
@@ -23,23 +24,23 @@ import { WhatsAppInboundAdapter } from './adapters/inbound/whatsapp/WhatsAppInbo
 // 1. Logger
 const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
 
-// 2. Access control allowlist
-const allowlist = new WhatsAppAllowlist(config.ALLOWED_USERS);
-
-// 3. Outbound tool registry & tools
+// 2. Outbound tool registry & tools
 const registry = new InMemoryToolRegistry(logger);
 registry.register(new CalculatorTool());
 
-// 4. PostgreSQL Connection Pool & Drizzle ORM
+// 3. PostgreSQL Connection Pool & Drizzle ORM
 const sqlClient = postgres(config.DATABASE_URL, {
   max: config.DB_MAX_CONNECTIONS,
   idle_timeout: 20,
   connect_timeout: 10,
 });
 const db = drizzle(sqlClient, {
-  schema: { ...chatSchema, ...whatsappSchema },
+  schema: { ...chatSchema, ...whatsappSchema, ...accessControlSchema },
 });
 const chatRepository = new PostgresChatRepository(db, logger);
+
+// 4. Access control allowlist
+const allowlist = new PostgresAllowlistAdapter(db, logger.child({ module: 'allowlist' }));
 
 // 5. LLM Adapter
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
@@ -110,6 +111,22 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 // Startup Sequence
 async function start() {
   await runDatabaseMigrations(db, logger);
+
+  // Seed initial admin users from configuration if provided
+  if (config.ALLOWED_USERS.length > 0) {
+    await allowlist.seedUsers(config.ALLOWED_USERS);
+  }
+
+  // Fail-fast safety check: ensure at least one active user exists
+  const activeUserCount = await allowlist.countActiveUsers();
+  if (activeUserCount === 0) {
+    logger.fatal(
+      'No active allowed users found in PostgreSQL and no ALLOWED_USERS provided in .env. Iny cannot start.'
+    );
+    await sqlClient.end();
+    process.exit(1);
+  }
+  logger.info('Access control initialized', { activeUsers: activeUserCount });
 
   inboundAdapter.start();
 

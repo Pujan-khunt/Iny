@@ -326,5 +326,29 @@ describe('WhatsAppInboundAdapter', () => {
         { remoteJid: '123456789012345@lid', remoteJidAlt: undefined }
       );
     });
+
+    it('should defensively normalize remoteJid for canonical PNJID when message arrives from phone number JID', async () => {
+      const pnMessage: proto.IWebMessageInfo = {
+        key: {
+          remoteJid: '919876543210:2@s.whatsapp.net',
+          fromMe: false,
+          id: 'msg-pn-device',
+        },
+        message: { conversation: 'Hello from multi-device' },
+        messageTimestamp: 1727223000,
+      };
+
+      (mockAllowlist.isAllowed as any).mockResolvedValue(true);
+
+      await adapter.handleMessages([pnMessage]);
+
+      expect(mockUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'msg-pn-device',
+          userId: '919876543210@s.whatsapp.net',
+          content: 'Hello from multi-device',
+        })
+      );
+    });
   });
 });
