@@ -3,7 +3,7 @@ import { Boom } from '@hapi/boom';
 import makeWASocket, { DisconnectReason, proto } from '@whiskeysockets/baileys';
 import { BaileysConnectionManager } from '../../../../src/adapters/outbound/whatsapp/BaileysConnectionManager';
 import { BaileysPairingManager } from '../../../../src/adapters/outbound/whatsapp/BaileysPairingManager';
-import { BaileysSessionManager } from '../../../../src/adapters/outbound/whatsapp/BaileysSessionManager';
+import { BaileysSessionManagerPort } from '../../../../src/adapters/outbound/whatsapp/PostgresBaileysSessionManager';
 import { LoggerPort } from '../../../../src/core/ports/LoggerPort';
 
 vi.mock('@whiskeysockets/baileys', async (importOriginal) => {
@@ -19,7 +19,7 @@ vi.mock('@whiskeysockets/baileys', async (importOriginal) => {
 describe('BaileysConnectionManager', () => {
   let mockLogger: LoggerPort;
   let mockPairingManager: BaileysPairingManager;
-  let mockSessionManager: BaileysSessionManager;
+  let mockSessionManager: BaileysSessionManagerPort;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -32,7 +32,10 @@ describe('BaileysConnectionManager', () => {
       child: vi.fn().mockReturnThis(),
     };
     mockPairingManager = new BaileysPairingManager(mockLogger);
-    mockSessionManager = new BaileysSessionManager(mockLogger);
+    mockSessionManager = {
+      initSession: vi.fn(),
+      purgeSession: vi.fn().mockResolvedValue(undefined),
+    };
   });
 
   describe('connection status', () => {

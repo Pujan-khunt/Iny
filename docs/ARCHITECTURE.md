@@ -28,8 +28,9 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/inbound/whatsapp/BaileysMessageParser.ts`: Pure translator mapping eligible raw Baileys messages into domain `UserMessage` entities with normalized epoch timestamps.
 - **Outbound Adapters**: Concrete implementations of our core ports:
   - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` with defense-in-depth allowlist verification before transmitting text payloads over the active WhatsApp socket.
-  - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution.
-  - `src/adapters/outbound/whatsapp/BaileysSessionManager.ts`: Manages multi-file auth credentials lifecycle on disk (`.baileys_auth/`) and purges credentials upon logout.
+  - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution. Accepts `BaileysSessionManagerPort`.
+  - `src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts`: Implements `BaileysSessionManagerPort` managing WhatsApp credentials and Signal Protocol keys in PostgreSQL (`whatsapp_auth` table) with in-memory caching (`makeCacheableSignalKeyStore`), `BufferJSON` buffer preservation, batch operations, and atomic purge upon logout.
+  - `src/adapters/outbound/whatsapp/postgres/schema.ts`: Drizzle ORM table schema defining `whatsapp_auth` with composite primary key `(session_id, key)`.
   - `src/adapters/outbound/whatsapp/BaileysPairingManager.ts`: Coordinates first-time device registration and 8-digit pairing code generation for unregistered sessions.
   - `src/adapters/outbound/llm/DeepseekAdapter.ts`: Lean coordinator delegating to pure collaborators:
     - `DeepseekMessageMapper.ts`: Pure message translation to OpenAI-compatible format with DeepSeek `reasoning_content` support.
@@ -98,10 +99,12 @@ src/
 │       ├── tool-registry/
 │       │   └── InMemoryToolRegistry.ts     # In-memory tool registry implementation
 │       └── whatsapp/
+│           ├── postgres/
+│           │   └── schema.ts               # Drizzle ORM schema for whatsapp_auth table
 │           ├── BaileysConnectionManager.ts # WebSocket lifecycle & reconnection coordinator
 │           ├── BaileysMessageSenderAdapter.ts # Outbound transport implementing MessageSenderPort
 │           ├── BaileysPairingManager.ts    # First-time device pairing code coordinator
-│           └── BaileysSessionManager.ts    # Multi-file auth credentials lifecycle & purge
+│           └── PostgresBaileysSessionManager.ts # PostgreSQL auth credentials & Signal key manager
 ├── config.ts                               # Fail-fast configuration with pure parseConfig
 └── index.ts                                # The Composition Root
 ```
@@ -206,6 +209,7 @@ sequenceDiagram
 - **Fail-Fast Startup**: `src/config.ts` uses Zod to validate all environment variables at startup. Pure `parseConfig()` is exported for direct testing without dynamic module reloading.
 - **Defense-in-Depth Transport Security**: Outbound messaging verifies recipient authorization against `WhatsAppAllowlist` before dispatching to the Baileys socket, ensuring no unauthorized communication occurs even if triggered programmatically.
 - **Hybrid Envelope Persistence**: Conversation turns are persisted with first-class relational columns for operational queries (`user_query`, `assistant_response`, `tool_names`, `started_at`, `completed_at`, and generated `duration_ms`) while preserving the full fidelity ordered `Message[]` sequence in a `JSONB` payload validated by database-level PostgreSQL `CHECK` constraints.
+- **Stateless Container & Database-Backed Auth**: WhatsApp authentication state and Signal Protocol cryptographic keys are persisted in PostgreSQL (`whatsapp_auth` table with composite primary key `(session_id, key)`), eliminating host filesystem bindings and directory mutex races. High-frequency Signal keys are cached in memory via `makeCacheableSignalKeyStore`, and binary buffer prototypes are preserved across `jsonb` serialization using `BufferJSON`.
 
 ## 6. "How Do I..." Recipe Guide
 

@@ -7,11 +7,12 @@ import { DeepseekAdapter } from './adapters/outbound/llm/DeepseekAdapter';
 import { InMemoryToolRegistry } from './adapters/outbound/tool-registry/InMemoryToolRegistry';
 import { CalculatorTool } from './tools/CalculatorTool';
 import { PinoLoggerAdapter } from './adapters/outbound/logger/PinoLoggerAdapter';
-import * as schema from './adapters/outbound/chat-repository/postgres/schema';
+import * as chatSchema from './adapters/outbound/chat-repository/postgres/schema';
+import * as whatsappSchema from './adapters/outbound/whatsapp/postgres/schema';
 import { PostgresChatRepository } from './adapters/outbound/chat-repository/postgres/PostgresChatRepository';
 import { runDatabaseMigrations } from './adapters/outbound/chat-repository/postgres/migrator';
 import { WhatsAppAllowlist } from './adapters/common/access-control/WhatsAppAllowlist';
-import { BaileysSessionManager } from './adapters/outbound/whatsapp/BaileysSessionManager';
+import { PostgresBaileysSessionManager } from './adapters/outbound/whatsapp/PostgresBaileysSessionManager';
 import { BaileysPairingManager } from './adapters/outbound/whatsapp/BaileysPairingManager';
 import { BaileysConnectionManager } from './adapters/outbound/whatsapp/BaileysConnectionManager';
 import { BaileysMessageSenderAdapter } from './adapters/outbound/whatsapp/BaileysMessageSenderAdapter';
@@ -35,7 +36,9 @@ const sqlClient = postgres(config.DATABASE_URL, {
   idle_timeout: 20,
   connect_timeout: 10,
 });
-const db = drizzle(sqlClient, { schema });
+const db = drizzle(sqlClient, {
+  schema: { ...chatSchema, ...whatsappSchema },
+});
 const chatRepository = new PostgresChatRepository(db, logger);
 
 // 5. LLM Adapter
@@ -46,7 +49,7 @@ const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
 });
 
 // 6. WhatsApp Infrastructure & Message Sender
-const sessionManager = new BaileysSessionManager(logger);
+const sessionManager = new PostgresBaileysSessionManager(db, logger, 'default');
 const pairingManager = new BaileysPairingManager(logger);
 const connectionManager = new BaileysConnectionManager(logger, pairingManager, sessionManager);
 const messageSender = new BaileysMessageSenderAdapter(connectionManager, allowlist, logger);
