@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { proto } from '@whiskeysockets/baileys';
 import { BaileysMessageParser } from '../../../../src/adapters/inbound/whatsapp/BaileysMessageParser';
 import { EligibleWebMessageInfo } from '../../../../src/adapters/inbound/whatsapp/BaileysMessageFilter';
 
@@ -25,7 +26,7 @@ describe('BaileysMessageParser', () => {
       messageTimestamp: 1727222400,
     };
 
-    const parsed = parser.parse(raw);
+    const parsed = parser.parse(raw, '919876543210@s.whatsapp.net');
     expect(parsed).toEqual({
       id: 'msg-1',
       userId: '919876543210@s.whatsapp.net',
@@ -48,7 +49,7 @@ describe('BaileysMessageParser', () => {
       messageTimestamp: 1727222450,
     };
 
-    const parsed = parser.parse(raw);
+    const parsed = parser.parse(raw, '919876543210@s.whatsapp.net');
     expect(parsed).toEqual({
       id: 'msg-2',
       userId: '919876543210@s.whatsapp.net',
@@ -69,7 +70,7 @@ describe('BaileysMessageParser', () => {
       messageTimestamp: { low: 1727222500, high: 0, unsigned: true } as any,
     };
 
-    const parsed = parser.parse(raw);
+    const parsed = parser.parse(raw, '919876543210@s.whatsapp.net');
     expect(parsed.timestamp).toEqual(new Date(1727222500 * 1000));
   });
 
@@ -84,7 +85,7 @@ describe('BaileysMessageParser', () => {
       messageTimestamp: { toNumber: () => 1727222600 } as any,
     };
 
-    const parsed = parser.parse(raw);
+    const parsed = parser.parse(raw, '919876543210@s.whatsapp.net');
     expect(parsed.timestamp).toEqual(new Date(1727222600 * 1000));
   });
 
@@ -98,7 +99,28 @@ describe('BaileysMessageParser', () => {
       message: { conversation: 'Missing timestamp test' },
     };
 
-    const parsed = parser.parse(raw);
+    const parsed = parser.parse(raw, '919876543210@s.whatsapp.net');
     expect(parsed.timestamp).toEqual(new Date('2026-09-25T12:00:00.000Z'));
+  });
+
+  it('should bind canonicalUserId to UserMessage.userId regardless of raw remoteJid', () => {
+    const raw: EligibleWebMessageInfo = {
+      key: {
+        remoteJid: '123456789012345@lid',
+        fromMe: false,
+        id: 'msg-lid-1',
+      },
+      message: { conversation: 'Message from LID user' },
+      messageTimestamp: 1727222400,
+    };
+
+    const parsed = parser.parse(raw, '919876543210@s.whatsapp.net');
+    expect(parsed).toEqual({
+      id: 'msg-lid-1',
+      userId: '919876543210@s.whatsapp.net',
+      content: 'Message from LID user',
+      timestamp: new Date(1727222400 * 1000),
+      role: 'user',
+    });
   });
 });

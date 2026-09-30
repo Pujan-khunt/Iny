@@ -6,21 +6,26 @@ import { EligibleWebMessageInfo } from './BaileysMessageFilter';
  * Pure translator that maps a raw Baileys WhatsApp message into a domain UserMessage entity.
  */
 export class BaileysMessageParser {
-  parse(raw: EligibleWebMessageInfo): UserMessage {
+  /**
+   * Translates an eligible Baileys message into a domain UserMessage.
+   *
+   * @param raw The eligible inbound Baileys message.
+   * @param canonicalUserId The verified canonical phone number JID (@s.whatsapp.net).
+   */
+  parse(raw: EligibleWebMessageInfo, canonicalUserId: string): UserMessage {
     const text = this.extractText(raw.message);
     const timestampSeconds = this.resolveTimestamp(raw.messageTimestamp);
 
     return {
       id: raw.key.id,
-      userId: raw.key.remoteJid,
+      userId: canonicalUserId,
       content: text ? text.trim() : '',
       timestamp: new Date(timestampSeconds * 1000),
       role: 'user',
     };
   }
 
-  private extractText(message?: proto.IMessage | null): string | null {
-    if (!message) return null;
+  private extractText(message: proto.IMessage): string | null {
     if (message.conversation) {
       return message.conversation;
     }

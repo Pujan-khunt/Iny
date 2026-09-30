@@ -25,4 +25,11 @@ export class WhatsAppAllowlist {
     }
     return this.allowedJids.has(normalized);
   }
+
+  /**
+   * Stub for transitional interface compatibility with AllowlistPort.
+   */
+  async getUser(_address: string): Promise<null> {
+    return null;
+  }
 }

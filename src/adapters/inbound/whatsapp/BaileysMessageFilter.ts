@@ -1,11 +1,11 @@
-import { proto } from '@whiskeysockets/baileys';
+import { proto, WAMessage, WAMessageKey } from '@whiskeysockets/baileys';
 import { WhatsAppJid } from '../../common/whatsapp/WhatsAppJid';
 
 /**
  * Refined shape of a raw Baileys WebMessageInfo that has passed all eligibility checks.
  */
-export type EligibleWebMessageInfo = proto.IWebMessageInfo & {
-  key: proto.IMessageKey & {
+export type EligibleWebMessageInfo = WAMessage & {
+  key: WAMessageKey & {
     remoteJid: string;
     id: string;
   };
