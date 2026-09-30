@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: iny-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-iny}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # Bound strictly to loopback interface on the host; completely shielded from public internet
+      - "127.0.0.1:5432:5432"
+    networks:
+      - iny-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-iny}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: iny-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Point Iny to the internal Docker network database service
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-iny}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - iny-network
+
+volumes:
+  postgres_data:
+    name: iny_postgres_data
+
+networks:
+  iny-network:
+    name: iny_network
+    driver: bridge
