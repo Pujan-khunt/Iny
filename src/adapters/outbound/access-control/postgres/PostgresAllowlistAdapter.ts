@@ -53,7 +53,7 @@ export class PostgresAllowlistAdapter implements AllowlistPort {
   async getUser(address: string): Promise<AllowedUserRecord | null> {
     // 1. Pre-process address: extract standardized JID and/or phone digits
     const normalized = WhatsAppJid.normalize(address);
-    const rawDigits = WhatsAppJid.toPhoneNumber(address) || address.replace(/\D/g, '');
+    const rawDigits = WhatsAppJid.toPhoneNumber(address);
 
     // 2. Build dynamic indexed WHERE clauses
     const clauses = [];

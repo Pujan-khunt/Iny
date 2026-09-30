@@ -47,7 +47,7 @@ export class WhatsAppJid {
    */
   static isUser(jid: string): boolean {
     const normalized = jidNormalizedUser(jid.trim().toLowerCase());
-    return isPnUser(normalized) || isLidUser(normalized);
+    return Boolean(isPnUser(normalized) || isLidUser(normalized));
   }
 
   /**
@@ -55,7 +55,7 @@ export class WhatsAppJid {
    */
   static isPnUser(jid: string): boolean {
     const normalized = jidNormalizedUser(jid.trim().toLowerCase());
-    return isPnUser(normalized);
+    return Boolean(isPnUser(normalized));
   }
 
   /**
@@ -63,21 +63,21 @@ export class WhatsAppJid {
    */
   static isLidUser(jid: string): boolean {
     const normalized = jidNormalizedUser(jid.trim().toLowerCase());
-    return isLidUser(normalized);
+    return Boolean(isLidUser(normalized));
   }
 
   /**
    * Returns true if the JID represents a WhatsApp group chat (@g.us).
    */
   static isGroup(jid: string): boolean {
-    return isJidGroup(jid.trim().toLowerCase());
+    return Boolean(isJidGroup(jid.trim().toLowerCase()));
   }
 
   /**
    * Returns true if the JID represents a WhatsApp broadcast channel.
    */
   static isBroadcast(jid: string): boolean {
-    return isJidBroadcast(jid.trim().toLowerCase());
+    return Boolean(isJidBroadcast(jid.trim().toLowerCase()));
   }
 
   /**
