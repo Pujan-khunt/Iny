@@ -1,0 +1,26 @@
+# Git & Worktrees
+.git
+.gitignore
+.worktrees/
+
+# Dependencies & Build Outputs
+node_modules/
+dist/
+
+# Development & Testing
+tests/
+coverage/
+.superpowers/
+
+# Documentation & Specifications
+docs/
+*.md
+
+# Environment & Local Secrets
+.env
+.env.*
+!.env.example
+
+# Temporary & Log Files
+*.log
+.DS_Store

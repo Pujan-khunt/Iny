@@ -106,7 +106,10 @@ src/
 │           ├── BaileysPairingManager.ts    # First-time device pairing code coordinator
 │           └── PostgresBaileysSessionManager.ts # PostgreSQL auth credentials & Signal key manager
 ├── config.ts                               # Fail-fast configuration with pure parseConfig
-└── index.ts                                # The Composition Root
+├── index.ts                                # The Composition Root
+├── Dockerfile                              # Multi-stage hardened build (node:22-bookworm-slim, USER node)
+├── docker-compose.yml                      # Orchestration for PostgreSQL 16 & Iny application
+└── .dockerignore                           # Security boundary excluding secrets and test files
 ```
 
 ## 4. Canonical Control & Data Flow
@@ -210,6 +213,8 @@ sequenceDiagram
 - **Defense-in-Depth Transport Security**: Outbound messaging verifies recipient authorization against `WhatsAppAllowlist` before dispatching to the Baileys socket, ensuring no unauthorized communication occurs even if triggered programmatically.
 - **Hybrid Envelope Persistence**: Conversation turns are persisted with first-class relational columns for operational queries (`user_query`, `assistant_response`, `tool_names`, `started_at`, `completed_at`, and generated `duration_ms`) while preserving the full fidelity ordered `Message[]` sequence in a `JSONB` payload validated by database-level PostgreSQL `CHECK` constraints.
 - **Stateless Container & Database-Backed Auth**: WhatsApp authentication state and Signal Protocol cryptographic keys are persisted in PostgreSQL (`whatsapp_auth` table with composite primary key `(session_id, key)`), eliminating host filesystem bindings and directory mutex races. High-frequency Signal keys are cached in memory via `makeCacheableSignalKeyStore`, and binary buffer prototypes are preserved across `jsonb` serialization using `BufferJSON`.
+- **Hardened Multi-Stage Containerization**: The runtime environment executes in an isolated Docker container based on `node:22-bookworm-slim` across both builder and runner stages, guaranteeing `glibc` runtime binary compatibility with Baileys' native modules on ARM64 (Oracle Cloud Ampere A1) and x86_64. Production images drop root privileges and run strictly as unprivileged `USER node`.
+- **Loopback-Only Database Port Exposure**: PostgreSQL port 5432 is bound strictly to `127.0.0.1:5432:5432` on the host, preventing public internet exposure while enabling secure local tool access (Drizzle Studio, GUI clients) via SSH tunnels. All application communication occurs across an isolated Docker bridge network (`iny-network`).
 
 ## 6. "How Do I..." Recipe Guide
 
@@ -230,7 +235,15 @@ sequenceDiagram
 3. Extend `BaseTool<typeof schema>` and implement `protected async run(args: z.infer<typeof schema>): Promise<string>`.
 4. Register the tool with `InMemoryToolRegistry` in `src/index.ts`.
 
-### Recipe 4: Pre-Merge Review & Archival Ritual
+### Recipe 4: Deploy or Inspect with Docker Compose
+1. Ensure `.env` is configured with required secrets (`DEEPSEEK_API_KEY`, `BOT_PHONE_NUMBER`, `ALLOWED_USERS`, `POSTGRES_PASSWORD`).
+2. Start services in the background: `docker compose up -d`.
+3. Follow application logs: `docker compose logs -f app`.
+4. Inspect database locally via SSH tunnel without public port exposure:
+   - On local workstation: `ssh -N -L 5432:127.0.0.1:5432 user@vps-ip`
+   - Run Drizzle Studio locally: `npx drizzle-kit studio` (connecting to `localhost:5432`).
+
+### Recipe 5: Pre-Merge Review & Archival Ritual
 1. Perform an in-depth review of all PR changes (architecture, correctness, test coverage, and code hygiene).
 2. Review and update `docs/ARCHITECTURE.md` to ensure architectural documentation accurately reflects all boundaries and flows.
 3. Move the completed feature specification from `docs/specs/` to `docs/specs/archive/` within the same feature branch.
