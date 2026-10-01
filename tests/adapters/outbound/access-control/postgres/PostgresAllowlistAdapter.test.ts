@@ -125,6 +125,40 @@ describe('PostgresAllowlistAdapter', () => {
     expect(user).toBeNull();
   });
 
+  it('should retrieve user by phone number, PNJID, and LID via partitioned single-index lookup', async () => {
+    await adapter.seedUsers(['919876543210']);
+    await adapter.cacheLid('919876543210', '987654321012345@lid');
+
+    // 1. By raw phone number
+    const userByPhone = await adapter.getUser('919876543210');
+    expect(userByPhone).not.toBeNull();
+    expect(userByPhone?.phoneNumber).toBe('919876543210');
+    expect(userByPhone?.jid).toBe('919876543210@s.whatsapp.net');
+    expect(userByPhone?.lid).toBe('987654321012345@lid');
+
+    // 2. By PNJID with device suffix
+    const userByJid = await adapter.getUser('919876543210:1@s.whatsapp.net');
+    expect(userByJid).not.toBeNull();
+    expect(userByJid?.phoneNumber).toBe('919876543210');
+
+    // 3. By formatted phone number
+    const userByFormatted = await adapter.getUser('+91 98765 43210');
+    expect(userByFormatted).not.toBeNull();
+    expect(userByFormatted?.phoneNumber).toBe('919876543210');
+
+    // 4. By LID with device suffix
+    const userByLid = await adapter.getUser('987654321012345:2@lid');
+    expect(userByLid).not.toBeNull();
+    expect(userByLid?.phoneNumber).toBe('919876543210');
+
+    // 5. Invalid addresses, groups, broadcasts return null immediately
+    expect(await adapter.getUser('')).toBeNull();
+    expect(await adapter.getUser('   ')).toBeNull();
+    expect(await adapter.getUser('12345-67890@g.us')).toBeNull();
+    expect(await adapter.getUser('status@broadcast')).toBeNull();
+    expect(await adapter.getUser('random_string')).toBeNull();
+  });
+
   it('should skip invalid entries during seeding and log warning', async () => {
     await adapter.seedUsers(['', 'not-a-valid-phone-or-jid']);
     expect(await adapter.countActiveUsers()).toBe(0);

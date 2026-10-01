@@ -1,4 +1,4 @@
-import { eq, or, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { allowedUsers } from './schema';
@@ -44,36 +44,32 @@ export class PostgresAllowlistAdapter implements AllowlistPort {
   /**
    * Retrieves the full record for an allowed user by phone, JID, or LID.
    *
-   * Executes a polymorphic query against PostgreSQL:
-   * 1. Resolves normalized JID (strips device suffixes) and raw phone digits.
-   * 2. Dynamically builds an indexed SQL condition matching `phone_number` PK,
-   *    `jid` unique index, or `lid` unique index.
-   * 3. Leverages PostgreSQL BitmapOr index scan for O(1) performance without table scans.
+   * Executes a partitioned single-index lookup against PostgreSQL:
+   * 1. Resolves normalized JID (strips device suffixes).
+   * 2. Partitions by identity type:
+   *    - LID user: searches `lid` unique index directly.
+   *    - PN user: extracts digits and searches `phone_number` Primary Key directly.
+   * 3. Invalid inputs, groups, and broadcasts return null immediately without DB hits.
    */
   async getUser(address: string): Promise<AllowedUserRecord | null> {
-    // 1. Pre-process address: extract standardized JID and/or phone digits
     const normalized = WhatsAppJid.normalize(address);
-    const rawDigits = WhatsAppJid.toPhoneNumber(address);
-
-    // 2. Build dynamic indexed WHERE clauses
-    const clauses = [];
-    if (normalized) {
-      // Matches @s.whatsapp.net (phone JID) or @lid (linked identity)
-      clauses.push(eq(allowedUsers.jid, normalized));
-      clauses.push(eq(allowedUsers.lid, normalized));
-    }
-    if (rawDigits) {
-      // Matches clean numeric digits against the phone_number primary key
-      clauses.push(eq(allowedUsers.phoneNumber, rawDigits));
-    }
-
-    // Fast exit: if input is invalid/empty, avoid unnecessary database round-trip
-    if (clauses.length === 0) {
+    if (!normalized) {
       return null;
     }
 
-    // 3. Execute query: single clause uses direct equality; multiple clauses use OR
-    const query = clauses.length === 1 ? clauses[0] : or(...clauses);
+    let query;
+    if (WhatsAppJid.isLidUser(normalized)) {
+      query = eq(allowedUsers.lid, normalized);
+    } else if (WhatsAppJid.isPnUser(normalized)) {
+      const rawDigits = WhatsAppJid.toPhoneNumber(address);
+      if (!rawDigits) {
+        return null;
+      }
+      query = eq(allowedUsers.phoneNumber, rawDigits);
+    } else {
+      return null;
+    }
+
     const rows = await this.db.select().from(allowedUsers).where(query).limit(1);
     if (!rows.length) {
       return null;
