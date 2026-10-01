@@ -1,7 +1,7 @@
-import { proto, WAMessage } from '@whiskeysockets/baileys';
+import { WAMessage } from '@whiskeysockets/baileys';
 import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingMessage';
 import { BaileysConnectionManager } from '../../outbound/whatsapp/BaileysConnectionManager';
-import { AllowlistPort } from '../../outbound/access-control/AllowlistPort';
+import { AllowlistPort, AllowedUserRecord } from '../../outbound/access-control/AllowlistPort';
 import { BaileysMessageFilter } from './BaileysMessageFilter';
 import { BaileysMessageParser } from './BaileysMessageParser';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
@@ -49,15 +49,15 @@ export class WhatsAppInboundAdapter {
       // Extract paired LID and primary candidate address for access control
       const { checkAddress, pairedLid, isLid } = this.resolveSenderAddresses(remoteJid, remoteJidAlt);
 
-      // Stage 2: Access control allowlist
-      const isAllowed = await this.allowlist.isAllowed(checkAddress, pairedLid);
-      if (!isAllowed) {
+      // Stage 2: Access control allowlist & identity retrieval
+      const user = await this.allowlist.authenticate(checkAddress, pairedLid);
+      if (!user) {
         this.logger.debug('Ignored message from unauthorized sender', { remoteJid, remoteJidAlt });
         continue;
       }
 
       // Stage 3: Resolve canonical PNJID for unified conversation history
-      const canonicalPnJid = await this.resolveCanonicalPnJid(remoteJid, remoteJidAlt, isLid);
+      const canonicalPnJid = this.resolveCanonicalPnJid(remoteJid, remoteJidAlt, isLid, user);
       if (!canonicalPnJid) {
         this.logger.warn('Dropping message: unable to resolve canonical phone identity', {
           remoteJid,
@@ -132,16 +132,17 @@ export class WhatsAppInboundAdapter {
    * or a linked device, modern WhatsApp sends an `@lid` stanza. This method maps the ephemeral or device
    * LID back to the user's persistent phone number identity using either:
    * 1. The companion stanza attribute `remoteJidAlt` (fast in-memory path).
-   * 2. The database user record in `allowed_users` (fallback for LID-only follow-ups).
+   * 2. The authenticated user record `user.jid` (already fetched during Stage 2 authentication).
    *
    * If the sender identity cannot be resolved to a canonical phone number, returns `null` so the caller
    * can safely drop the message rather than fragmenting conversation history under an unmapped LID.
    */
-  private async resolveCanonicalPnJid(
+  private resolveCanonicalPnJid(
     remoteJid: string,
-    remoteJidAlt?: string,
-    isLid: boolean = false
-  ): Promise<string | null> {
+    remoteJidAlt: string | undefined,
+    isLid: boolean,
+    user: AllowedUserRecord
+  ): string | null {
     // 1. Traditional phone number stanza: normalize to strip device suffixes (:1, :2)
     if (!isLid) {
       return WhatsAppJid.normalize(remoteJid);
@@ -155,10 +156,9 @@ export class WhatsAppInboundAdapter {
       }
     }
 
-    // 3. LID stanza without companion phone number: lookup canonical JID from database
-    const userRecord = await this.allowlist.getUser(remoteJid);
-    if (userRecord?.jid) {
-      return userRecord.jid;
+    // 3. LID stanza without companion phone number: return canonical JID from authenticated user record
+    if (user.jid) {
+      return user.jid;
     }
 
     // Unresolvable identity: cannot safely map to a canonical phone number

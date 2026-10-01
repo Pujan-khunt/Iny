@@ -11,6 +11,13 @@ export interface AllowedUserRecord {
 
 export interface AllowlistPort {
   /**
+   * Authenticates the given address (phone, PNJID, or LID) and verifies the user is active.
+   * If an incoming LID is provided and not yet cached for an active user, saves the LID.
+   * Returns the AllowedUserRecord if authenticated and active, otherwise null.
+   */
+  authenticate(address: string, pairedLid?: string | null): Promise<AllowedUserRecord | null>;
+
+  /**
    * Checks whether the given address (phone, PNJID, or LIDJID) is authorized.
    * If an incoming LID is provided and not yet cached for the user, schedules a background update.
    */

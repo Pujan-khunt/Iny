@@ -27,6 +27,16 @@ describe('BaileysMessageSenderAdapter', () => {
       getSocket: vi.fn().mockReturnValue(mockSocket),
     } as unknown as BaileysConnectionManager;
     mockAllowlist = {
+      authenticate: vi.fn().mockResolvedValue({
+        phoneNumber: '919876543210',
+        jid: '919876543210@s.whatsapp.net',
+        lid: null,
+        name: null,
+        role: 'user',
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
       isAllowed: vi.fn().mockImplementation(async (address: string) => {
         const normalized = WhatsAppJid.normalize(address);
         return normalized === '919876543210@s.whatsapp.net';

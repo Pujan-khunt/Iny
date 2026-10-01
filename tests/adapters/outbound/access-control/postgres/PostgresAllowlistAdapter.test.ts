@@ -169,16 +169,32 @@ describe('PostgresAllowlistAdapter', () => {
     );
   });
 
-  it('should handle error when caching LID asynchronously', async () => {
+  it('should authenticate active users and populate paired LID', async () => {
+    await adapter.seedUsers(['919876543210']);
+    const unauthenticated = await adapter.authenticate('9999999999');
+    expect(unauthenticated).toBeNull();
+
+    // Authenticate with paired LID
+    const user = await adapter.authenticate('919876543210@s.whatsapp.net', '123456789012345@lid');
+    expect(user).not.toBeNull();
+    expect(user?.phoneNumber).toBe('919876543210');
+    expect(user?.lid).toBe('123456789012345@lid');
+
+    // Inactive user returns null
+    memDb.public.none("UPDATE allowed_users SET is_active = false WHERE phone_number = '919876543210'");
+    const inactive = await adapter.authenticate('919876543210');
+    expect(inactive).toBeNull();
+  });
+
+  it('should handle error when caching LID', async () => {
     await adapter.seedUsers(['919876543210']);
     vi.spyOn(adapter, 'cacheLid').mockRejectedValueOnce(new Error('DB failure'));
 
     const allowed = await adapter.isAllowed('919876543210@s.whatsapp.net', '123456789012345@lid');
     expect(allowed).toBe(true);
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(mockLogger.warn).toHaveBeenCalledWith(
-      'Failed to cache user LID asynchronously',
+      'Failed to cache user LID',
       expect.any(Error),
       expect.objectContaining({ phoneNumber: '919876543210', lid: '123456789012345@lid' })
     );

@@ -14,15 +14,14 @@ export class PostgresAllowlistAdapter implements AllowlistPort {
     private logger: LoggerPort
   ) {}
 
-  async isAllowed(address: string, pairedLid?: string | null): Promise<boolean> {
-    const normalized = WhatsAppJid.normalize(address);
-    if (!normalized) {
-      return false;
-    }
-
-    const user = await this.getUser(normalized);
+  /**
+   * Authenticates the given address and verifies the user is active.
+   * If an incoming paired LID is provided and not yet cached, updates the record in PostgreSQL.
+   */
+  async authenticate(address: string, pairedLid?: string | null): Promise<AllowedUserRecord | null> {
+    const user = await this.getUser(address);
     if (!user || !user.isActive) {
-      return false;
+      return null;
     }
 
     // Auto-cache paired LID if not yet populated
@@ -30,25 +29,31 @@ export class PostgresAllowlistAdapter implements AllowlistPort {
       const normalizedLid = WhatsAppJid.normalize(pairedLid);
       if (normalizedLid && WhatsAppJid.isLidUser(normalizedLid)) {
         await this.cacheLid(user.phoneNumber, normalizedLid).catch((err) => {
-          this.logger.warn('Failed to cache user LID asynchronously', err, {
+          this.logger.warn('Failed to cache user LID', err, {
             phoneNumber: user.phoneNumber,
             lid: normalizedLid,
           });
         });
+        user.lid = normalizedLid;
       }
     }
 
-    return true;
+    return user;
+  }
+
+  async isAllowed(address: string, pairedLid?: string | null): Promise<boolean> {
+    const user = await this.authenticate(address, pairedLid);
+    return user !== null;
   }
 
   /**
    * Retrieves the full record for an allowed user by phone, JID, or LID.
    *
    * Executes a partitioned single-index lookup against PostgreSQL:
-   * 1. Resolves normalized JID (strips device suffixes).
+   * 1. Resolves normalized JID once (strips device suffixes).
    * 2. Partitions by identity type:
    *    - LID user: searches `lid` unique index directly.
-   *    - PN user: extracts digits and searches `phone_number` Primary Key directly.
+   *    - PN user: extracts digits from normalized PNJID and searches `phone_number` Primary Key directly.
    * 3. Invalid inputs, groups, and broadcasts return null immediately without DB hits.
    */
   async getUser(address: string): Promise<AllowedUserRecord | null> {
@@ -61,10 +66,7 @@ export class PostgresAllowlistAdapter implements AllowlistPort {
     if (WhatsAppJid.isLidUser(normalized)) {
       query = eq(allowedUsers.lid, normalized);
     } else if (WhatsAppJid.isPnUser(normalized)) {
-      const rawDigits = WhatsAppJid.toPhoneNumber(address);
-      if (!rawDigits) {
-        return null;
-      }
+      const rawDigits = normalized.replace('@s.whatsapp.net', '');
       query = eq(allowedUsers.phoneNumber, rawDigits);
     } else {
       return null;
