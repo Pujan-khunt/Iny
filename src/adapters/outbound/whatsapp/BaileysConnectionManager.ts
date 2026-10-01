@@ -2,6 +2,7 @@ import { Boom } from '@hapi/boom';
 import makeWASocket, {
   DisconnectReason,
   proto,
+  WAMessage,
   WASocket,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
@@ -24,7 +25,7 @@ export interface ConnectionCloseDecision {
  */
 export class BaileysConnectionManager {
   private socket: WASocket | null = null;
-  private incomingMessagesHandler: ((messages: proto.IWebMessageInfo[]) => Promise<void>) | null = null;
+  private incomingMessagesHandler: ((messages: WAMessage[]) => Promise<void>) | null = null;
 
   constructor(
     private logger: LoggerPort,
@@ -44,7 +45,7 @@ export class BaileysConnectionManager {
     return this.socket;
   }
 
-  onIncomingMessages(handler: (messages: proto.IWebMessageInfo[]) => Promise<void>): void {
+  onIncomingMessages(handler: (messages: WAMessage[]) => Promise<void>): void {
     this.incomingMessagesHandler = handler;
   }
 

@@ -15,6 +15,13 @@
       "when": 1790707427671,
       "tag": "0001_lonely_titanium_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790762670555,
+      "tag": "0002_outgoing_colleen_wing",
+      "breakpoints": true
     }
   ]
 }

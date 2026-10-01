@@ -1,7 +1,7 @@
 import { MessageSenderPort } from '../../../core/ports/MessageSenderPort';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
 import { BaileysConnectionManager } from './BaileysConnectionManager';
-import { WhatsAppAllowlist } from '../../common/access-control/WhatsAppAllowlist';
+import { AllowlistPort } from '../access-control/AllowlistPort';
 
 /**
  * Outbound transport adapter implementing MessageSenderPort with defense-in-depth
@@ -10,12 +10,13 @@ import { WhatsAppAllowlist } from '../../common/access-control/WhatsAppAllowlist
 export class BaileysMessageSenderAdapter implements MessageSenderPort {
   constructor(
     private connectionManager: BaileysConnectionManager,
-    private allowlist: WhatsAppAllowlist,
+    private allowlist: AllowlistPort,
     private logger: LoggerPort
   ) {}
 
   async sendMessage(userId: string, content: string): Promise<void> {
-    if (!this.allowlist.isAllowed(userId)) {
+    const isAllowed = await this.allowlist.isAllowed(userId);
+    if (!isAllowed) {
       this.logger.warn(
         'Blocked outbound message to unauthorized recipient (defense-in-depth)',
         undefined,

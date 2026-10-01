@@ -43,6 +43,37 @@ describe('Config', () => {
     expect(config.DB_MAX_CONNECTIONS).toBe(25);
   });
 
+  it('should default ALLOWED_USERS to empty array when omitted from environment', () => {
+    const config = parseConfig({
+      DEEPSEEK_API_KEY: 'test-key',
+      SYSTEM_PROMPT: 'test-prompt',
+      BOT_PHONE_NUMBER: '15551234567',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+    });
+
+    expect(config.ALLOWED_USERS).toEqual([]);
+  });
+
+  it('should parse empty or whitespace ALLOWED_USERS into empty array', () => {
+    const configEmpty = parseConfig({
+      DEEPSEEK_API_KEY: 'test-key',
+      SYSTEM_PROMPT: 'test-prompt',
+      BOT_PHONE_NUMBER: '15551234567',
+      ALLOWED_USERS: '',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+    });
+    expect(configEmpty.ALLOWED_USERS).toEqual([]);
+
+    const configWhitespace = parseConfig({
+      DEEPSEEK_API_KEY: 'test-key',
+      SYSTEM_PROMPT: 'test-prompt',
+      BOT_PHONE_NUMBER: '15551234567',
+      ALLOWED_USERS: '   ,  , ',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+    });
+    expect(configWhitespace.ALLOWED_USERS).toEqual([]);
+  });
+
   it('should throw an error and log failure when required variables are missing', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 

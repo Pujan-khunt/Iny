@@ -8,13 +8,14 @@ export const envSchema = z.object({
     .regex(/^\d+$/, 'BOT_PHONE_NUMBER must contain digits only with country code'),
   ALLOWED_USERS: z
     .string()
+    .optional()
+    .default('')
     .transform((val) =>
       val
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean)
-    )
-    .pipe(z.array(z.string()).min(1, 'At least one allowed user must be configured')),
+    ),
   DATABASE_URL: z
     .string()
     .min(1, 'DATABASE_URL is required')
