@@ -23,11 +23,14 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/tools/BaseTool.ts`: Abstract base class using the Template Method pattern, declarative Zod schemas, automatic JSON Schema generation, and self-correcting error string returns.
   - `src/tools/CalculatorTool.ts`: Safe arithmetic evaluation tool using recursive descent parsing (zero `eval`).
 - **Inbound Adapters**: Entry points that trigger core use cases:
-  - `src/adapters/inbound/whatsapp/WhatsAppInboundAdapter.ts`: Driving adapter listening for incoming WhatsApp messages via Baileys, coordinating eligibility filtering and message parsing, enforcing allowlist security, and dispatching valid user messages to `ProcessIncomingMessage`.
+  - `src/adapters/inbound/whatsapp/WhatsAppInboundAdapter.ts`: Driving adapter listening for incoming WhatsApp messages via Baileys, coordinating eligibility filtering, access control authorization via `AllowlistPort`, JID/LID duality resolution (mapping `@lid` stanzas to canonical `@s.whatsapp.net` PNJIDs), and dispatching valid user messages to `ProcessIncomingMessage`.
   - `src/adapters/inbound/whatsapp/BaileysMessageFilter.ts`: Evaluates incoming raw WhatsApp message eligibility (rejecting self-messages, non-text messages, groups `@g.us`, and broadcasts `@broadcast`).
-  - `src/adapters/inbound/whatsapp/BaileysMessageParser.ts`: Pure translator mapping eligible raw Baileys messages into domain `UserMessage` entities with normalized epoch timestamps.
+  - `src/adapters/inbound/whatsapp/BaileysMessageParser.ts`: Pure translator mapping eligible raw Baileys messages into domain `UserMessage` entities with normalized epoch timestamps and canonical user ID overrides.
 - **Outbound Adapters**: Concrete implementations of our core ports:
-  - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` with defense-in-depth allowlist verification before transmitting text payloads over the active WhatsApp socket.
+  - `src/adapters/outbound/access-control/AllowlistPort.ts`: Port interface defining access control contracts (`isAllowed`, `getUser`, `seedUsers`, `countActiveUsers`, and `cacheLid`).
+  - `src/adapters/outbound/access-control/postgres/PostgresAllowlistAdapter.ts`: Driven adapter implementing `AllowlistPort` backed by PostgreSQL (`allowed_users` table) with O(1) indexed lookups, soft revocation checks, background asynchronous LID caching, and idempotent seeding.
+  - `src/adapters/outbound/access-control/postgres/schema.ts`: Drizzle ORM schema defining `allowed_users` with canonical `phone_number` PK, unique `jid` and `lid` indexes, and PostgreSQL check constraints.
+  - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` with defense-in-depth allowlist verification against `AllowlistPort` before transmitting text payloads over the active WhatsApp socket.
   - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution. Accepts `BaileysSessionManagerPort`.
   - `src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts`: Implements `BaileysSessionManagerPort` managing WhatsApp credentials and Signal Protocol keys in PostgreSQL (`whatsapp_auth` table) with in-memory caching (`makeCacheableSignalKeyStore`), `BufferJSON` buffer preservation, batch operations, and atomic purge upon logout.
   - `src/adapters/outbound/whatsapp/postgres/schema.ts`: Drizzle ORM table schema defining `whatsapp_auth` with composite primary key `(session_id, key)`.
@@ -44,8 +47,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/outbound/logger/PinoLoggerAdapter.ts`: Structured logging wrapper around Pino with unambiguous signature routing.
   - `src/adapters/outbound/tool-registry/InMemoryToolRegistry.ts`: In-memory tool storage exposing clean tool definitions.
 - **Shared Adapter Collaborators**: Reusable access control and identity validation components:
-  - `src/adapters/common/access-control/WhatsAppAllowlist.ts`: Enforces access control authorization by verifying identities against configured allowed users.
-  - `src/adapters/common/whatsapp/WhatsAppJid.ts`: Pure utility for normalizing phone numbers and JIDs to standard `number@s.whatsapp.net` format and classifying JID types (user, group, broadcast).
+  - `src/adapters/common/whatsapp/WhatsAppJid.ts`: Pure utility integrating natively with `@whiskeysockets/baileys` functions (`jidNormalizedUser`, `isPnUser`, `isLidUser`, `areJidsSameUser`, etc.) for normalizing phone numbers and JIDs, classifying identity types (PN vs. LID, group, broadcast), and stripping multi-device suffixes.
 
 ## 3. Codebase Directory Map
 
@@ -71,17 +73,20 @@ src/
 │   ├── BaseTool.ts                         # Declarative base tool with Zod schema reflection
 │   └── CalculatorTool.ts                   # Safe recursive descent arithmetic evaluator
 ├── adapters/                               # Interaction with the outside world
-│   ├── common/                             # Shared adapter utilities and access control
-│   │   ├── access-control/
-│   │   │   └── WhatsAppAllowlist.ts        # Access control allowlist enforcement
+│   ├── common/                             # Shared adapter utilities
 │   │   └── whatsapp/
-│   │       └── WhatsAppJid.ts              # WhatsApp JID validation and normalization
+│   │       └── WhatsAppJid.ts              # Native Baileys JID/LID classification and normalization
 │   ├── inbound/
 │   │   └── whatsapp/
 │   │       ├── BaileysMessageFilter.ts     # Reception eligibility filter (reject fromMe, groups, non-text)
-│   │       ├── BaileysMessageParser.ts     # Pure domain UserMessage translator
-│   │       └── WhatsAppInboundAdapter.ts   # WhatsApp event driver for ProcessIncomingMessage
+│   │       ├── BaileysMessageParser.ts     # Pure domain UserMessage translator with canonical ID override
+│   │       └── WhatsAppInboundAdapter.ts   # WhatsApp event driver with LID resolution & ProcessIncomingMessage
 │   └── outbound/
+│       ├── access-control/
+│       │   ├── AllowlistPort.ts            # Access control port interface
+│       │   └── postgres/                   # PostgreSQL allowlist adapter
+│       │       ├── schema.ts               # Drizzle ORM schema for allowed_users
+│       │       └── PostgresAllowlistAdapter.ts # Driven adapter implementing AllowlistPort
 │       ├── chat-repository/
 │       │   └── postgres/                   # PostgreSQL conversation memory adapter
 │       │       ├── schema.ts               # Drizzle ORM schema & table constraints
@@ -119,7 +124,7 @@ sequenceDiagram
     participant WA as WhatsApp Network
     participant Inbound as WhatsAppInboundAdapter.ts
     participant Filter as BaileysMessageFilter.ts
-    participant Allowlist as WhatsAppAllowlist.ts
+    participant Allowlist as AllowlistPort / PostgresAllowlistAdapter.ts
     participant Parser as BaileysMessageParser.ts
     participant UC as ProcessIncomingMessage.ts
     participant Loop as AgentLoop.ts
@@ -139,14 +144,16 @@ sequenceDiagram
             Note over Inbound: Discard (zero token cost)
         else Eligible
             Filter-->>Inbound: true
-            Inbound->>Allowlist: isAllowed(senderJid)
+            Note over Inbound: Extract remoteJid, remoteJidAlt, pairedLid
+            Inbound->>Allowlist: isAllowed(checkAddress, pairedLid)
             alt Unauthorized Sender
                 Allowlist-->>Inbound: false
                 Note over Inbound: Discard & log debug
             else Authorized
                 Allowlist-->>Inbound: true
-                Inbound->>Parser: parse(rawMessage)
-                Parser-->>Inbound: userMessage
+                Note over Inbound: Resolve canonical PNJID (remoteJidAlt or allowlist.getUser)
+                Inbound->>Parser: parse(rawMessage, canonicalPnJid)
+                Parser-->>Inbound: userMessage (canonical userId)
 
                 Inbound->>UC: execute(userMessage)
                 UC->>Log: logger.child({ userId, messageId })
@@ -209,8 +216,9 @@ sequenceDiagram
 - **Pure Core**: `src/core/` must never import from outside of itself. It contains solely pure TypeScript interfaces, entities, use cases, and errors with zero runtime external dependencies.
 - **Turn-Atomic Conversation Memory**: History persistence is partitioned into complete `DialogueTurn` boundaries. Sliding windows and retention limits prune complete turns, never bisecting an assistant tool call from its corresponding tool response.
 - **Single Composition Root**: In production runtime code, `src/index.ts` is the only place where adapters and the core are stitched together. Dependency injection is wired up here (unit tests and internal adapter factory methods like `PinoLoggerAdapter.child()` may instantiate adapters directly).
-- **Fail-Fast Startup**: `src/config.ts` uses Zod to validate all environment variables at startup. Pure `parseConfig()` is exported for direct testing without dynamic module reloading.
-- **Defense-in-Depth Transport Security**: Outbound messaging verifies recipient authorization against `WhatsAppAllowlist` before dispatching to the Baileys socket, ensuring no unauthorized communication occurs even if triggered programmatically.
+- **Fail-Fast Startup**: `src/config.ts` uses Zod to validate all environment variables at startup. Pure `parseConfig()` is exported for direct testing without dynamic module reloading. Application fails fast if no active allowed users exist.
+- **Persistent Access Control & Canonical Identity Duality**: WhatsApp access authorization is persisted in PostgreSQL (`allowed_users` table with canonical `phone_number` primary key and unique `jid`/`lid` indexes). Modern WhatsApp linked identities (`@lid`) are mapped back to canonical phone numbers (`@s.whatsapp.net`), ensuring that conversation memory (`dialogue_turns`) is never fragmented across identity changes or devices.
+- **Defense-in-Depth Transport Security**: Outbound messaging verifies recipient authorization asynchronously against `AllowlistPort` before dispatching to the Baileys socket, ensuring no unauthorized communication occurs even if triggered programmatically.
 - **Hybrid Envelope Persistence**: Conversation turns are persisted with first-class relational columns for operational queries (`user_query`, `assistant_response`, `tool_names`, `started_at`, `completed_at`, and generated `duration_ms`) while preserving the full fidelity ordered `Message[]` sequence in a `JSONB` payload validated by database-level PostgreSQL `CHECK` constraints.
 - **Stateless Container & Database-Backed Auth**: WhatsApp authentication state and Signal Protocol cryptographic keys are persisted in PostgreSQL (`whatsapp_auth` table with composite primary key `(session_id, key)`), eliminating host filesystem bindings and directory mutex races. High-frequency Signal keys are cached in memory via `makeCacheableSignalKeyStore`, and binary buffer prototypes are preserved across `jsonb` serialization using `BufferJSON`.
 - **Hardened Multi-Stage Containerization**: The runtime environment executes in an isolated Docker container based on `node:22-bookworm-slim` across both builder and runner stages, guaranteeing `glibc` runtime binary compatibility with Baileys' native modules on ARM64 (Oracle Cloud Ampere A1) and x86_64. Production images drop root privileges and run strictly as unprivileged `USER node`.
