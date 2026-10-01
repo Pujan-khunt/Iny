@@ -29,7 +29,7 @@ export class PostgresAllowlistAdapter implements AllowlistPort {
     if (!user.lid && pairedLid) {
       const normalizedLid = WhatsAppJid.normalize(pairedLid);
       if (normalizedLid && WhatsAppJid.isLidUser(normalizedLid)) {
-        this.cacheLid(user.phoneNumber, normalizedLid).catch((err) => {
+        await this.cacheLid(user.phoneNumber, normalizedLid).catch((err) => {
           this.logger.warn('Failed to cache user LID asynchronously', err, {
             phoneNumber: user.phoneNumber,
             lid: normalizedLid,

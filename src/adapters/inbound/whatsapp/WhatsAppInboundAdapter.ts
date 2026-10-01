@@ -112,11 +112,12 @@ export class WhatsAppInboundAdapter {
     remoteJidAlt?: string
   ): { checkAddress: string; pairedLid: string | null; isLid: boolean } {
     const isLid = WhatsAppJid.isLidUser(remoteJid);
+    const isAltPn = Boolean(remoteJidAlt && WhatsAppJid.isPnUser(remoteJidAlt));
     const isAltLid = Boolean(remoteJidAlt && WhatsAppJid.isLidUser(remoteJidAlt));
 
     // When primary is an LID and WhatsApp provided the phone number in remoteJidAlt,
     // prefer the phone number for checking the allowlist to match newly seeded users.
-    const checkAddress = isLid && remoteJidAlt ? remoteJidAlt : remoteJid;
+    const checkAddress = isLid && isAltPn ? remoteJidAlt! : remoteJid;
 
     // Extract whichever field contains the LID address for background caching.
     const pairedLid = isLid ? remoteJid : (isAltLid ? remoteJidAlt! : null);

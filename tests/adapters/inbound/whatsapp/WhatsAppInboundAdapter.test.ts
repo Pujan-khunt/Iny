@@ -265,6 +265,44 @@ describe('WhatsAppInboundAdapter', () => {
       );
     });
 
+    it('should ignore non-PN remoteJidAlt and query allowlist with remoteJid', async () => {
+      const lidMessageWithMalformedAlt: proto.IWebMessageInfo = {
+        key: {
+          remoteJid: '123456789012345@lid',
+          remoteJidAlt: 'not-a-pn-user',
+          fromMe: false,
+          id: 'msg-lid-bad-alt',
+        } as any,
+        message: { conversation: 'Hello with bad alt' },
+        messageTimestamp: 1727223000,
+      };
+
+      (mockAllowlist.isAllowed as any).mockResolvedValue(true);
+      (mockAllowlist.getUser as any).mockResolvedValue({
+        phoneNumber: '919876543210',
+        jid: '919876543210@s.whatsapp.net',
+        lid: '123456789012345@lid',
+        name: 'Authorized User',
+        role: 'user',
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await adapter.handleMessages([lidMessageWithMalformedAlt]);
+
+      expect(mockAllowlist.isAllowed).toHaveBeenCalledWith(
+        '123456789012345@lid',
+        '123456789012345@lid'
+      );
+      expect(mockUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'msg-lid-bad-alt',
+          userId: '919876543210@s.whatsapp.net',
+        })
+      );
+    });
+
     it('should resolve canonical PNJID via allowlist.getUser when message comes with @lid and no remoteJidAlt', async () => {
       const lidMessage: proto.IWebMessageInfo = {
         key: {

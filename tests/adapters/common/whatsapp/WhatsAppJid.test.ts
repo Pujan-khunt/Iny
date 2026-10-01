@@ -103,5 +103,11 @@ describe('WhatsAppJid', () => {
         WhatsAppJid.areSameUser('919876543210@s.whatsapp.net', '15551234567@s.whatsapp.net')
       ).toBe(false);
     });
+
+    it('should return false when given invalid or non-user identifiers', () => {
+      expect(WhatsAppJid.areSameUser('invalid_a', 'invalid_b')).toBe(false);
+      expect(WhatsAppJid.areSameUser('', '')).toBe(false);
+      expect(WhatsAppJid.areSameUser('123@g.us', '123@g.us')).toBe(false);
+    });
   });
 });

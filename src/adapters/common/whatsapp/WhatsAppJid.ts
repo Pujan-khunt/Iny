@@ -94,8 +94,12 @@ export class WhatsAppJid {
 
   /**
    * Compares two JIDs ignoring multi-device suffixes within the same identity form.
+   * Returns false if either identifier is not a valid user.
    */
   static areSameUser(jid1: string, jid2: string): boolean {
-    return areJidsSameUser(jid1.trim().toLowerCase(), jid2.trim().toLowerCase());
+    if (!this.isUser(jid1) || !this.isUser(jid2)) {
+      return false;
+    }
+    return Boolean(areJidsSameUser(jid1.trim().toLowerCase(), jid2.trim().toLowerCase()));
   }
 }
