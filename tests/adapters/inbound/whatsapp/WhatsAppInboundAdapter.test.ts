@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { proto } from '@whiskeysockets/baileys';
+import { WAMessage } from '@whiskeysockets/baileys';
 import { WhatsAppInboundAdapter } from '../../../../src/adapters/inbound/whatsapp/WhatsAppInboundAdapter';
 import { AllowlistPort } from '../../../../src/core/ports/AllowlistPort';
 import { BaileysMessageFilter } from '../../../../src/adapters/inbound/whatsapp/BaileysMessageFilter';
@@ -74,7 +74,7 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should handle incoming messages when registered incoming messages callback is fired', async () => {
-      let registeredCallback: ((messages: proto.IWebMessageInfo[]) => Promise<void>) | null = null;
+      let registeredCallback: ((messages: WAMessage[]) => Promise<void>) | null = null;
       (mockConnManager.onIncomingMessages as any).mockImplementation((cb: any) => {
         registeredCallback = cb;
       });
@@ -82,7 +82,7 @@ describe('WhatsAppInboundAdapter', () => {
       adapter.start();
       expect(registeredCallback).not.toBeNull();
 
-      const validMessage: proto.IWebMessageInfo = {
+      const validMessage: WAMessage = {
         key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm-cb-1' },
         message: { conversation: 'Hello through callback' },
         messageTimestamp: 1727223000,
@@ -108,7 +108,7 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should skip ineligible messages (e.g. fromMe === true)', async () => {
-      const selfMsg: proto.IWebMessageInfo = {
+      const selfMsg: WAMessage = {
         key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: true, id: 'self-1' },
         message: { conversation: 'I sent this' },
       };
@@ -119,11 +119,11 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should skip ineligible messages without text or from groups without calling use case', async () => {
-      const nonTextMessage: proto.IWebMessageInfo = {
+      const nonTextMessage: WAMessage = {
         key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm2' },
         message: { imageMessage: { caption: '' } },
       };
-      const groupMessage: proto.IWebMessageInfo = {
+      const groupMessage: WAMessage = {
         key: { remoteJid: '123456789-987654@g.us', fromMe: false, id: 'm-grp' },
         message: { conversation: 'Group text' },
       };
@@ -134,7 +134,7 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should ignore incoming messages from unauthorized senders, log debug, and not call use case', async () => {
-      const unauthorizedMessage: proto.IWebMessageInfo = {
+      const unauthorizedMessage: WAMessage = {
         key: { remoteJid: '919999888877@s.whatsapp.net', fromMe: false, id: 'm1' },
         message: { conversation: 'Hello stranger' },
       };
@@ -149,7 +149,7 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should dispatch valid, authorized user messages to ProcessIncomingMessage.execute', async () => {
-      const validMessage: proto.IWebMessageInfo = {
+      const validMessage: WAMessage = {
         key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm3' },
         message: { conversation: 'Calculate 10 + 20' },
         messageTimestamp: 1727223000,
@@ -182,7 +182,7 @@ describe('WhatsAppInboundAdapter', () => {
         mockLogger
       );
 
-      const validLookingMsg: proto.IWebMessageInfo = {
+      const validLookingMsg: WAMessage = {
         key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm-corrupt' },
         message: { conversation: 'Looks valid to filter' },
       };
@@ -199,7 +199,7 @@ describe('WhatsAppInboundAdapter', () => {
       const error = new Error('Execution failure in use case');
       (mockUseCase.execute as any).mockRejectedValue(error);
 
-      const validMessage: proto.IWebMessageInfo = {
+      const validMessage: WAMessage = {
         key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm-err' },
         message: { conversation: 'Crash me' },
         messageTimestamp: 1727223000,
@@ -221,7 +221,7 @@ describe('WhatsAppInboundAdapter', () => {
         .mockRejectedValueOnce(error)
         .mockResolvedValueOnce(undefined);
 
-      const messages: proto.IWebMessageInfo[] = [
+      const messages: WAMessage[] = [
         {
           key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'batch-1' },
           message: { conversation: 'First' },
@@ -247,7 +247,7 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should resolve canonical PNJID when message comes with @lid and remoteJidAlt @s.whatsapp.net', async () => {
-      const lidMessage: proto.IWebMessageInfo = {
+      const lidMessage: WAMessage = {
         key: {
           remoteJid: '123456789012345@lid',
           remoteJidAlt: '919876543210@s.whatsapp.net',
@@ -285,7 +285,7 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should ignore non-PN remoteJidAlt and query allowlist with remoteJid', async () => {
-      const lidMessageWithMalformedAlt: proto.IWebMessageInfo = {
+      const lidMessageWithMalformedAlt: WAMessage = {
         key: {
           remoteJid: '123456789012345@lid',
           remoteJidAlt: 'not-a-pn-user',
@@ -323,7 +323,7 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should resolve canonical PNJID via authenticated user record without double DB query when message comes with @lid and no remoteJidAlt', async () => {
-      const lidMessage: proto.IWebMessageInfo = {
+      const lidMessage: WAMessage = {
         key: {
           remoteJid: '123456789012345@lid',
           fromMe: false,
@@ -361,7 +361,7 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should drop message and log warning when canonical PNJID cannot be resolved from authenticated user', async () => {
-      const unresolvableLidMessage: proto.IWebMessageInfo = {
+      const unresolvableLidMessage: WAMessage = {
         key: {
           remoteJid: '123456789012345@lid',
           fromMe: false,
@@ -392,7 +392,7 @@ describe('WhatsAppInboundAdapter', () => {
     });
 
     it('should defensively normalize remoteJid for canonical PNJID when message arrives from phone number JID', async () => {
-      const pnMessage: proto.IWebMessageInfo = {
+      const pnMessage: WAMessage = {
         key: {
           remoteJid: '919876543210:2@s.whatsapp.net',
           fromMe: false,

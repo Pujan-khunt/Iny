@@ -172,7 +172,7 @@ describe('BaileysConnectionManager', () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const options = {
         session: {
-          state: { creds: { registered: false }, keys: {} as any },
+          state: { creds: { registered: false } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -193,7 +193,7 @@ describe('BaileysConnectionManager', () => {
       const saveCredsMock = vi.fn().mockResolvedValue(undefined);
       const options = {
         session: {
-          state: { creds: { registered: false }, keys: {} as any },
+          state: { creds: { registered: false } as any, keys: {} as any },
           saveCreds: saveCredsMock,
         },
         botPhoneNumber: '919876543210',
@@ -217,7 +217,7 @@ describe('BaileysConnectionManager', () => {
 
       const options = {
         session: {
-          state: { creds: { registered: false }, keys: {} as any },
+          state: { creds: { registered: false } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -242,7 +242,7 @@ describe('BaileysConnectionManager', () => {
 
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -262,7 +262,7 @@ describe('BaileysConnectionManager', () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -285,7 +285,7 @@ describe('BaileysConnectionManager', () => {
         const startSpy = vi.spyOn(manager, 'start');
         const options = {
           session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
           botPhoneNumber: '919876543210',
@@ -324,7 +324,7 @@ describe('BaileysConnectionManager', () => {
         const startSpy = vi.spyOn(manager, 'start');
         const options = {
           session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
           botPhoneNumber: '919876543210',
@@ -356,7 +356,7 @@ describe('BaileysConnectionManager', () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -383,7 +383,7 @@ describe('BaileysConnectionManager', () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -412,7 +412,7 @@ describe('BaileysConnectionManager', () => {
         const startSpy = vi.spyOn(manager, 'start');
         const options = {
           session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
           botPhoneNumber: '919876543210',
@@ -447,7 +447,7 @@ describe('BaileysConnectionManager', () => {
 
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -479,7 +479,7 @@ describe('BaileysConnectionManager', () => {
 
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',

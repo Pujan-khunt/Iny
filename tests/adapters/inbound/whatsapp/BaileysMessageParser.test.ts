@@ -16,7 +16,7 @@ describe('BaileysMessageParser', () => {
   });
 
   it('should correctly parse standard conversation text into a UserMessage', () => {
-    const raw: proto.IWebMessageInfo = {
+    const raw: EligibleWebMessageInfo = {
       key: {
         remoteJid: '919876543210@s.whatsapp.net',
         fromMe: false,
@@ -37,7 +37,7 @@ describe('BaileysMessageParser', () => {
   });
 
   it('should correctly parse extendedTextMessage (e.g. quoted text message)', () => {
-    const raw: proto.IWebMessageInfo = {
+    const raw: EligibleWebMessageInfo = {
       key: {
         remoteJid: '919876543210@s.whatsapp.net',
         fromMe: false,
@@ -60,7 +60,7 @@ describe('BaileysMessageParser', () => {
   });
 
   it('should correctly handle protobuf Long timestamp with .low property', () => {
-    const raw: proto.IWebMessageInfo = {
+    const raw: EligibleWebMessageInfo = {
       key: {
         remoteJid: '919876543210@s.whatsapp.net',
         fromMe: false,
@@ -75,7 +75,7 @@ describe('BaileysMessageParser', () => {
   });
 
   it('should correctly handle protobuf Long timestamp with .toNumber() method', () => {
-    const raw: proto.IWebMessageInfo = {
+    const raw: EligibleWebMessageInfo = {
       key: {
         remoteJid: '919876543210@s.whatsapp.net',
         fromMe: false,

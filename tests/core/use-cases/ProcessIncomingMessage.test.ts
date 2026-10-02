@@ -156,7 +156,7 @@ describe('ProcessIncomingMessage', () => {
         const endTime = new Date('2026-09-29T10:00:02.500Z');
         vi.setSystemTime(startTime);
 
-        mockSender.sendMessage.mockImplementationOnce(async () => {
+        vi.mocked(mockSender.sendMessage).mockImplementationOnce(async () => {
           vi.setSystemTime(endTime);
         });
 

@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
     "dev": "tsx --env-file=.env src/index.ts | pino-pretty",
     "start": "node --enable-source-maps --env-file=.env dist/index.js",
     "test": "vitest run",
