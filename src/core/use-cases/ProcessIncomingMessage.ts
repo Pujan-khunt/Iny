@@ -36,10 +36,21 @@ export class ProcessIncomingMessage {
     const log = this.logger.child({ userId: message.userId, messageId: message.id });
     log.info('Processing incoming message');
 
-    // 1. REASONING PHASE
+    // 1. CONVERSATION CONTEXT RETRIEVAL
+    let history: Message[] = [];
+    try {
+      history = await this.loadHistoricalMessages(message.userId);
+    } catch (historyError) {
+      log.warn(
+        'Failed to load conversation history from database, proceeding with empty context',
+        historyError
+      );
+      history = [];
+    }
+
+    // 2. REASONING PHASE
     let loopResult: AgentLoopResult;
     try {
-      const history = await this.loadHistoricalMessages(message.userId);
       const tools = this.toolRegistry.getToolDefinitions();
       loopResult = await this.agentLoop.run(message, history, tools, log);
     } catch (reasoningError) {
@@ -48,7 +59,7 @@ export class ProcessIncomingMessage {
       return;
     }
 
-    // 2. DELIVERY PHASE
+    // 3. DELIVERY PHASE
     try {
       await this.sender.sendMessage(message.userId, loopResult.finalText);
     } catch (deliveryError) {
@@ -58,7 +69,7 @@ export class ProcessIncomingMessage {
     }
     const completedAt = new Date();
 
-    // 3. PERSISTENCE PHASE
+    // 4. PERSISTENCE PHASE
     try {
       const turn: DialogueTurn = {
         id: crypto.randomUUID(),

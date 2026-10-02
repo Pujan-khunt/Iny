@@ -181,7 +181,37 @@ describe('ProcessIncomingMessage', () => {
     });
   });
 
-  describe('Phase 1: Reasoning error handling', () => {
+  describe('Phase 1: Conversation context retrieval error handling', () => {
+    it('should degrade gracefully with empty history and proceed when database fails to load history', async () => {
+      const dbError = new Error('Postgres connection timeout');
+      vi.mocked(mockChatRepository.getRecentTurns).mockRejectedValueOnce(dbError);
+
+      const useCase = createUseCase();
+      await useCase.execute(sampleUserMessage);
+
+      // Warn logged with error details
+      expect(mockChildLogger.warn).toHaveBeenCalledWith(
+        'Failed to load conversation history from database, proceeding with empty context',
+        dbError
+      );
+
+      // Reasoning proceeded with empty history
+      expect(mockAgentLoop.run).toHaveBeenCalledWith(
+        sampleUserMessage,
+        [],
+        sampleTools,
+        mockChildLogger
+      );
+
+      // Delivery succeeded
+      expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'Hello! How can I help you today?');
+
+      // Turn persistence attempted
+      expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Phase 2: Reasoning error handling', () => {
     it('should handle generic reasoning error and send fallback notification', async () => {
       const reasoningError = new LLMServerError('Service unavailable', { status: 503 });
       vi.mocked(mockAgentLoop.run).mockRejectedValueOnce(reasoningError);
@@ -273,7 +303,7 @@ describe('ProcessIncomingMessage', () => {
     });
   });
 
-  describe('Phase 2: Delivery error handling', () => {
+  describe('Phase 3: Delivery error handling', () => {
     it('should log transport error and not attempt retry or turn persistence', async () => {
       const transportError = new Error('WhatsApp socket closed');
       vi.mocked(mockSender.sendMessage).mockRejectedValueOnce(transportError);
@@ -292,7 +322,7 @@ describe('ProcessIncomingMessage', () => {
     });
   });
 
-  describe('Phase 3: Persistence error handling', () => {
+  describe('Phase 4: Persistence error handling', () => {
     it('should log persistence error without sending duplicate message to user', async () => {
       const dbError = new Error('Database write constraint failed');
       vi.mocked(mockChatRepository.saveTurn).mockRejectedValueOnce(dbError);
