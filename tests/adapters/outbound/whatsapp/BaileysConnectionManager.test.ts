@@ -440,10 +440,10 @@ describe('BaileysConnectionManager', () => {
       }
     });
 
-    it('should dispatch notify messages to onIncomingMessages handler', async () => {
+    it('should dispatch events to subscribed handlers when sock.ev.process receives matching events', async () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const mockUpsertHandler = vi.fn().mockResolvedValue(undefined);
-      manager.onIncomingMessages(mockUpsertHandler);
+      manager.subscribe('messages.upsert', mockUpsertHandler);
 
       const options = {
         session: {
@@ -455,27 +455,27 @@ describe('BaileysConnectionManager', () => {
 
       await manager.start(options);
 
-      const rawMessages: proto.IWebMessageInfo[] = [
-        {
-          key: { id: 'msg-1', remoteJid: '919876543210@s.whatsapp.net', fromMe: false },
-          message: { conversation: 'Hello' },
-        },
-      ];
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [
+          {
+            key: { id: 'msg-1', remoteJid: '919876543210@s.whatsapp.net', fromMe: false },
+            message: { conversation: 'Hello' },
+          },
+        ] as any,
+      };
 
       await capturedProcessHandler!({
-        'messages.upsert': {
-          type: 'notify',
-          messages: rawMessages,
-        },
+        'messages.upsert': eventPayload,
       });
 
-      expect(mockUpsertHandler).toHaveBeenCalledWith(rawMessages);
+      expect(mockUpsertHandler).toHaveBeenCalledWith(eventPayload);
     });
 
-    it('should ignore messages.upsert when type is append', async () => {
+    it('should unsubscribe handler when returned unsubscribe function is called', async () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const mockUpsertHandler = vi.fn().mockResolvedValue(undefined);
-      manager.onIncomingMessages(mockUpsertHandler);
+      const unsubscribe = manager.subscribe('messages.upsert', mockUpsertHandler);
 
       const options = {
         session: {
@@ -487,14 +487,47 @@ describe('BaileysConnectionManager', () => {
 
       await manager.start(options);
 
+      unsubscribe();
+
       await capturedProcessHandler!({
         'messages.upsert': {
-          type: 'append',
+          type: 'notify' as const,
           messages: [],
         },
       });
 
       expect(mockUpsertHandler).not.toHaveBeenCalled();
+    });
+
+    it('should dispatch events to multiple subscribers for the same event', async () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const handler1 = vi.fn().mockResolvedValue(undefined);
+      const handler2 = vi.fn().mockResolvedValue(undefined);
+
+      manager.subscribe('messages.upsert', handler1);
+      manager.subscribe('messages.upsert', handler2);
+
+      const options = {
+        session: {
+          state: { creds: { registered: true } as any, keys: {} as any },
+          saveCreds: vi.fn().mockResolvedValue(undefined),
+        },
+        botPhoneNumber: '919876543210',
+      };
+
+      await manager.start(options);
+
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [],
+      };
+
+      await capturedProcessHandler!({
+        'messages.upsert': eventPayload,
+      });
+
+      expect(handler1).toHaveBeenCalledWith(eventPayload);
+      expect(handler2).toHaveBeenCalledWith(eventPayload);
     });
   });
 });

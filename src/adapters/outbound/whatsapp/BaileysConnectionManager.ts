@@ -1,8 +1,8 @@
 import { Boom } from '@hapi/boom';
 import makeWASocket, {
   DisconnectReason,
-  WAMessage,
   WASocket,
+  BaileysEventMap,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
@@ -19,12 +19,19 @@ export interface ConnectionCloseDecision {
   purgeSession: boolean;
 }
 
+export type BaileysEventHandler<T extends keyof BaileysEventMap> = (
+  data: BaileysEventMap[T]
+) => Promise<void> | void;
+
 /**
  * Coordinates Baileys WebSocket lifecycle, connection updates, and reconnection policy.
  */
 export class BaileysConnectionManager {
   private socket: WASocket | null = null;
-  private incomingMessagesHandler: ((messages: WAMessage[]) => Promise<void>) | null = null;
+  private subscribers = new Map<
+    keyof BaileysEventMap,
+    Array<BaileysEventHandler<any>>
+  >();
 
   constructor(
     private logger: LoggerPort,
@@ -44,8 +51,25 @@ export class BaileysConnectionManager {
     return this.socket;
   }
 
-  onIncomingMessages(handler: (messages: WAMessage[]) => Promise<void>): void {
-    this.incomingMessagesHandler = handler;
+  /**
+   * Subscribes to a specific Baileys event across current and future socket reconnections.
+   * Returns an unsubscribe function.
+   */
+  subscribe<T extends keyof BaileysEventMap>(
+    event: T,
+    handler: BaileysEventHandler<T>
+  ): () => void {
+    const current = this.subscribers.get(event) ?? [];
+    current.push(handler);
+    this.subscribers.set(event, current);
+
+    return () => {
+      const handlers = this.subscribers.get(event) ?? [];
+      this.subscribers.set(
+        event,
+        handlers.filter((h) => h !== handler)
+      );
+    };
   }
 
   handleConnectionClose(lastDisconnectError: unknown): ConnectionCloseDecision {
@@ -113,10 +137,12 @@ export class BaileysConnectionManager {
         }
       }
 
-      if (events['messages.upsert']) {
-        const upsert = events['messages.upsert'];
-        if (upsert.type === 'notify' && this.incomingMessagesHandler) {
-          await this.incomingMessagesHandler(upsert.messages);
+      for (const [eventName, handlers] of this.subscribers.entries()) {
+        const eventData = events[eventName];
+        if (eventData) {
+          for (const handler of handlers) {
+            await handler(eventData);
+          }
         }
       }
     });

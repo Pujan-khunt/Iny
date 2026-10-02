@@ -27,7 +27,11 @@ export class WhatsAppInboundAdapter {
    * Registers the message upsert listener with the Baileys connection manager.
    */
   start(): void {
-    this.connectionManager.onIncomingMessages((messages) => this.handleMessages(messages));
+    this.connectionManager.subscribe('messages.upsert', async (upsert) => {
+      if (upsert.type === 'notify') {
+        await this.handleMessages(upsert.messages);
+      }
+    });
     this.logger.info('WhatsApp inbound adapter listening for incoming messages');
   }
 

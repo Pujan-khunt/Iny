@@ -30,7 +30,7 @@ describe('WhatsAppInboundAdapter', () => {
       execute: vi.fn().mockResolvedValue(undefined),
     } as unknown as ProcessIncomingMessage;
     mockConnManager = {
-      onIncomingMessages: vi.fn(),
+      subscribe: vi.fn(),
     } as unknown as BaileysConnectionManager;
     const defaultUserRecord = {
       phoneNumber: '919876543210',
@@ -64,19 +64,24 @@ describe('WhatsAppInboundAdapter', () => {
   });
 
   describe('start', () => {
-    it('should register incoming messages callback on connection manager and log info', () => {
+    it('should subscribe to messages.upsert on connection manager and log info', () => {
       adapter.start();
 
-      expect(mockConnManager.onIncomingMessages).toHaveBeenCalledWith(expect.any(Function));
+      expect(mockConnManager.subscribe).toHaveBeenCalledWith(
+        'messages.upsert',
+        expect.any(Function)
+      );
       expect(mockLogger.info).toHaveBeenCalledWith(
         'WhatsApp inbound adapter listening for incoming messages'
       );
     });
 
-    it('should handle incoming messages when registered incoming messages callback is fired', async () => {
-      let registeredCallback: ((messages: WAMessage[]) => Promise<void>) | null = null;
-      (mockConnManager.onIncomingMessages as any).mockImplementation((cb: any) => {
-        registeredCallback = cb;
+    it('should handle incoming notify messages when messages.upsert event fires', async () => {
+      let registeredCallback: ((data: any) => Promise<void>) | null = null;
+      (mockConnManager.subscribe as any).mockImplementation((event: string, cb: any) => {
+        if (event === 'messages.upsert') {
+          registeredCallback = cb;
+        }
       });
 
       adapter.start();
@@ -88,7 +93,10 @@ describe('WhatsAppInboundAdapter', () => {
         messageTimestamp: 1727223000,
       };
 
-      await registeredCallback!([validMessage]);
+      await registeredCallback!({
+        type: 'notify',
+        messages: [validMessage],
+      });
 
       expect(mockUseCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -97,6 +105,31 @@ describe('WhatsAppInboundAdapter', () => {
           content: 'Hello through callback',
         })
       );
+    });
+
+    it('should ignore messages.upsert when type is append', async () => {
+      let registeredCallback: ((data: any) => Promise<void>) | null = null;
+      (mockConnManager.subscribe as any).mockImplementation((event: string, cb: any) => {
+        if (event === 'messages.upsert') {
+          registeredCallback = cb;
+        }
+      });
+
+      adapter.start();
+      expect(registeredCallback).not.toBeNull();
+
+      const validMessage: WAMessage = {
+        key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm-cb-2' },
+        message: { conversation: 'Appended message' },
+        messageTimestamp: 1727223000,
+      };
+
+      await registeredCallback!({
+        type: 'append',
+        messages: [validMessage],
+      });
+
+      expect(mockUseCase.execute).not.toHaveBeenCalled();
     });
   });
 
