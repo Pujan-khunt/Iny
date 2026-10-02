@@ -41,11 +41,6 @@ export class PostgresAllowlistAdapter implements AllowlistPort {
     return user;
   }
 
-  async isAllowed(address: string, pairedLid?: string | null): Promise<boolean> {
-    const user = await this.authenticate(address, pairedLid);
-    return user !== null;
-  }
-
   /**
    * Retrieves the full record for an allowed user by phone, JID, or LID.
    *

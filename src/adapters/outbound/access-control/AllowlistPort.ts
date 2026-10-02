@@ -18,12 +18,6 @@ export interface AllowlistPort {
   authenticate(address: string, pairedLid?: string | null): Promise<AllowedUserRecord | null>;
 
   /**
-   * Checks whether the given address (phone, PNJID, or LIDJID) is authorized.
-   * If an incoming LID is provided and not yet cached for the user, schedules a background update.
-   */
-  isAllowed(address: string, pairedLid?: string | null): Promise<boolean>;
-
-  /**
    * Retrieves the full record for an allowed user by phone, JID, or LID.
    */
   getUser(address: string): Promise<AllowedUserRecord | null>;

@@ -78,21 +78,21 @@ describe('PostgresAllowlistAdapter', () => {
     expect(await adapter.countActiveUsers()).toBe(1);
   });
 
-  it('should allow active users by phone number, PNJID, and cached LID', async () => {
+  it('should authenticate active users by phone number, PNJID, and cached LID', async () => {
     await adapter.seedUsers(['919876543210']);
     await adapter.cacheLid('919876543210', '987654321012345@lid');
 
-    expect(await adapter.isAllowed('919876543210')).toBe(true);
-    expect(await adapter.isAllowed('919876543210@s.whatsapp.net')).toBe(true);
-    expect(await adapter.isAllowed('987654321012345@lid')).toBe(true);
-    expect(await adapter.isAllowed('19999999999@s.whatsapp.net')).toBe(false);
+    expect(await adapter.authenticate('919876543210')).not.toBeNull();
+    expect(await adapter.authenticate('919876543210@s.whatsapp.net')).not.toBeNull();
+    expect(await adapter.authenticate('987654321012345@lid')).not.toBeNull();
+    expect(await adapter.authenticate('19999999999@s.whatsapp.net')).toBeNull();
   });
 
-  it('should reject inactive users', async () => {
+  it('should reject inactive users during authentication', async () => {
     await adapter.seedUsers(['919876543210']);
     memDb.public.none("UPDATE allowed_users SET is_active = false WHERE phone_number = '919876543210'");
 
-    expect(await adapter.isAllowed('919876543210@s.whatsapp.net')).toBe(false);
+    expect(await adapter.authenticate('919876543210@s.whatsapp.net')).toBeNull();
   });
 
   it('should automatically cache incoming LID when previously null', async () => {
@@ -101,23 +101,21 @@ describe('PostgresAllowlistAdapter', () => {
     expect(user?.lid).toBeNull();
 
     // Check with pairedLid
-    const allowed = await adapter.isAllowed('919876543210@s.whatsapp.net', '123456789012345@lid');
-    expect(allowed).toBe(true);
-
-    // Allow async cache operation to complete
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const authUser = await adapter.authenticate('919876543210@s.whatsapp.net', '123456789012345@lid');
+    expect(authUser).not.toBeNull();
+    expect(authUser?.lid).toBe('123456789012345@lid');
 
     user = await adapter.getUser('919876543210');
     expect(user?.lid).toBe('123456789012345@lid');
 
     // Subsequent call should recognize the cached LID directly
-    expect(await adapter.isAllowed('123456789012345@lid')).toBe(true);
+    expect(await adapter.authenticate('123456789012345@lid')).not.toBeNull();
   });
 
-  it('should return false for invalid or unparseable address', async () => {
-    expect(await adapter.isAllowed('')).toBe(false);
-    expect(await adapter.isAllowed('   ')).toBe(false);
-    expect(await adapter.isAllowed('invalid-group@g.us')).toBe(false);
+  it('should return null for invalid or unparseable address during authentication', async () => {
+    expect(await adapter.authenticate('')).toBeNull();
+    expect(await adapter.authenticate('   ')).toBeNull();
+    expect(await adapter.authenticate('invalid-group@g.us')).toBeNull();
   });
 
   it('should return null when getting a non-existent user', async () => {
@@ -190,8 +188,8 @@ describe('PostgresAllowlistAdapter', () => {
     await adapter.seedUsers(['919876543210']);
     vi.spyOn(adapter, 'cacheLid').mockRejectedValueOnce(new Error('DB failure'));
 
-    const allowed = await adapter.isAllowed('919876543210@s.whatsapp.net', '123456789012345@lid');
-    expect(allowed).toBe(true);
+    const authUser = await adapter.authenticate('919876543210@s.whatsapp.net', '123456789012345@lid');
+    expect(authUser).not.toBeNull();
 
     expect(mockLogger.warn).toHaveBeenCalledWith(
       'Failed to cache user LID',

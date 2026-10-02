@@ -49,9 +49,6 @@ describe('WhatsAppInboundAdapter', () => {
         }
         return null;
       }),
-      isAllowed: vi.fn().mockImplementation(async (address: string) => {
-        return address.includes('919876543210') || address.includes('123456789012345');
-      }),
       getUser: vi.fn().mockResolvedValue(null),
       seedUsers: vi.fn().mockResolvedValue(undefined),
       countActiveUsers: vi.fn().mockResolvedValue(1),

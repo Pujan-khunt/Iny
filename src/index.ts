@@ -37,6 +37,8 @@ const sqlClient = postgres(config.DATABASE_URL, {
 const db = drizzle(sqlClient, {
   schema: { ...chatSchema, ...whatsappSchema, ...accessControlSchema },
 });
+
+
 const chatRepository = new PostgresChatRepository(db, logger);
 
 // 4. Access control allowlist
@@ -53,7 +55,7 @@ const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
 const sessionManager = new PostgresBaileysSessionManager(db, logger, 'default');
 const pairingManager = new BaileysPairingManager(logger);
 const connectionManager = new BaileysConnectionManager(logger, pairingManager, sessionManager);
-const messageSender = new BaileysMessageSenderAdapter(connectionManager, allowlist, logger);
+const messageSender = new BaileysMessageSenderAdapter(connectionManager, logger);
 
 // 7. Autonomous AgentLoop
 const agentLoop = new AgentLoop(deepseekAdapter, registry, {
