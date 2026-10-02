@@ -64,7 +64,7 @@ describe('PostgresAllowlistAdapter', () => {
     expect(await adapter.countActiveUsers()).toBe(2);
 
     // Cache an LID
-    await adapter.cacheLid('919876543210', '123456789012345@lid');
+    await (adapter as any).cacheLid('919876543210', '123456789012345@lid');
     const user = await adapter.getUser('919876543210');
     expect(user?.lid).toBe('123456789012345@lid');
 
@@ -80,7 +80,7 @@ describe('PostgresAllowlistAdapter', () => {
 
   it('should authenticate active users by phone number, PNJID, and cached LID', async () => {
     await adapter.seedUsers(['919876543210']);
-    await adapter.cacheLid('919876543210', '987654321012345@lid');
+    await (adapter as any).cacheLid('919876543210', '987654321012345@lid');
 
     expect(await adapter.authenticate('919876543210')).not.toBeNull();
     expect(await adapter.authenticate('919876543210@s.whatsapp.net')).not.toBeNull();
@@ -125,7 +125,7 @@ describe('PostgresAllowlistAdapter', () => {
 
   it('should retrieve user by phone number, PNJID, and LID via partitioned single-index lookup', async () => {
     await adapter.seedUsers(['919876543210']);
-    await adapter.cacheLid('919876543210', '987654321012345@lid');
+    await (adapter as any).cacheLid('919876543210', '987654321012345@lid');
 
     // 1. By raw phone number
     const userByPhone = await adapter.getUser('919876543210');
@@ -186,7 +186,7 @@ describe('PostgresAllowlistAdapter', () => {
 
   it('should handle error when caching LID', async () => {
     await adapter.seedUsers(['919876543210']);
-    vi.spyOn(adapter, 'cacheLid').mockRejectedValueOnce(new Error('DB failure'));
+    vi.spyOn(adapter as any, 'cacheLid').mockRejectedValueOnce(new Error('DB failure'));
 
     const authUser = await adapter.authenticate('919876543210@s.whatsapp.net', '123456789012345@lid');
     expect(authUser).not.toBeNull();

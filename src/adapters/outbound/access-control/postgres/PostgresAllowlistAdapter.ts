@@ -2,13 +2,13 @@ import { eq, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { allowedUsers } from './schema';
-import { AllowlistPort, AllowedUserRecord } from '../AllowlistPort';
+import { AllowlistPort, AllowlistAdminPort, AllowedUserRecord } from '../../../../core/ports/AllowlistPort';
 import { WhatsAppJid } from '../../../common/whatsapp/WhatsAppJid';
 import { LoggerPort } from '../../../../core/ports/LoggerPort';
 
 type PgDb = NodePgDatabase<any> | PostgresJsDatabase<any>;
 
-export class PostgresAllowlistAdapter implements AllowlistPort {
+export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPort {
   constructor(
     private db: PgDb,
     private logger: LoggerPort
@@ -118,7 +118,7 @@ export class PostgresAllowlistAdapter implements AllowlistPort {
     return result[0]?.count ?? 0;
   }
 
-  async cacheLid(phoneNumber: string, lid: string): Promise<void> {
+  private async cacheLid(phoneNumber: string, lid: string): Promise<void> {
     await this.db
       .update(allowedUsers)
       .set({

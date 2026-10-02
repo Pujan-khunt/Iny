@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { proto } from '@whiskeysockets/baileys';
 import { WhatsAppInboundAdapter } from '../../../../src/adapters/inbound/whatsapp/WhatsAppInboundAdapter';
-import { AllowlistPort } from '../../../../src/adapters/outbound/access-control/AllowlistPort';
+import { AllowlistPort } from '../../../../src/core/ports/AllowlistPort';
 import { BaileysMessageFilter } from '../../../../src/adapters/inbound/whatsapp/BaileysMessageFilter';
 import { BaileysMessageParser } from '../../../../src/adapters/inbound/whatsapp/BaileysMessageParser';
 import { ProcessIncomingMessage } from '../../../../src/core/use-cases/ProcessIncomingMessage';
@@ -50,9 +50,6 @@ describe('WhatsAppInboundAdapter', () => {
         return null;
       }),
       getUser: vi.fn().mockResolvedValue(null),
-      seedUsers: vi.fn().mockResolvedValue(undefined),
-      countActiveUsers: vi.fn().mockResolvedValue(1),
-      cacheLid: vi.fn().mockResolvedValue(undefined),
     };
     filter = new BaileysMessageFilter();
     parser = new BaileysMessageParser();

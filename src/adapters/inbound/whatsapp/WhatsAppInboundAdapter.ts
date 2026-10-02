@@ -1,7 +1,7 @@
 import { WAMessage } from '@whiskeysockets/baileys';
 import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingMessage';
 import { BaileysConnectionManager } from '../../outbound/whatsapp/BaileysConnectionManager';
-import { AllowlistPort, AllowedUserRecord } from '../../outbound/access-control/AllowlistPort';
+import { AllowlistPort, AllowedUserRecord } from '../../../core/ports/AllowlistPort';
 import { BaileysMessageFilter } from './BaileysMessageFilter';
 import { BaileysMessageParser } from './BaileysMessageParser';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
