@@ -1,4 +1,4 @@
-import { proto } from '@whiskeysockets/baileys';
+import { normalizeMessageContent, proto } from '@whiskeysockets/baileys';
 import { UserMessage } from '../../../core/entities/Message';
 import { EligibleWebMessageInfo } from './BaileysMessageFilter';
 
@@ -26,11 +26,16 @@ export class BaileysMessageParser {
   }
 
   private extractText(message: proto.IMessage): string | null {
-    if (message.conversation) {
-      return message.conversation;
+    const unwrapped = normalizeMessageContent(message);
+    if (!unwrapped) {
+      return null;
     }
-    if (message.extendedTextMessage?.text) {
-      return message.extendedTextMessage.text;
+
+    if (unwrapped.conversation) {
+      return unwrapped.conversation;
+    }
+    if (unwrapped.extendedTextMessage?.text) {
+      return unwrapped.extendedTextMessage.text;
     }
     return null;
   }

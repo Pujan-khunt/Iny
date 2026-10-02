@@ -123,4 +123,42 @@ describe('BaileysMessageParser', () => {
       role: 'user',
     });
   });
+
+  it('should correctly parse text from wrapped ephemeral messages (disappearing messages)', () => {
+    const raw: proto.IWebMessageInfo = {
+      key: {
+        remoteJid: '919876543210@s.whatsapp.net',
+        fromMe: false,
+        id: 'msg-eph',
+      },
+      message: {
+        ephemeralMessage: {
+          message: { conversation: 'Secret disappearing message' },
+        },
+      },
+      messageTimestamp: 1727222400,
+    };
+
+    const parsed = parser.parse(raw as EligibleWebMessageInfo, '919876543210@s.whatsapp.net');
+    expect(parsed.content).toBe('Secret disappearing message');
+  });
+
+  it('should correctly parse text from wrapped viewOnce messages', () => {
+    const raw: proto.IWebMessageInfo = {
+      key: {
+        remoteJid: '919876543210@s.whatsapp.net',
+        fromMe: false,
+        id: 'msg-vo',
+      },
+      message: {
+        viewOnceMessage: {
+          message: { extendedTextMessage: { text: 'View once payload' } },
+        },
+      },
+      messageTimestamp: 1727222400,
+    };
+
+    const parsed = parser.parse(raw as EligibleWebMessageInfo, '919876543210@s.whatsapp.net');
+    expect(parsed.content).toBe('View once payload');
+  });
 });

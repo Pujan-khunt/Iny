@@ -1,4 +1,4 @@
-import { proto, WAMessage, WAMessageKey } from '@whiskeysockets/baileys';
+import { normalizeMessageContent, proto, WAMessage, WAMessageKey } from '@whiskeysockets/baileys';
 import { WhatsAppJid } from '../../common/whatsapp/WhatsAppJid';
 
 /**
@@ -49,11 +49,16 @@ export class BaileysMessageFilter {
       return false;
     }
 
-    if (message.conversation && message.conversation.trim().length > 0) {
+    const unwrapped = normalizeMessageContent(message);
+    if (!unwrapped) {
+      return false;
+    }
+
+    if (unwrapped.conversation && unwrapped.conversation.trim().length > 0) {
       return true;
     }
 
-    if (message.extendedTextMessage?.text && message.extendedTextMessage.text.trim().length > 0) {
+    if (unwrapped.extendedTextMessage?.text && unwrapped.extendedTextMessage.text.trim().length > 0) {
       return true;
     }
 

@@ -108,4 +108,28 @@ describe('BaileysMessageFilter', () => {
     };
     expect(filter.isEligible(raw)).toBe(true);
   });
+
+  it('should accept wrapped ephemeral messages (disappearing messages)', () => {
+    const raw: proto.IWebMessageInfo = {
+      key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm-eph' },
+      message: {
+        ephemeralMessage: {
+          message: { conversation: 'Hello from disappearing message' },
+        },
+      },
+    };
+    expect(filter.isEligible(raw)).toBe(true);
+  });
+
+  it('should accept wrapped viewOnce messages with text content', () => {
+    const raw: proto.IWebMessageInfo = {
+      key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm-vo' },
+      message: {
+        viewOnceMessage: {
+          message: { extendedTextMessage: { text: 'View once text' } },
+        },
+      },
+    };
+    expect(filter.isEligible(raw)).toBe(true);
+  });
 });
