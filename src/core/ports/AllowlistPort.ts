@@ -26,6 +26,11 @@ export interface AllowlistPort {
   getUser(address: string): Promise<AllowedUserRecord | null>;
 }
 
+export interface SeedUserEntry {
+  phoneNumber: string;
+  name?: string | null;
+}
+
 /**
  * Port for administrative allowlist management (startup seeding and health checks).
  */
@@ -33,7 +38,7 @@ export interface AllowlistAdminPort {
   /**
    * Seeds initial users into PostgreSQL with ON CONFLICT (phone_number) DO NOTHING.
    */
-  seedUsers(entries: string[]): Promise<void>;
+  seedUsers(entries: SeedUserEntry[]): Promise<void>;
 
   /**
    * Returns count of active authorized users in PostgreSQL.

@@ -137,7 +137,11 @@ async function start() {
 
   // Seed initial admin users from configuration if provided
   if (config.ALLOWED_USERS.length > 0) {
-    await allowlist.seedUsers(config.ALLOWED_USERS);
+    const seedEntries = config.ALLOWED_USERS.map((phoneNumber, index) => ({
+      phoneNumber,
+      name: config.ALLOWED_USER_NAMES[index] || null,
+    }));
+    await allowlist.seedUsers(seedEntries);
   }
 
   // Fail-fast safety check: ensure at least one active user exists

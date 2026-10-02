@@ -43,7 +43,7 @@ describe('Config', () => {
     expect(config.DB_MAX_CONNECTIONS).toBe(25);
   });
 
-  it('should default ALLOWED_USERS to empty array when omitted from environment', () => {
+  it('should default ALLOWED_USERS and ALLOWED_USER_NAMES to empty array when omitted from environment', () => {
     const config = parseConfig({
       DEEPSEEK_API_KEY: 'test-key',
       SYSTEM_PROMPT: 'test-prompt',
@@ -52,26 +52,43 @@ describe('Config', () => {
     });
 
     expect(config.ALLOWED_USERS).toEqual([]);
+    expect(config.ALLOWED_USER_NAMES).toEqual([]);
   });
 
-  it('should parse empty or whitespace ALLOWED_USERS into empty array', () => {
+  it('should parse empty or whitespace ALLOWED_USERS and ALLOWED_USER_NAMES into empty array', () => {
     const configEmpty = parseConfig({
       DEEPSEEK_API_KEY: 'test-key',
       SYSTEM_PROMPT: 'test-prompt',
       BOT_PHONE_NUMBER: '15551234567',
       ALLOWED_USERS: '',
+      ALLOWED_USER_NAMES: '',
       DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
     });
     expect(configEmpty.ALLOWED_USERS).toEqual([]);
+    expect(configEmpty.ALLOWED_USER_NAMES).toEqual([]);
 
     const configWhitespace = parseConfig({
       DEEPSEEK_API_KEY: 'test-key',
       SYSTEM_PROMPT: 'test-prompt',
       BOT_PHONE_NUMBER: '15551234567',
       ALLOWED_USERS: '   ,  , ',
+      ALLOWED_USER_NAMES: '   ,  , ',
       DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
     });
     expect(configWhitespace.ALLOWED_USERS).toEqual([]);
+    expect(configWhitespace.ALLOWED_USER_NAMES).toEqual([]);
+  });
+
+  it('should parse comma-separated ALLOWED_USER_NAMES into string array', () => {
+    const config = parseConfig({
+      DEEPSEEK_API_KEY: 'test-key',
+      SYSTEM_PROMPT: 'test-prompt',
+      BOT_PHONE_NUMBER: '15551234567',
+      ALLOWED_USERS: '15551234567, 15559876543',
+      ALLOWED_USER_NAMES: 'Pujan, Alice',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+    });
+    expect(config.ALLOWED_USER_NAMES).toEqual(['Pujan', 'Alice']);
   });
 
   it('should throw an error and log failure when required variables are missing', () => {

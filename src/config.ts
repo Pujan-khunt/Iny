@@ -22,6 +22,18 @@ export const envSchema = z.object({
           .filter(Boolean)
       )
   ),
+  ALLOWED_USER_NAMES: emptyToUndefined(
+    z
+      .string()
+      .optional()
+      .default('')
+      .transform((val) =>
+        val
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+  ),
   DATABASE_URL: z
     .string()
     .trim()

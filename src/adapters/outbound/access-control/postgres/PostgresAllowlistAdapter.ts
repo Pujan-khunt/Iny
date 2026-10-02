@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { allowedUsers } from './schema';
-import { AllowlistPort, AllowlistAdminPort, AllowedUserRecord } from '../../../../core/ports/AllowlistPort';
+import { AllowlistPort, AllowlistAdminPort, AllowedUserRecord, SeedUserEntry } from '../../../../core/ports/AllowlistPort';
 import { WhatsAppJid } from '../../../common/whatsapp/WhatsAppJid';
 import { LoggerPort } from '../../../../core/ports/LoggerPort';
 
@@ -86,10 +86,10 @@ export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPo
     };
   }
 
-  async seedUsers(entries: string[]): Promise<void> {
+  async seedUsers(entries: SeedUserEntry[]): Promise<void> {
     for (const entry of entries) {
-      const jid = WhatsAppJid.normalize(entry);
-      const phoneNumber = WhatsAppJid.toPhoneNumber(entry);
+      const jid = WhatsAppJid.normalize(entry.phoneNumber);
+      const phoneNumber = WhatsAppJid.toPhoneNumber(entry.phoneNumber);
 
       if (!jid || !phoneNumber) {
         this.logger.warn('Skipping invalid allowlist entry during seeding', undefined, { entry });
@@ -101,7 +101,7 @@ export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPo
         .values({
           phoneNumber,
           jid,
-          name: 'Initial Admin',
+          name: entry.name?.trim() || null,
           role: 'admin',
           isActive: true,
         })
