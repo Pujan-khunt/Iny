@@ -11,9 +11,10 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/core/entities/ToolCall.ts`: Discriminated union of `ValidToolCall` and `MalformedToolCall` modeling parsed LLM function invocations.
   - `src/core/entities/DialogueTurn.ts`: Encapsulates a complete, turn-atomic interaction boundary (`UserMessage`, intermediate tool calls and results, final `AssistantTextMessage`, `startedAt`, and `completedAt`).
 - **Use Cases & Domain Services**: Application-specific business rules:
-  - `src/core/use-cases/ProcessIncomingMessage.ts`: 3-phase orchestrator separating Reasoning, Delivery, and Persistence phases. Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
+  - `src/core/use-cases/ProcessIncomingMessage.ts`: 4-phase orchestrator separating Conversation Context Retrieval, Reasoning, Delivery, and Persistence phases. Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
   - `src/core/use-cases/AgentLoop.ts`: Pure domain service executing the ReAct (Reasoning + Acting) loop. Manages concurrent tool execution via `Promise.all`, circuit breaker forced synthesis, and malformed tool error injection.
 - **Ports**: Interfaces that define how the core communicates with the outside world without knowing implementation details:
+  - `src/core/ports/AllowlistPort.ts`: Core access control port (`AllowlistPort` with `authenticate`, `getUser`) and administrative user management port (`AllowlistAdminPort` with `seedUsers`, `countActiveUsers`).
   - `src/core/ports/MessageSenderPort.ts`: Outbound messaging transport.
   - `src/core/ports/LLMPort.ts`: Language model reasoning and tool call generation.
   - `src/core/ports/ChatRepositoryPort.ts`: Conversation history persistence.
@@ -27,10 +28,9 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/inbound/whatsapp/BaileysMessageFilter.ts`: Evaluates incoming raw WhatsApp message eligibility (rejecting self-messages, non-text messages, groups `@g.us`, and broadcasts `@broadcast`).
   - `src/adapters/inbound/whatsapp/BaileysMessageParser.ts`: Pure translator mapping eligible raw Baileys messages into domain `UserMessage` entities with normalized epoch timestamps and canonical user ID overrides.
 - **Outbound Adapters**: Concrete implementations of our core ports:
-  - `src/adapters/outbound/access-control/AllowlistPort.ts`: Port interface defining access control contracts (`isAllowed`, `getUser`, `seedUsers`, `countActiveUsers`, and `cacheLid`).
-  - `src/adapters/outbound/access-control/postgres/PostgresAllowlistAdapter.ts`: Driven adapter implementing `AllowlistPort` backed by PostgreSQL (`allowed_users` table) with O(1) indexed lookups, soft revocation checks, background asynchronous LID caching, and idempotent seeding.
+  - `src/adapters/outbound/access-control/postgres/PostgresAllowlistAdapter.ts`: Driven adapter implementing `AllowlistPort` and `AllowlistAdminPort` backed by PostgreSQL (`allowed_users` table) with O(1) indexed lookups, soft revocation checks, background asynchronous LID caching, and idempotent seeding.
   - `src/adapters/outbound/access-control/postgres/schema.ts`: Drizzle ORM schema defining `allowed_users` with canonical `phone_number` PK, unique `jid` and `lid` indexes, and PostgreSQL check constraints.
-  - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` with defense-in-depth allowlist verification against `AllowlistPort` before transmitting text payloads over the active WhatsApp socket.
+  - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` to transmit text payloads over the active WhatsApp socket.
   - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution. Accepts `BaileysSessionManagerPort`.
   - `src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts`: Implements `BaileysSessionManagerPort` managing WhatsApp credentials and Signal Protocol keys in PostgreSQL (`whatsapp_auth` table) with in-memory caching (`makeCacheableSignalKeyStore`), `BufferJSON` buffer preservation, batch operations, and atomic purge upon logout.
   - `src/adapters/outbound/whatsapp/postgres/schema.ts`: Drizzle ORM table schema defining `whatsapp_auth` with composite primary key `(session_id, key)`.
@@ -59,9 +59,10 @@ src/
 │   │   ├── ToolCall.ts                     # ValidToolCall and MalformedToolCall union
 │   │   └── DialogueTurn.ts                 # Turn-atomic conversation unit
 │   ├── use-cases/
-│   │   ├── ProcessIncomingMessage.ts       # 3-phase orchestrator (Reasoning, Delivery, Persistence)
+│   │   ├── ProcessIncomingMessage.ts       # 4-phase orchestrator (Retrieval, Reasoning, Delivery, Persistence)
 │   │   └── AgentLoop.ts                    # Pure ReAct reasoning loop & tool concurrency
 │   ├── ports/                              # Interfaces for external dependencies
+│   │   ├── AllowlistPort.ts                # Access control & admin user management ports
 │   │   ├── ChatRepositoryPort.ts           # Conversation history persistence port
 │   │   ├── LLMPort.ts                      # Language model reasoning & tool call port
 │   │   ├── LoggerPort.ts                   # Structured logging port
@@ -83,10 +84,9 @@ src/
 │   │       └── WhatsAppInboundAdapter.ts   # WhatsApp event driver with LID resolution & ProcessIncomingMessage
 │   └── outbound/
 │       ├── access-control/
-│       │   ├── AllowlistPort.ts            # Access control port interface
 │       │   └── postgres/                   # PostgreSQL allowlist adapter
 │       │       ├── schema.ts               # Drizzle ORM schema for allowed_users
-│       │       └── PostgresAllowlistAdapter.ts # Driven adapter implementing AllowlistPort
+│       │       └── PostgresAllowlistAdapter.ts # Driven adapter implementing AllowlistPort & AllowlistAdminPort
 │       ├── chat-repository/
 │       │   └── postgres/                   # PostgreSQL conversation memory adapter
 │       │       ├── schema.ts               # Drizzle ORM schema & table constraints
@@ -122,6 +122,7 @@ src/
 ```mermaid
 sequenceDiagram
     participant WA as WhatsApp Network
+    participant Conn as BaileysConnectionManager.ts
     participant Inbound as WhatsAppInboundAdapter.ts
     participant Filter as BaileysMessageFilter.ts
     participant Allowlist as AllowlistPort / PostgresAllowlistAdapter.ts
@@ -132,10 +133,10 @@ sequenceDiagram
     participant Reg as ToolRegistryPort.ts
     participant LLM as LLMPort.ts
     participant Sender as BaileysMessageSenderAdapter.ts
-    participant Conn as BaileysConnectionManager.ts
     participant Log as LoggerPort.ts
 
-    WA->>Inbound: messages.upsert (messages)
+    WA->>Conn: messages.upsert
+    Conn->>Inbound: dispatch('messages.upsert', { messages })
     
     loop For each message in batch
         Inbound->>Filter: isEligible(rawMessage)
@@ -144,14 +145,14 @@ sequenceDiagram
             Note over Inbound: Discard (zero token cost)
         else Eligible
             Filter-->>Inbound: true
-            Note over Inbound: Extract remoteJid, remoteJidAlt, pairedLid
-            Inbound->>Allowlist: isAllowed(checkAddress, pairedLid)
+            Note over Inbound: Extract checkAddress, pairedLid, isLid
+            Inbound->>Allowlist: authenticate(checkAddress, pairedLid)
             alt Unauthorized Sender
-                Allowlist-->>Inbound: false
+                Allowlist-->>Inbound: null
                 Note over Inbound: Discard & log debug
             else Authorized
-                Allowlist-->>Inbound: true
-                Note over Inbound: Resolve canonical PNJID (remoteJidAlt or allowlist.getUser)
+                Allowlist-->>Inbound: AllowedUserRecord
+                Note over Inbound: Resolve canonical PNJID (remoteJidAlt or user.jid)
                 Inbound->>Parser: parse(rawMessage, canonicalPnJid)
                 Parser-->>Inbound: userMessage (canonical userId)
 
@@ -159,10 +160,14 @@ sequenceDiagram
                 UC->>Log: logger.child({ userId, messageId })
                 UC->>Log: log.info("Processing incoming message")
 
-                rect rgb(240, 248, 255)
-                    Note over UC,Loop: Phase 1: Reasoning Phase
+                rect rgb(245, 245, 255)
+                    Note over UC,Repo: Phase 1: Conversation Context Retrieval
                     UC->>Repo: chatRepository.getRecentTurns(userId, maxHistoryTurns)
                     Repo-->>UC: DialogueTurn[] (history)
+                end
+
+                rect rgb(240, 248, 255)
+                    Note over UC,Loop: Phase 2: Reasoning Phase
                     UC->>Reg: toolRegistry.getToolDefinitions()
                     Reg-->>UC: ToolDefinition[]
                     UC->>Loop: loop.run(userMessage, history, tools, log)
@@ -188,9 +193,8 @@ sequenceDiagram
                 end
 
                 rect rgb(240, 255, 240)
-                    Note over UC,Sender: Phase 2: Delivery Phase
+                    Note over UC,Sender: Phase 3: Delivery Phase
                     UC->>Sender: sender.sendMessage(userId, finalText)
-                    Sender->>Allowlist: isAllowed(userId) [Defense-in-depth]
                     Sender->>Conn: getSocket()
                     Conn-->>Sender: activeSocket
                     Sender->>WA: sock.sendMessage(userId, { text: finalText })
@@ -202,7 +206,7 @@ sequenceDiagram
                 end
 
                 rect rgb(255, 250, 240)
-                    Note over UC,Repo: Phase 3: Persistence Phase
+                    Note over UC,Repo: Phase 4: Persistence Phase
                     UC->>Repo: chatRepository.saveTurn(turn)
                     UC->>Log: log.info("Message processed successfully")
                 end
@@ -218,7 +222,7 @@ sequenceDiagram
 - **Single Composition Root**: In production runtime code, `src/index.ts` is the only place where adapters and the core are stitched together. Dependency injection is wired up here (unit tests and internal adapter factory methods like `PinoLoggerAdapter.child()` may instantiate adapters directly).
 - **Fail-Fast Startup**: `src/config.ts` uses Zod to validate all environment variables at startup. Pure `parseConfig()` is exported for direct testing without dynamic module reloading. Application fails fast if no active allowed users exist.
 - **Persistent Access Control & Canonical Identity Duality**: WhatsApp access authorization is persisted in PostgreSQL (`allowed_users` table with canonical `phone_number` primary key and unique `jid`/`lid` indexes). Modern WhatsApp linked identities (`@lid`) are mapped back to canonical phone numbers (`@s.whatsapp.net`), ensuring that conversation memory (`dialogue_turns`) is never fragmented across identity changes or devices.
-- **Defense-in-Depth Transport Security**: Outbound messaging verifies recipient authorization asynchronously against `AllowlistPort` before dispatching to the Baileys socket, ensuring no unauthorized communication occurs even if triggered programmatically.
+- **Inbound Access Control Boundary**: Inbound messages are authenticated against `AllowlistPort` at the adapter boundary before any use case execution or LLM token expenditure. Outbound transport focuses strictly on reliable delivery over the active Baileys socket.
 - **Hybrid Envelope Persistence**: Conversation turns are persisted with first-class relational columns for operational queries (`user_query`, `assistant_response`, `tool_names`, `started_at`, `completed_at`, and generated `duration_ms`) while preserving the full fidelity ordered `Message[]` sequence in a `JSONB` payload validated by database-level PostgreSQL `CHECK` constraints.
 - **Stateless Container & Database-Backed Auth**: WhatsApp authentication state and Signal Protocol cryptographic keys are persisted in PostgreSQL (`whatsapp_auth` table with composite primary key `(session_id, key)`), eliminating host filesystem bindings and directory mutex races. High-frequency Signal keys are cached in memory via `makeCacheableSignalKeyStore`, and binary buffer prototypes are preserved across `jsonb` serialization using `BufferJSON`.
 - **Hardened Multi-Stage Containerization**: The runtime environment executes in an isolated Docker container based on `node:22-bookworm-slim` across both builder and runner stages, guaranteeing `glibc` runtime binary compatibility with Baileys' native modules on ARM64 (Oracle Cloud Ampere A1) and x86_64. Production images drop root privileges and run strictly as unprivileged `USER node`.
