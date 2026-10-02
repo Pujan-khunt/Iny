@@ -34,8 +34,8 @@ describe('WhatsAppInboundAdapter', () => {
     } as unknown as BaileysConnectionManager;
     const defaultUserRecord = {
       phoneNumber: '919876543210',
-      jid: '919876543210@s.whatsapp.net',
-      lid: '123456789012345@lid',
+      pnJid: '919876543210@s.whatsapp.net',
+      lidJid: '123456789012345@lid',
       name: 'Authorized User',
       role: 'user' as const,
       isActive: true,
@@ -49,7 +49,7 @@ describe('WhatsAppInboundAdapter', () => {
         }
         return null;
       }),
-      getUser: vi.fn().mockResolvedValue(null),
+      getAllowedUser: vi.fn().mockResolvedValue(null),
     };
     filter = new BaileysMessageFilter();
     parser = new BaileysMessageParser();
@@ -293,8 +293,8 @@ describe('WhatsAppInboundAdapter', () => {
 
       (mockAllowlist.authenticate as any).mockResolvedValue({
         phoneNumber: '919876543210',
-        jid: '919876543210@s.whatsapp.net',
-        lid: '123456789012345@lid',
+        pnJid: '919876543210@s.whatsapp.net',
+        lidJid: '123456789012345@lid',
         name: 'Authorized User',
         role: 'user',
         isActive: true,
@@ -331,8 +331,8 @@ describe('WhatsAppInboundAdapter', () => {
 
       (mockAllowlist.authenticate as any).mockResolvedValue({
         phoneNumber: '919876543210',
-        jid: '919876543210@s.whatsapp.net',
-        lid: '123456789012345@lid',
+        pnJid: '919876543210@s.whatsapp.net',
+        lidJid: '123456789012345@lid',
         name: 'Authorized User',
         role: 'user',
         isActive: true,
@@ -346,7 +346,7 @@ describe('WhatsAppInboundAdapter', () => {
         '123456789012345@lid',
         '123456789012345@lid'
       );
-      expect(mockAllowlist.getUser).not.toHaveBeenCalled();
+      expect(mockAllowlist.getAllowedUser).not.toHaveBeenCalled();
       expect(mockUseCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-lid-bad-alt',
@@ -368,8 +368,8 @@ describe('WhatsAppInboundAdapter', () => {
 
       (mockAllowlist.authenticate as any).mockResolvedValue({
         phoneNumber: '919876543210',
-        jid: '919876543210@s.whatsapp.net',
-        lid: '123456789012345@lid',
+        pnJid: '919876543210@s.whatsapp.net',
+        lidJid: '123456789012345@lid',
         name: 'Authorized User',
         role: 'user',
         isActive: true,
@@ -383,7 +383,7 @@ describe('WhatsAppInboundAdapter', () => {
         '123456789012345@lid',
         '123456789012345@lid'
       );
-      expect(mockAllowlist.getUser).not.toHaveBeenCalled();
+      expect(mockAllowlist.getAllowedUser).not.toHaveBeenCalled();
       expect(mockUseCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-lid-db',
@@ -406,8 +406,8 @@ describe('WhatsAppInboundAdapter', () => {
 
       (mockAllowlist.authenticate as any).mockResolvedValue({
         phoneNumber: '919876543210',
-        jid: '',
-        lid: '123456789012345@lid',
+        pnJid: '',
+        lidJid: '123456789012345@lid',
         name: 'Authorized User',
         role: 'user',
         isActive: true,
@@ -437,8 +437,8 @@ describe('WhatsAppInboundAdapter', () => {
 
       (mockAllowlist.authenticate as any).mockResolvedValue({
         phoneNumber: '919876543210',
-        jid: '919876543210@s.whatsapp.net',
-        lid: null,
+        pnJid: '919876543210@s.whatsapp.net',
+        lidJid: null,
         name: 'Authorized User',
         role: 'user',
         isActive: true,

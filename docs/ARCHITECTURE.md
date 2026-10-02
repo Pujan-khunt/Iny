@@ -14,7 +14,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/core/use-cases/ProcessIncomingMessage.ts`: 4-phase orchestrator separating Conversation Context Retrieval, Reasoning, Delivery, and Persistence phases. Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
   - `src/core/use-cases/AgentLoop.ts`: Pure domain service executing the ReAct (Reasoning + Acting) loop. Manages concurrent tool execution via `Promise.all`, circuit breaker forced synthesis, and malformed tool error injection.
 - **Ports**: Interfaces that define how the core communicates with the outside world without knowing implementation details:
-  - `src/core/ports/AllowlistPort.ts`: Core access control port (`AllowlistPort` with `authenticate`, `getUser`) and administrative user management port (`AllowlistAdminPort` with `seedUsers`, `countActiveUsers`).
+  - `src/core/ports/AllowlistPort.ts`: Core access control port (`AllowlistPort` with `authenticate`, `getAllowedUser`) and administrative user management port (`AllowlistAdminPort` with `seedUsers`, `countActiveUsers`).
   - `src/core/ports/MessageSenderPort.ts`: Outbound messaging transport.
   - `src/core/ports/LLMPort.ts`: Language model reasoning and tool call generation.
   - `src/core/ports/ChatRepositoryPort.ts`: Conversation history persistence.
@@ -29,7 +29,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/inbound/whatsapp/BaileysMessageParser.ts`: Pure translator mapping eligible raw Baileys messages into domain `UserMessage` entities with normalized epoch timestamps and canonical user ID overrides.
 - **Outbound Adapters**: Concrete implementations of our core ports:
   - `src/adapters/outbound/access-control/postgres/PostgresAllowlistAdapter.ts`: Driven adapter implementing `AllowlistPort` and `AllowlistAdminPort` backed by PostgreSQL (`allowed_users` table) with O(1) indexed lookups, soft revocation checks, background asynchronous LID caching, and idempotent seeding.
-  - `src/adapters/outbound/access-control/postgres/schema.ts`: Drizzle ORM schema defining `allowed_users` with canonical `phone_number` PK, unique `jid` and `lid` indexes, and PostgreSQL check constraints.
+  - `src/adapters/outbound/access-control/postgres/schema.ts`: Drizzle ORM schema defining `allowed_users` with canonical `phone_number` PK, unique `pn_jid` and `lid_jid` indexes, and PostgreSQL check constraints.
   - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` to transmit text payloads over the active WhatsApp socket.
   - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution. Accepts `BaileysSessionManagerPort`.
   - `src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts`: Implements `BaileysSessionManagerPort` managing WhatsApp credentials and Signal Protocol keys in PostgreSQL (`whatsapp_auth` table) with in-memory caching (`makeCacheableSignalKeyStore`), `BufferJSON` buffer preservation, batch operations, and atomic purge upon logout.
@@ -145,14 +145,14 @@ sequenceDiagram
             Note over Inbound: Discard (zero token cost)
         else Eligible
             Filter-->>Inbound: true
-            Note over Inbound: Extract checkAddress, pairedLid, isLid
-            Inbound->>Allowlist: authenticate(checkAddress, pairedLid)
+            Note over Inbound: Extract checkAddress, pairedLidJid, isLidUser
+            Inbound->>Allowlist: authenticate(checkAddress, pairedLidJid)
             alt Unauthorized Sender
                 Allowlist-->>Inbound: null
                 Note over Inbound: Discard & log debug
             else Authorized
                 Allowlist-->>Inbound: AllowedUserRecord
-                Note over Inbound: Resolve canonical PNJID (remoteJidAlt or user.jid)
+                Note over Inbound: Resolve canonical PNJID (remoteJidAlt or user.pnJid)
                 Inbound->>Parser: parse(rawMessage, canonicalPnJid)
                 Parser-->>Inbound: userMessage (canonical userId)
 
@@ -221,7 +221,7 @@ sequenceDiagram
 - **Turn-Atomic Conversation Memory**: History persistence is partitioned into complete `DialogueTurn` boundaries. Sliding windows and retention limits prune complete turns, never bisecting an assistant tool call from its corresponding tool response.
 - **Single Composition Root**: In production runtime code, `src/index.ts` is the only place where adapters and the core are stitched together. Dependency injection is wired up here (unit tests and internal adapter factory methods like `PinoLoggerAdapter.child()` may instantiate adapters directly).
 - **Fail-Fast Startup**: `src/config.ts` uses Zod to validate all environment variables at startup. Pure `parseConfig()` is exported for direct testing without dynamic module reloading. Application fails fast if no active allowed users exist.
-- **Persistent Access Control & Canonical Identity Duality**: WhatsApp access authorization is persisted in PostgreSQL (`allowed_users` table with canonical `phone_number` primary key and unique `jid`/`lid` indexes). Modern WhatsApp linked identities (`@lid`) are mapped back to canonical phone numbers (`@s.whatsapp.net`), ensuring that conversation memory (`dialogue_turns`) is never fragmented across identity changes or devices.
+- **Persistent Access Control & Canonical Identity Duality**: WhatsApp access authorization is persisted in PostgreSQL (`allowed_users` table with canonical `phone_number` primary key and unique `pn_jid`/`lid_jid` indexes). Modern WhatsApp linked identities (`@lid`) are mapped back to canonical phone numbers (`@s.whatsapp.net`), ensuring that conversation memory (`dialogue_turns`) is never fragmented across identity changes or devices.
 - **Inbound Access Control Boundary**: Inbound messages are authenticated against `AllowlistPort` at the adapter boundary before any use case execution or LLM token expenditure. Outbound transport focuses strictly on reliable delivery over the active Baileys socket.
 - **Hybrid Envelope Persistence**: Conversation turns are persisted with first-class relational columns for operational queries (`user_query`, `assistant_response`, `tool_names`, `started_at`, `completed_at`, and generated `duration_ms`) while preserving the full fidelity ordered `Message[]` sequence in a `JSONB` payload validated by database-level PostgreSQL `CHECK` constraints.
 - **Stateless Container & Database-Backed Auth**: WhatsApp authentication state and Signal Protocol cryptographic keys are persisted in PostgreSQL (`whatsapp_auth` table with composite primary key `(session_id, key)`), eliminating host filesystem bindings and directory mutex races. High-frequency Signal keys are cached in memory via `makeCacheableSignalKeyStore`, and binary buffer prototypes are preserved across `jsonb` serialization using `BufferJSON`.

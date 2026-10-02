@@ -56,7 +56,7 @@ describe('BaileysMessageSenderAdapter', () => {
       'Transport write failure'
     );
     expect(mockLogger.error).toHaveBeenCalledWith('Failed to send WhatsApp message', sendError, {
-      recipientJid: '919876543210@s.whatsapp.net',
+      recipientPnJid: '919876543210@s.whatsapp.net',
     });
   });
 });

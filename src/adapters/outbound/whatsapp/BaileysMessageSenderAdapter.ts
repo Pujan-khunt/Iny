@@ -21,7 +21,7 @@ export class BaileysMessageSenderAdapter implements MessageSenderPort {
     try {
       await socket.sendMessage(userId, { text: content });
     } catch (err) {
-      this.logger.error('Failed to send WhatsApp message', err, { recipientJid: userId });
+      this.logger.error('Failed to send WhatsApp message', err, { recipientPnJid: userId });
       throw err;
     }
   }

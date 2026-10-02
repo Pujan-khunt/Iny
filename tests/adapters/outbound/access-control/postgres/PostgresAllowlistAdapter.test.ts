@@ -15,8 +15,8 @@ describe('PostgresAllowlistAdapter', () => {
     memDb.public.none(`
       CREATE TABLE allowed_users (
         phone_number TEXT PRIMARY KEY,
-        jid TEXT NOT NULL UNIQUE,
-        lid TEXT UNIQUE,
+        pn_jid TEXT NOT NULL UNIQUE,
+        lid_jid TEXT UNIQUE,
         name TEXT,
         role TEXT NOT NULL DEFAULT 'user',
         is_active BOOLEAN NOT NULL DEFAULT true,
@@ -66,32 +66,32 @@ describe('PostgresAllowlistAdapter', () => {
     ]);
     expect(await adapter.countActiveUsers()).toBe(2);
 
-    const user1 = await adapter.getUser('919876543210');
+    const user1 = await adapter.getAllowedUser('919876543210');
     expect(user1?.name).toBe('Pujan');
     expect(user1?.role).toBe('admin');
 
-    const user2 = await adapter.getUser('15551234567');
+    const user2 = await adapter.getAllowedUser('15551234567');
     expect(user2?.name).toBe('Alice');
     expect(user2?.role).toBe('admin');
 
-    // Cache an LID
-    await (adapter as any).cacheLid('919876543210', '123456789012345@lid');
-    const user = await adapter.getUser('919876543210');
-    expect(user?.lid).toBe('123456789012345@lid');
+    // Cache an LIDJID
+    await (adapter as any).cacheLidJid('919876543210', '123456789012345@lid');
+    const user = await adapter.getAllowedUser('919876543210');
+    expect(user?.lidJid).toBe('123456789012345@lid');
 
     // Simulate database revocation
     memDb.public.none("UPDATE allowed_users SET is_active = false WHERE phone_number = '919876543210'");
 
     // Re-seed: must NOT un-revoke the user
     await adapter.seedUsers([{ phoneNumber: '919876543210', name: 'Pujan' }]);
-    const revokedUser = await adapter.getUser('919876543210');
+    const revokedUser = await adapter.getAllowedUser('919876543210');
     expect(revokedUser?.isActive).toBe(false);
     expect(await adapter.countActiveUsers()).toBe(1);
   });
 
-  it('should authenticate active users by phone number, PNJID, and cached LID', async () => {
+  it('should authenticate active users by phone number, PNJID, and cached LIDJID', async () => {
     await adapter.seedUsers([{ phoneNumber: '919876543210' }]);
-    await (adapter as any).cacheLid('919876543210', '987654321012345@lid');
+    await (adapter as any).cacheLidJid('919876543210', '987654321012345@lid');
 
     expect(await adapter.authenticate('919876543210')).not.toBeNull();
     expect(await adapter.authenticate('919876543210@s.whatsapp.net')).not.toBeNull();
@@ -106,21 +106,21 @@ describe('PostgresAllowlistAdapter', () => {
     expect(await adapter.authenticate('919876543210@s.whatsapp.net')).toBeNull();
   });
 
-  it('should automatically cache incoming LID when previously null', async () => {
+  it('should automatically cache incoming LIDJID when previously null', async () => {
     await adapter.seedUsers([{ phoneNumber: '919876543210' }]);
-    let user = await adapter.getUser('919876543210');
-    expect(user?.lid).toBeNull();
+    let user = await adapter.getAllowedUser('919876543210');
+    expect(user?.lidJid).toBeNull();
     expect(user?.name).toBeNull();
 
-    // Check with pairedLid
+    // Check with pairedLidJid
     const authUser = await adapter.authenticate('919876543210@s.whatsapp.net', '123456789012345@lid');
     expect(authUser).not.toBeNull();
-    expect(authUser?.lid).toBe('123456789012345@lid');
+    expect(authUser?.lidJid).toBe('123456789012345@lid');
 
-    user = await adapter.getUser('919876543210');
-    expect(user?.lid).toBe('123456789012345@lid');
+    user = await adapter.getAllowedUser('919876543210');
+    expect(user?.lidJid).toBe('123456789012345@lid');
 
-    // Subsequent call should recognize the cached LID directly
+    // Subsequent call should recognize the cached LIDJID directly
     expect(await adapter.authenticate('123456789012345@lid')).not.toBeNull();
   });
 
@@ -131,42 +131,42 @@ describe('PostgresAllowlistAdapter', () => {
   });
 
   it('should return null when getting a non-existent user', async () => {
-    const user = await adapter.getUser('9999999999');
+    const user = await adapter.getAllowedUser('9999999999');
     expect(user).toBeNull();
   });
 
-  it('should retrieve user by phone number, PNJID, and LID via partitioned single-index lookup', async () => {
+  it('should retrieve user by phone number, PNJID, and LIDJID via partitioned single-index lookup', async () => {
     await adapter.seedUsers([{ phoneNumber: '919876543210' }]);
-    await (adapter as any).cacheLid('919876543210', '987654321012345@lid');
+    await (adapter as any).cacheLidJid('919876543210', '987654321012345@lid');
 
     // 1. By raw phone number
-    const userByPhone = await adapter.getUser('919876543210');
+    const userByPhone = await adapter.getAllowedUser('919876543210');
     expect(userByPhone).not.toBeNull();
     expect(userByPhone?.phoneNumber).toBe('919876543210');
-    expect(userByPhone?.jid).toBe('919876543210@s.whatsapp.net');
-    expect(userByPhone?.lid).toBe('987654321012345@lid');
+    expect(userByPhone?.pnJid).toBe('919876543210@s.whatsapp.net');
+    expect(userByPhone?.lidJid).toBe('987654321012345@lid');
 
     // 2. By PNJID with device suffix
-    const userByJid = await adapter.getUser('919876543210:1@s.whatsapp.net');
+    const userByJid = await adapter.getAllowedUser('919876543210:1@s.whatsapp.net');
     expect(userByJid).not.toBeNull();
     expect(userByJid?.phoneNumber).toBe('919876543210');
 
     // 3. By formatted phone number
-    const userByFormatted = await adapter.getUser('+91 98765 43210');
+    const userByFormatted = await adapter.getAllowedUser('+91 98765 43210');
     expect(userByFormatted).not.toBeNull();
     expect(userByFormatted?.phoneNumber).toBe('919876543210');
 
     // 4. By LID with device suffix
-    const userByLid = await adapter.getUser('987654321012345:2@lid');
+    const userByLid = await adapter.getAllowedUser('987654321012345:2@lid');
     expect(userByLid).not.toBeNull();
     expect(userByLid?.phoneNumber).toBe('919876543210');
 
     // 5. Invalid addresses, groups, broadcasts return null immediately
-    expect(await adapter.getUser('')).toBeNull();
-    expect(await adapter.getUser('   ')).toBeNull();
-    expect(await adapter.getUser('12345-67890@g.us')).toBeNull();
-    expect(await adapter.getUser('status@broadcast')).toBeNull();
-    expect(await adapter.getUser('random_string')).toBeNull();
+    expect(await adapter.getAllowedUser('')).toBeNull();
+    expect(await adapter.getAllowedUser('   ')).toBeNull();
+    expect(await adapter.getAllowedUser('12345-67890@g.us')).toBeNull();
+    expect(await adapter.getAllowedUser('status@broadcast')).toBeNull();
+    expect(await adapter.getAllowedUser('random_string')).toBeNull();
   });
 
   it('should skip invalid entries during seeding and log warning', async () => {
@@ -179,16 +179,16 @@ describe('PostgresAllowlistAdapter', () => {
     );
   });
 
-  it('should authenticate active users and populate paired LID', async () => {
+  it('should authenticate active users and populate paired LIDJID', async () => {
     await adapter.seedUsers([{ phoneNumber: '919876543210' }]);
     const unauthenticated = await adapter.authenticate('9999999999');
     expect(unauthenticated).toBeNull();
 
-    // Authenticate with paired LID
+    // Authenticate with paired LIDJID
     const user = await adapter.authenticate('919876543210@s.whatsapp.net', '123456789012345@lid');
     expect(user).not.toBeNull();
     expect(user?.phoneNumber).toBe('919876543210');
-    expect(user?.lid).toBe('123456789012345@lid');
+    expect(user?.lidJid).toBe('123456789012345@lid');
 
     // Inactive user returns null
     memDb.public.none("UPDATE allowed_users SET is_active = false WHERE phone_number = '919876543210'");
@@ -196,9 +196,9 @@ describe('PostgresAllowlistAdapter', () => {
     expect(inactive).toBeNull();
   });
 
-  it('should handle error when caching LID', async () => {
+  it('should handle error when caching LIDJID', async () => {
     await adapter.seedUsers([{ phoneNumber: '919876543210' }]);
-    vi.spyOn(adapter as any, 'cacheLid').mockRejectedValueOnce(new Error('DB failure'));
+    vi.spyOn(adapter as any, 'cacheLidJid').mockRejectedValueOnce(new Error('DB failure'));
 
     const authUser = await adapter.authenticate('919876543210@s.whatsapp.net', '123456789012345@lid');
     expect(authUser).not.toBeNull();
@@ -206,7 +206,7 @@ describe('PostgresAllowlistAdapter', () => {
     expect(mockLogger.warn).toHaveBeenCalledWith(
       'Failed to cache user LID',
       expect.any(Error),
-      expect.objectContaining({ phoneNumber: '919876543210', lid: '123456789012345@lid' })
+      expect.objectContaining({ phoneNumber: '919876543210', lidJid: '123456789012345@lid' })
     );
   });
 });

@@ -10,8 +10,8 @@ describe('allowedUsers Drizzle Schema', () => {
 
     const columns = getTableColumns(allowedUsers);
     expect(columns.phoneNumber).toBeDefined();
-    expect(columns.jid).toBeDefined();
-    expect(columns.lid).toBeDefined();
+    expect(columns.pnJid).toBeDefined();
+    expect(columns.lidJid).toBeDefined();
     expect(columns.name).toBeDefined();
     expect(columns.role).toBeDefined();
     expect(columns.isActive).toBeDefined();
@@ -20,8 +20,8 @@ describe('allowedUsers Drizzle Schema', () => {
 
     expect(columns.phoneNumber.primary).toBe(true);
     expect(columns.phoneNumber.notNull).toBe(true);
-    expect(columns.jid.notNull).toBe(true);
-    expect(columns.lid.notNull).toBe(false);
+    expect(columns.pnJid.notNull).toBe(true);
+    expect(columns.lidJid.notNull).toBe(false);
     expect(columns.role.notNull).toBe(true);
     expect(columns.role.default).toBe('user');
     expect(columns.isActive.notNull).toBe(true);
@@ -30,20 +30,20 @@ describe('allowedUsers Drizzle Schema', () => {
     expect(columns.updatedAt.notNull).toBe(true);
   });
 
-  it('should define unique indexes on jid and lid', () => {
+  it('should define unique indexes on pn_jid and lid_jid', () => {
     const config = getTableConfig(allowedUsers);
     const indexNames = config.indexes.map((idx) => idx.config.name);
-    expect(indexNames).toContain('idx_allowed_users_jid');
-    expect(indexNames).toContain('idx_allowed_users_lid');
+    expect(indexNames).toContain('idx_allowed_users_pn_jid');
+    expect(indexNames).toContain('idx_allowed_users_lid_jid');
     expect(indexNames).toContain('idx_allowed_users_is_active');
 
-    const jidIdx = config.indexes.find((idx) => idx.config.name === 'idx_allowed_users_jid');
-    const lidIdx = config.indexes.find((idx) => idx.config.name === 'idx_allowed_users_lid');
+    const pnJidIdx = config.indexes.find((idx) => idx.config.name === 'idx_allowed_users_pn_jid');
+    const lidJidIdx = config.indexes.find((idx) => idx.config.name === 'idx_allowed_users_lid_jid');
     const isActiveIdx = config.indexes.find((idx) => idx.config.name === 'idx_allowed_users_is_active');
 
-    expect(jidIdx?.config.unique).toBe(true);
-    expect(lidIdx?.config.unique).toBe(true);
-    expect(lidIdx?.config.where).toBeDefined();
+    expect(pnJidIdx?.config.unique).toBe(true);
+    expect(lidJidIdx?.config.unique).toBe(true);
+    expect(lidJidIdx?.config.where).toBeDefined();
     expect(isActiveIdx?.config.unique).toBe(false);
   });
 

@@ -16,25 +16,25 @@ export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPo
 
   /**
    * Authenticates the given address and verifies the user is active.
-   * If an incoming paired LID is provided and not yet cached, updates the record in PostgreSQL.
+   * If an incoming paired LIDJID is provided and not yet cached, updates the record in PostgreSQL.
    */
-  async authenticate(address: string, pairedLid?: string | null): Promise<AllowedUserRecord | null> {
-    const user = await this.getUser(address);
+  async authenticate(address: string, pairedLidJid?: string | null): Promise<AllowedUserRecord | null> {
+    const user = await this.getAllowedUser(address);
     if (!user || !user.isActive) {
       return null;
     }
 
-    // Auto-cache paired LID if not yet populated
-    if (!user.lid && pairedLid) {
-      const normalizedLid = WhatsAppJid.normalize(pairedLid);
-      if (normalizedLid && WhatsAppJid.isLidUser(normalizedLid)) {
-        await this.cacheLid(user.phoneNumber, normalizedLid).catch((err) => {
+    // Auto-cache paired LIDJID if not yet populated
+    if (!user.lidJid && pairedLidJid) {
+      const normalizedLidJid = WhatsAppJid.normalize(pairedLidJid);
+      if (normalizedLidJid && WhatsAppJid.isLidUser(normalizedLidJid)) {
+        await this.cacheLidJid(user.phoneNumber, normalizedLidJid).catch((err) => {
           this.logger.warn('Failed to cache user LID', err, {
             phoneNumber: user.phoneNumber,
-            lid: normalizedLid,
+            lidJid: normalizedLidJid,
           });
         });
-        user.lid = normalizedLid;
+        user.lidJid = normalizedLidJid;
       }
     }
 
@@ -42,16 +42,16 @@ export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPo
   }
 
   /**
-   * Retrieves the full record for an allowed user by phone, JID, or LID.
+   * Retrieves the full record for an allowed user by phone, PNJID, or LIDJID.
    *
    * Executes a partitioned single-index lookup against PostgreSQL:
    * 1. Resolves normalized JID once (strips device suffixes).
    * 2. Partitions by identity type:
-   *    - LID user: searches `lid` unique index directly.
+   *    - LID user: searches `lid_jid` unique index directly.
    *    - PN user: extracts digits from normalized PNJID and searches `phone_number` Primary Key directly.
    * 3. Invalid inputs, groups, and broadcasts return null immediately without DB hits.
    */
-  async getUser(address: string): Promise<AllowedUserRecord | null> {
+  async getAllowedUser(address: string): Promise<AllowedUserRecord | null> {
     const normalized = WhatsAppJid.normalize(address);
     if (!normalized) {
       return null;
@@ -59,7 +59,7 @@ export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPo
 
     let query;
     if (WhatsAppJid.isLidUser(normalized)) {
-      query = eq(allowedUsers.lid, normalized);
+      query = eq(allowedUsers.lidJid, normalized);
     } else if (WhatsAppJid.isPnUser(normalized)) {
       const rawDigits = normalized.replace('@s.whatsapp.net', '');
       query = eq(allowedUsers.phoneNumber, rawDigits);
@@ -76,8 +76,8 @@ export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPo
     const row = rows[0];
     return {
       phoneNumber: row.phoneNumber,
-      jid: row.jid,
-      lid: row.lid,
+      pnJid: row.pnJid,
+      lidJid: row.lidJid,
       name: row.name,
       role: row.role as 'admin' | 'user',
       isActive: row.isActive,
@@ -88,10 +88,10 @@ export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPo
 
   async seedUsers(entries: SeedUserEntry[]): Promise<void> {
     for (const entry of entries) {
-      const jid = WhatsAppJid.normalize(entry.phoneNumber);
+      const pnJid = WhatsAppJid.normalize(entry.phoneNumber);
       const phoneNumber = WhatsAppJid.toPhoneNumber(entry.phoneNumber);
 
-      if (!jid || !phoneNumber) {
+      if (!pnJid || !phoneNumber) {
         this.logger.warn('Skipping invalid allowlist entry during seeding', undefined, { entry });
         continue;
       }
@@ -100,7 +100,7 @@ export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPo
         .insert(allowedUsers)
         .values({
           phoneNumber,
-          jid,
+          pnJid,
           name: entry.name?.trim() || null,
           role: 'admin',
           isActive: true,
@@ -118,11 +118,11 @@ export class PostgresAllowlistAdapter implements AllowlistPort, AllowlistAdminPo
     return result[0]?.count ?? 0;
   }
 
-  private async cacheLid(phoneNumber: string, lid: string): Promise<void> {
+  private async cacheLidJid(phoneNumber: string, lidJid: string): Promise<void> {
     await this.db
       .update(allowedUsers)
       .set({
-        lid,
+        lidJid,
         updatedAt: new Date(),
       })
       .where(eq(allowedUsers.phoneNumber, phoneNumber));
