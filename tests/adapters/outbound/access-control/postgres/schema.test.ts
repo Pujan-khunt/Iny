@@ -43,6 +43,7 @@ describe('allowedUsers Drizzle Schema', () => {
 
     expect(jidIdx?.config.unique).toBe(true);
     expect(lidIdx?.config.unique).toBe(true);
+    expect(lidIdx?.config.where).toBeDefined();
     expect(isActiveIdx?.config.unique).toBe(false);
   });
 

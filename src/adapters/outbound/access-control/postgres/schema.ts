@@ -15,7 +15,9 @@ export const allowedUsers = pgTable(
   },
   (table) => [
     uniqueIndex('idx_allowed_users_jid').on(table.jid),
-    uniqueIndex('idx_allowed_users_lid').on(table.lid),
+    uniqueIndex('idx_allowed_users_lid')
+      .on(table.lid)
+      .where(sql`${table.lid} IS NOT NULL`),
     index('idx_allowed_users_is_active').on(table.isActive),
     check('chk_allowed_users_phone_digits', sql`${table.phoneNumber} ~ '^[0-9]+$'`),
     check('chk_allowed_users_role', sql`${table.role} IN ('admin', 'user')`),
