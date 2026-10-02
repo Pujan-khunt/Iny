@@ -91,7 +91,14 @@ const inboundAdapter = new WhatsAppInboundAdapter(
 );
 
 // Graceful Shutdown
-async function shutdown(signal: string) {
+let isShuttingDown = false;
+
+async function shutdown(signal: string, exitCode = 0) {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+
   logger.info(`Received ${signal}. Closing connections gracefully...`);
   try {
     const socket = connectionManager.getSocket();
@@ -107,11 +114,22 @@ async function shutdown(signal: string) {
   } catch (err) {
     logger.error('Error closing database connection pool', err);
   }
-  process.exit(0);
+  process.exit(exitCode);
 }
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT', 0));
+process.on('SIGTERM', () => shutdown('SIGTERM', 0));
+
+process.on('uncaughtException', (err) => {
+  logger.fatal('Uncaught exception', err);
+  shutdown('uncaughtException', 1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  logger.fatal('Unhandled promise rejection', error);
+  shutdown('unhandledRejection', 1);
+});
 
 // Startup Sequence
 async function start() {
@@ -128,7 +146,7 @@ async function start() {
     logger.fatal(
       'No active allowed users found in PostgreSQL and no ALLOWED_USERS provided in .env. Iny cannot start.'
     );
-    await sqlClient.end();
+    await sqlClient.end({ timeout: 5 });
     process.exit(1);
   }
   logger.info('Access control initialized', { activeUsers: activeUserCount });
