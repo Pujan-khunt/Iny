@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { parseConfig } from '../src/config';
+import { parseConfig, loadConfig } from '../src/config';
 
 describe('Config', () => {
   it('should apply valid default settings when only required variables are provided', () => {
@@ -128,5 +128,56 @@ describe('Config', () => {
     ).toThrow('Invalid environment variables');
 
     errorSpy.mockRestore();
+  });
+
+  it('should fallback to defaults when optional or defaulted variables are empty strings or whitespace', () => {
+    const config = parseConfig({
+      DEEPSEEK_API_KEY: 'test-key',
+      SYSTEM_PROMPT: 'test-prompt',
+      BOT_PHONE_NUMBER: '15551234567',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+      ALLOWED_USERS: '',
+      DEEPSEEK_BASE_URL: '   ',
+      DEEPSEEK_MODEL: '',
+      LOG_LEVEL: '',
+      DB_MAX_CONNECTIONS: '',
+      MAX_TOOL_ITERATIONS: '  ',
+      MAX_HISTORY_TURNS: '',
+    });
+
+    expect(config.DEEPSEEK_BASE_URL).toBe('https://api.deepseek.com');
+    expect(config.DEEPSEEK_MODEL).toBe('deepseek-flash');
+    expect(config.LOG_LEVEL).toBe('info');
+    expect(config.DB_MAX_CONNECTIONS).toBe(10);
+    expect(config.MAX_TOOL_ITERATIONS).toBe(5);
+    expect(config.MAX_HISTORY_TURNS).toBe(10);
+    expect(config.ALLOWED_USERS).toEqual([]);
+  });
+
+  it('should reject empty strings for required variables without defaults', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() =>
+      parseConfig({
+        DEEPSEEK_API_KEY: '   ',
+        SYSTEM_PROMPT: 'test-prompt',
+        BOT_PHONE_NUMBER: '15551234567',
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+      })
+    ).toThrow('Invalid environment variables');
+
+    errorSpy.mockRestore();
+  });
+
+  it('should load and parse config using loadConfig()', () => {
+    const loaded = loadConfig({
+      DEEPSEEK_API_KEY: 'test-key',
+      SYSTEM_PROMPT: 'test-prompt',
+      BOT_PHONE_NUMBER: '15551234567',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+    });
+
+    expect(loaded.DEEPSEEK_API_KEY).toBe('test-key');
+    expect(loaded.DEEPSEEK_MODEL).toBe('deepseek-flash');
   });
 });

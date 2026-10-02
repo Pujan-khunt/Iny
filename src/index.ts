@@ -2,7 +2,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ProcessIncomingMessage } from './core/use-cases/ProcessIncomingMessage';
 import { AgentLoop } from './core/use-cases/AgentLoop';
-import { config } from './config';
+import { loadConfig } from './config';
 import { DeepseekAdapter } from './adapters/outbound/llm/DeepseekAdapter';
 import { InMemoryToolRegistry } from './adapters/outbound/tool-registry/InMemoryToolRegistry';
 import { CalculatorTool } from './tools/CalculatorTool';
@@ -20,6 +20,9 @@ import { BaileysMessageSenderAdapter } from './adapters/outbound/whatsapp/Bailey
 import { BaileysMessageFilter } from './adapters/inbound/whatsapp/BaileysMessageFilter';
 import { BaileysMessageParser } from './adapters/inbound/whatsapp/BaileysMessageParser';
 import { WhatsAppInboundAdapter } from './adapters/inbound/whatsapp/WhatsAppInboundAdapter';
+
+// Load & validate application configuration from environment
+const config = loadConfig();
 
 // 1. Logger
 const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
