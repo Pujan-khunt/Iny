@@ -1,7 +1,6 @@
 import { Boom } from '@hapi/boom';
 import makeWASocket, {
   DisconnectReason,
-  proto,
   WAMessage,
   WASocket,
 } from '@whiskeysockets/baileys';
