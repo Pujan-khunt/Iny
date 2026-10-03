@@ -12,7 +12,7 @@ import * as whatsappSchema from './adapters/outbound/whatsapp/postgres/schema';
 import * as accessControlSchema from './adapters/outbound/access-control/postgres/schema';
 import { PostgresChatRepository } from './adapters/outbound/chat-repository/postgres/PostgresChatRepository';
 import { runDatabaseMigrations } from './adapters/outbound/chat-repository/postgres/migrator';
-import { PostgresAllowlistAdapter } from './adapters/outbound/access-control/postgres/PostgresAllowlistAdapter';
+import { PostgresAccessControlAdapter } from './adapters/outbound/access-control/postgres/PostgresAccessControlAdapter';
 import { PostgresBaileysSessionManager } from './adapters/outbound/whatsapp/PostgresBaileysSessionManager';
 import { BaileysPairingManager } from './adapters/outbound/whatsapp/BaileysPairingManager';
 import { BaileysConnectionManager } from './adapters/outbound/whatsapp/BaileysConnectionManager';
@@ -44,8 +44,8 @@ const db = drizzle(sqlClient, {
 
 const chatRepository = new PostgresChatRepository(db, logger);
 
-// 4. Access control allowlist
-const allowlist = new PostgresAllowlistAdapter(db, logger.child({ module: 'allowlist' }));
+// 4. Access control
+const accessControl = new PostgresAccessControlAdapter(db, logger.child({ module: 'access-control' }));
 
 // 5. LLM Adapter
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
@@ -84,7 +84,7 @@ const parser = new BaileysMessageParser();
 const inboundAdapter = new WhatsAppInboundAdapter(
   useCase,
   connectionManager,
-  allowlist,
+  accessControl,
   filter,
   parser,
   logger
@@ -141,14 +141,14 @@ async function start() {
       phoneNumber,
       name: config.ALLOWED_USER_NAMES[index] || null,
     }));
-    await allowlist.seedUsers(seedEntries);
+    await accessControl.seedUsers(seedEntries);
   }
 
   // Fail-fast safety check: ensure at least one active user exists
-  const activeUserCount = await allowlist.countActiveUsers();
+  const activeUserCount = await accessControl.countActiveUsers();
   if (activeUserCount === 0) {
     logger.fatal(
-      'No active allowed users found in PostgreSQL and no ALLOWED_USERS provided in .env. Iny cannot start.'
+      'No active authorized users found in PostgreSQL and no ALLOWED_USERS provided in .env. Iny cannot start.'
     );
     await sqlClient.end({ timeout: 5 });
     process.exit(1);

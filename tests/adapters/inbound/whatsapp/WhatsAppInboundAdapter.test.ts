@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WAMessage } from '@whiskeysockets/baileys';
 import { WhatsAppInboundAdapter } from '../../../../src/adapters/inbound/whatsapp/WhatsAppInboundAdapter';
-import { AllowlistPort } from '../../../../src/core/ports/AllowlistPort';
+import { AccessControlPort, UserRecord } from '../../../../src/core/ports/AccessControlPort';
 import { BaileysMessageFilter } from '../../../../src/adapters/inbound/whatsapp/BaileysMessageFilter';
 import { BaileysMessageParser } from '../../../../src/adapters/inbound/whatsapp/BaileysMessageParser';
 import { ProcessIncomingMessage } from '../../../../src/core/use-cases/ProcessIncomingMessage';
@@ -12,7 +12,7 @@ describe('WhatsAppInboundAdapter', () => {
   let mockLogger: LoggerPort;
   let mockUseCase: ProcessIncomingMessage;
   let mockConnManager: BaileysConnectionManager;
-  let mockAllowlist: AllowlistPort;
+  let mockAccessControl: AccessControlPort;
   let filter: BaileysMessageFilter;
   let parser: BaileysMessageParser;
   let adapter: WhatsAppInboundAdapter;
@@ -32,31 +32,31 @@ describe('WhatsAppInboundAdapter', () => {
     mockConnManager = {
       subscribe: vi.fn(),
     } as unknown as BaileysConnectionManager;
-    const defaultUserRecord = {
+    const defaultUserRecord: UserRecord = {
       phoneNumber: '919876543210',
       pnJid: '919876543210@s.whatsapp.net',
       lidJid: '123456789012345@lid',
       name: 'Authorized User',
-      role: 'user' as const,
-      isActive: true,
+      role: 'user',
+      status: 'active',
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    mockAllowlist = {
+    mockAccessControl = {
       authenticate: vi.fn().mockImplementation(async (address: string) => {
         if (address.includes('919876543210') || address.includes('123456789012345')) {
           return defaultUserRecord;
         }
         return null;
       }),
-      getAllowedUser: vi.fn().mockResolvedValue(null),
+      getUser: vi.fn().mockResolvedValue(null),
     };
     filter = new BaileysMessageFilter();
     parser = new BaileysMessageParser();
     adapter = new WhatsAppInboundAdapter(
       mockUseCase,
       mockConnManager,
-      mockAllowlist,
+      mockAccessControl,
       filter,
       parser,
       mockLogger
@@ -209,7 +209,7 @@ describe('WhatsAppInboundAdapter', () => {
       const badAdapter = new WhatsAppInboundAdapter(
         mockUseCase,
         mockConnManager,
-        mockAllowlist,
+        mockAccessControl,
         filter,
         badParser,
         mockLogger
@@ -279,7 +279,7 @@ describe('WhatsAppInboundAdapter', () => {
       );
     });
 
-    it('should resolve canonical PNJID when message comes with @lid and remoteJidAlt @s.whatsapp.net', async () => {
+    it('should resolve sender routing and user.pnJid when message comes with @lid and remoteJidAlt @s.whatsapp.net', async () => {
       const lidMessage: WAMessage = {
         key: {
           remoteJid: '123456789012345@lid',
@@ -291,20 +291,26 @@ describe('WhatsAppInboundAdapter', () => {
         messageTimestamp: 1727223000,
       };
 
-      (mockAllowlist.authenticate as any).mockResolvedValue({
+      (mockAccessControl.authenticate as any).mockResolvedValue({
         phoneNumber: '919876543210',
         pnJid: '919876543210@s.whatsapp.net',
         lidJid: '123456789012345@lid',
         name: 'Authorized User',
         role: 'user',
-        isActive: true,
+        status: 'active',
         createdAt: new Date(),
         updatedAt: new Date(),
       });
 
       await adapter.handleMessages([lidMessage]);
 
-      expect(mockAllowlist.authenticate).toHaveBeenCalledWith(
+      expect(mockLogger.debug).toHaveBeenCalledWith('Resolved sender routing', {
+        remoteJid: '123456789012345@lid',
+        remoteJidAlt: '919876543210@s.whatsapp.net',
+        lookupAddress: '919876543210@s.whatsapp.net',
+        companionLidJid: '123456789012345@lid',
+      });
+      expect(mockAccessControl.authenticate).toHaveBeenCalledWith(
         '919876543210@s.whatsapp.net',
         '123456789012345@lid'
       );
@@ -317,7 +323,7 @@ describe('WhatsAppInboundAdapter', () => {
       );
     });
 
-    it('should ignore non-PN remoteJidAlt and query allowlist with remoteJid', async () => {
+    it('should ignore non-PN remoteJidAlt and query access control with remoteJid and null companion', async () => {
       const lidMessageWithMalformedAlt: WAMessage = {
         key: {
           remoteJid: '123456789012345@lid',
@@ -329,24 +335,23 @@ describe('WhatsAppInboundAdapter', () => {
         messageTimestamp: 1727223000,
       };
 
-      (mockAllowlist.authenticate as any).mockResolvedValue({
+      (mockAccessControl.authenticate as any).mockResolvedValue({
         phoneNumber: '919876543210',
         pnJid: '919876543210@s.whatsapp.net',
         lidJid: '123456789012345@lid',
         name: 'Authorized User',
         role: 'user',
-        isActive: true,
+        status: 'active',
         createdAt: new Date(),
         updatedAt: new Date(),
       });
 
       await adapter.handleMessages([lidMessageWithMalformedAlt]);
 
-      expect(mockAllowlist.authenticate).toHaveBeenCalledWith(
+      expect(mockAccessControl.authenticate).toHaveBeenCalledWith(
         '123456789012345@lid',
-        '123456789012345@lid'
+        null
       );
-      expect(mockAllowlist.getAllowedUser).not.toHaveBeenCalled();
       expect(mockUseCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-lid-bad-alt',
@@ -355,7 +360,7 @@ describe('WhatsAppInboundAdapter', () => {
       );
     });
 
-    it('should resolve canonical PNJID via authenticated user record without double DB query when message comes with @lid and no remoteJidAlt', async () => {
+    it('should authenticate user and use user.pnJid when message comes with @lid and no remoteJidAlt', async () => {
       const lidMessage: WAMessage = {
         key: {
           remoteJid: '123456789012345@lid',
@@ -366,24 +371,23 @@ describe('WhatsAppInboundAdapter', () => {
         messageTimestamp: 1727223000,
       };
 
-      (mockAllowlist.authenticate as any).mockResolvedValue({
+      (mockAccessControl.authenticate as any).mockResolvedValue({
         phoneNumber: '919876543210',
         pnJid: '919876543210@s.whatsapp.net',
         lidJid: '123456789012345@lid',
         name: 'Authorized User',
         role: 'user',
-        isActive: true,
+        status: 'active',
         createdAt: new Date(),
         updatedAt: new Date(),
       });
 
       await adapter.handleMessages([lidMessage]);
 
-      expect(mockAllowlist.authenticate).toHaveBeenCalledWith(
+      expect(mockAccessControl.authenticate).toHaveBeenCalledWith(
         '123456789012345@lid',
-        '123456789012345@lid'
+        null
       );
-      expect(mockAllowlist.getAllowedUser).not.toHaveBeenCalled();
       expect(mockUseCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-lid-db',
@@ -393,38 +397,7 @@ describe('WhatsAppInboundAdapter', () => {
       );
     });
 
-    it('should drop message and log warning when canonical PNJID cannot be resolved from authenticated user', async () => {
-      const unresolvableLidMessage: WAMessage = {
-        key: {
-          remoteJid: '123456789012345@lid',
-          fromMe: false,
-          id: 'msg-unresolvable',
-        },
-        message: { conversation: 'Hello from unmapped LID' },
-        messageTimestamp: 1727223000,
-      };
-
-      (mockAllowlist.authenticate as any).mockResolvedValue({
-        phoneNumber: '919876543210',
-        pnJid: '',
-        lidJid: '123456789012345@lid',
-        name: 'Authorized User',
-        role: 'user',
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      await adapter.handleMessages([unresolvableLidMessage]);
-
-      expect(mockUseCase.execute).not.toHaveBeenCalled();
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Dropping message: unable to resolve canonical phone identity',
-        { remoteJid: '123456789012345@lid', remoteJidAlt: undefined }
-      );
-    });
-
-    it('should defensively normalize remoteJid for canonical PNJID when message arrives from phone number JID', async () => {
+    it('should route phone number JID and use user.pnJid', async () => {
       const pnMessage: WAMessage = {
         key: {
           remoteJid: '919876543210:2@s.whatsapp.net',
@@ -435,19 +408,23 @@ describe('WhatsAppInboundAdapter', () => {
         messageTimestamp: 1727223000,
       };
 
-      (mockAllowlist.authenticate as any).mockResolvedValue({
+      (mockAccessControl.authenticate as any).mockResolvedValue({
         phoneNumber: '919876543210',
         pnJid: '919876543210@s.whatsapp.net',
         lidJid: null,
         name: 'Authorized User',
         role: 'user',
-        isActive: true,
+        status: 'active',
         createdAt: new Date(),
         updatedAt: new Date(),
       });
 
       await adapter.handleMessages([pnMessage]);
 
+      expect(mockAccessControl.authenticate).toHaveBeenCalledWith(
+        '919876543210:2@s.whatsapp.net',
+        null
+      );
       expect(mockUseCase.execute).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'msg-pn-device',

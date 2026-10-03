@@ -1,7 +1,7 @@
 import { WAMessage } from '@whiskeysockets/baileys';
 import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingMessage';
 import { BaileysConnectionManager } from '../../outbound/whatsapp/BaileysConnectionManager';
-import { AllowlistPort, AllowedUserRecord } from '../../../core/ports/AllowlistPort';
+import { AccessControlPort } from '../../../core/ports/AccessControlPort';
 import { BaileysMessageFilter } from './BaileysMessageFilter';
 import { BaileysMessageParser } from './BaileysMessageParser';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
@@ -10,14 +10,14 @@ import { WhatsAppJid } from '../../common/whatsapp/WhatsAppJid';
 
 /**
  * Driving adapter that listens for incoming WhatsApp messages from Baileys,
- * enforces eligibility policy and allowlist authorization, parses payloads,
+ * enforces eligibility policy and access control authorization, parses payloads,
  * and triggers ProcessIncomingMessage.
  */
 export class WhatsAppInboundAdapter {
   constructor(
     private processIncomingMessage: ProcessIncomingMessage,
     private connectionManager: BaileysConnectionManager,
-    private allowlist: AllowlistPort,
+    private accessControl: AccessControlPort,
     private filter: BaileysMessageFilter,
     private parser: BaileysMessageParser,
     private logger: LoggerPort
@@ -50,36 +50,32 @@ export class WhatsAppInboundAdapter {
       const remoteJid = raw.key.remoteJid;
       const remoteJidAlt = raw.key.remoteJidAlt;
 
-      // Extract paired LIDJID and primary candidate address for access control
-      const { checkAddress, pairedLidJid, isLidUser } = this.resolveSenderAddresses(remoteJid, remoteJidAlt);
+      // Extract lookup address and companion LIDJID for access control routing
+      const { lookupAddress, companionLidJid } = this.resolveSenderRouting(remoteJid, remoteJidAlt);
+      this.logger.debug('Resolved sender routing', {
+        remoteJid,
+        remoteJidAlt,
+        lookupAddress,
+        companionLidJid,
+      });
 
-      // Stage 2: Access control allowlist & identity retrieval
-      const user = await this.allowlist.authenticate(checkAddress, pairedLidJid);
+      // Stage 2: Access control authorization & identity retrieval
+      const user = await this.accessControl.authenticate(lookupAddress, companionLidJid);
       if (!user) {
         this.logger.debug('Ignored message from unauthorized sender', { remoteJid, remoteJidAlt });
         continue;
       }
 
-      // Stage 3: Resolve canonical PNJID for unified conversation history
-      const canonicalPnJid = this.resolveCanonicalPnJid(remoteJid, remoteJidAlt, isLidUser, user);
-      if (!canonicalPnJid) {
-        this.logger.warn('Dropping message: unable to resolve canonical phone identity', {
-          remoteJid,
-          remoteJidAlt,
-        });
-        continue;
-      }
-
-      // Stage 4: Pure transformation
+      // Stage 3: Pure transformation (user.pnJid is verified canonical phone identity)
       let userMessage: UserMessage;
       try {
-        userMessage = this.parser.parse(raw, canonicalPnJid);
+        userMessage = this.parser.parse(raw, user.pnJid);
       } catch (parseError) {
         this.logger.error('Failed to parse eligible WhatsApp message', parseError);
         continue;
       }
 
-      // Stage 5: Core use-case execution
+      // Stage 4: Core use-case execution
       try {
         await this.processIncomingMessage.execute(userMessage);
       } catch (err) {
@@ -91,81 +87,31 @@ export class WhatsAppInboundAdapter {
   }
 
   /**
-   * Resolves the candidate database query address and optional paired LIDJID from incoming stanza keys.
+   * Resolves incoming stanza keys into the database query address and optional companion LIDJID.
    *
-   * WhatsApp employs dual identity representations depending on client version and device topology:
-   * 1. Modern Web / Multi-Device:
-   *    - `remoteJid` is a Linked Identity (`<lid>@lid`).
-   *    - `remoteJidAlt` is the companion phone number (`<phone>@s.whatsapp.net`).
-   *    -> Priority: Query by `remoteJidAlt` (phone number) so newly seeded users whose `lid_jid`
-   *       is still NULL in PostgreSQL match immediately on their first interaction.
-   *       Cache `remoteJid` (`<lid>@lid`) as `pairedLidJid`.
+   * WhatsApp dual identity handling:
+   * 1. Linked Identity (LID) stanza:
+   *    - First interaction (accompanied): `remoteJid` is `<lid>@lid`, `remoteJidAlt` is `<phone>@s.whatsapp.net`.
+   *      Query by phone number to match newly seeded users whose LID is not yet known. Cache the new LID.
+   *    - Subsequent interaction: `remoteJid` is `<lid>@lid`, `remoteJidAlt` is undefined.
+   *      Query directly by already-cached LID. Nothing new to cache.
    *
-   * 2. Traditional Mobile App:
-   *    - `remoteJid` is the phone number (`<phone>@s.whatsapp.net`).
-   *    - `remoteJidAlt` may contain the user's LID (`<lid>@lid`) if negotiated.
-   *    -> Query by `remoteJid` (phone number). Cache `remoteJidAlt` if present.
-   *
-   * 3. LID-Only Stanzas (Follow-up Handshakes):
-   *    - `remoteJid` is `<lid>@lid`.
-   *    - `remoteJidAlt` is omitted/undefined.
-   *    -> Query by `remoteJid` (matches already-cached LIDJID in PostgreSQL).
+   * 2. Phone Number (PN) stanza:
+   *    - `remoteJid` is `<phone>@s.whatsapp.net`. Query by phone number.
+   *    - Cache companion LID if present in `remoteJidAlt`.
    */
-  private resolveSenderAddresses(
+  private resolveSenderRouting(
     remoteJid: string,
     remoteJidAlt?: string
-  ): { checkAddress: string; pairedLidJid: string | null; isLidUser: boolean } {
-    const isLidUser = WhatsAppJid.isLidUser(remoteJid);
-    const isAltPn = Boolean(remoteJidAlt && WhatsAppJid.isPnUser(remoteJidAlt));
-    const isAltLid = Boolean(remoteJidAlt && WhatsAppJid.isLidUser(remoteJidAlt));
-
-    // When primary is an LID and WhatsApp provided the phone number in remoteJidAlt,
-    // prefer the phone number for checking the allowlist to match newly seeded users.
-    const checkAddress = isLidUser && isAltPn ? remoteJidAlt! : remoteJid;
-
-    // Extract whichever field contains the LID address for background caching.
-    const pairedLidJid = isLidUser ? remoteJid : (isAltLid ? remoteJidAlt! : null);
-
-    return { checkAddress, pairedLidJid, isLidUser };
-  }
-
-  /**
-   * Resolves an incoming message sender identity to a canonical Phone Number JID (@s.whatsapp.net).
-   *
-   * Prevents split-brain conversation history in `dialogue_turns`. If a user interacts via WhatsApp Web
-   * or a linked device, modern WhatsApp sends an `@lid` stanza. This method maps the ephemeral or device
-   * LID back to the user's persistent phone number identity using either:
-   * 1. The companion stanza attribute `remoteJidAlt` (fast in-memory path).
-   * 2. The authenticated user record `user.pnJid` (already fetched during Stage 2 authentication).
-   *
-   * If the sender identity cannot be resolved to a canonical phone number, returns `null` so the caller
-   * can safely drop the message rather than fragmenting conversation history under an unmapped LID.
-   */
-  private resolveCanonicalPnJid(
-    remoteJid: string,
-    remoteJidAlt: string | undefined,
-    isLidUser: boolean,
-    user: AllowedUserRecord
-  ): string | null {
-    // 1. Traditional phone number stanza: normalize to strip device suffixes (:1, :2)
-    if (!isLidUser) {
-      return WhatsAppJid.normalize(remoteJid);
-    }
-
-    // 2. LID stanza with companion phone number: normalize stanza alt attribute
-    if (remoteJidAlt && WhatsAppJid.isPnUser(remoteJidAlt)) {
-      const normalizedAlt = WhatsAppJid.normalize(remoteJidAlt);
-      if (normalizedAlt) {
-        return normalizedAlt;
+  ): { lookupAddress: string; companionLidJid: string | null } {
+    if (WhatsAppJid.isLidUser(remoteJid)) {
+      if (remoteJidAlt && WhatsAppJid.isPnUser(remoteJidAlt)) {
+        return { lookupAddress: remoteJidAlt, companionLidJid: remoteJid };
       }
+      return { lookupAddress: remoteJid, companionLidJid: null };
     }
 
-    // 3. LID stanza without companion phone number: return canonical JID from authenticated user record
-    if (user.pnJid) {
-      return user.pnJid;
-    }
-
-    // Unresolvable identity: cannot safely map to a canonical phone number
-    return null;
+    const companionLidJid = remoteJidAlt && WhatsAppJid.isLidUser(remoteJidAlt) ? remoteJidAlt : null;
+    return { lookupAddress: remoteJid, companionLidJid };
   }
 }
