@@ -3,9 +3,9 @@ import {
   UserMessage,
   AssistantTextMessage,
   AssistantToolCallMessage,
-  ToolMessage,
+  ToolResultMessage,
 } from '../entities/Message';
-import { ToolCall } from '../entities/ToolCall';
+import { ToolCallRequest } from '../entities/ToolCallRequest';
 import { LLMPort } from '../ports/LLMPort';
 import { ToolRegistryPort, ToolDefinition } from '../ports/ToolRegistryPort';
 import { LoggerPort } from '../ports/LoggerPort';
@@ -94,11 +94,11 @@ export class AgentLoop {
 
   private async executeToolsConcurrently(
     userId: string,
-    toolCalls: ToolCall[],
+    toolCalls: ToolCallRequest[],
     log: LoggerPort
-  ): Promise<ToolMessage[]> {
+  ): Promise<ToolResultMessage[]> {
     return Promise.all(
-      toolCalls.map(async (tc): Promise<ToolMessage> => {
+      toolCalls.map(async (tc): Promise<ToolResultMessage> => {
         if (tc.type === 'malformed') {
           log.warn('Tool call arguments were malformed', undefined, {
             toolName: tc.name,

@@ -23,7 +23,7 @@ export abstract class BaseTool<TSchema extends z.ZodType> implements Tool {
    *
    * Note on error handling: When argument validation fails, this method returns
    * a formatted error string instead of throwing an exception. This string is
-   * sent back as the tool call execution response in a ToolMessage. The LLM
+   * sent back as the tool call execution response in a ToolResultMessage. The LLM
    * automatically inspects this feedback to determine whether the execution
    * succeeded or failed due to invalid arguments from its side, allowing it to
    * self-correct in the next reasoning iteration.

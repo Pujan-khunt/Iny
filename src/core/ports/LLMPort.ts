@@ -1,6 +1,6 @@
 import { ToolDefinition } from './ToolRegistryPort';
 import { Message } from '../entities/Message';
-import { ToolCall } from '../entities/ToolCall';
+import { ToolCallRequest } from '../entities/ToolCallRequest';
 
 /**
  * Base interface for LLM decisions containing optional chain-of-thought reasoning.
@@ -15,7 +15,7 @@ export interface BaseLLMDecision {
  */
 export interface ToolCallDecision extends BaseLLMDecision {
   type: 'tool_calls';
-  toolCalls: ToolCall[];
+  toolCalls: ToolCallRequest[];
 }
 
 /**

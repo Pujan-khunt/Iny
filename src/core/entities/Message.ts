@@ -1,4 +1,4 @@
-import { ToolCall } from './ToolCall';
+import { ToolCallRequest } from './ToolCallRequest';
 
 /**
  * Common identity fields shared by all message types in the system.
@@ -33,13 +33,13 @@ export interface AssistantTextMessage extends BaseMessage {
 
 /**
  * An intermediate assistant response requesting one or more tool calls.
- * Never delivered to the user. Must be followed by ToolMessage results.
+ * Never delivered to the user. Must be followed by ToolResultMessage results.
  */
 export interface AssistantToolCallMessage extends BaseMessage {
   role: 'assistant';
   content?: string;
   thought?: string;
-  toolCalls: ToolCall[];
+  toolCalls: ToolCallRequest[];
 }
 
 export type AssistantMessage = AssistantTextMessage | AssistantToolCallMessage;
@@ -47,9 +47,9 @@ export type AssistantMessage = AssistantTextMessage | AssistantToolCallMessage;
 /**
  * The output of a tool execution fed back into the model context.
  */
-export interface ToolMessage extends BaseMessage {
+export interface ToolResultMessage extends BaseMessage {
   role: 'tool';
-  /** Links this execution result to the originating ToolCall id. */
+  /** Links this execution result to the originating ToolCallRequest id. */
   toolCallId: string;
   /** The name of the tool that was executed. */
   name: string;
@@ -61,4 +61,4 @@ export interface ToolMessage extends BaseMessage {
  * Top-level discriminated union for all conversation messages.
  * Discriminant is the "role" property ('user' | 'assistant' | 'tool').
  */
-export type Message = UserMessage | AssistantMessage | ToolMessage;
+export type Message = UserMessage | AssistantMessage | ToolResultMessage;

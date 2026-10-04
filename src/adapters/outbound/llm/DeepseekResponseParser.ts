@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { LLMResponse } from '../../../core/ports/LLMPort';
-import { ToolCall } from '../../../core/entities/ToolCall';
+import { ToolCallRequest } from '../../../core/entities/ToolCallRequest';
 import { LLMResponseError } from '../../../core/errors/LLMErrors';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
 
@@ -66,14 +66,14 @@ export function parseOpenAIResponse(
 }
 
 /**
- * Parses an array of OpenAI function tool calls into domain ToolCall entities.
+ * Parses an array of OpenAI function tool calls into domain ToolCallRequest entities.
  * Tool arguments that fail JSON deserialization or are not JSON objects are mapped
- * to MalformedToolCall instead of throwing.
+ * to MalformedToolCallRequest instead of throwing.
  *
  * @param functionCalls Function calls returned from OpenAI API.
- * @returns Array of parsed ToolCall entities (ValidToolCall or MalformedToolCall).
+ * @returns Array of parsed ToolCallRequest entities (ValidToolCallRequest or MalformedToolCallRequest).
  */
-function parseToolCalls(functionCalls: FunctionToolCall[]): ToolCall[] {
+function parseToolCalls(functionCalls: FunctionToolCall[]): ToolCallRequest[] {
   return functionCalls.map((tc) => {
     const raw = tc.function.arguments;
     if (!raw || raw.trim() === '') {

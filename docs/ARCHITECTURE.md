@@ -7,8 +7,8 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
 ## 2. Mental Model & Core Concepts
 
 - **Entities**: Pure data structures representing domain concepts:
-  - `src/core/entities/Message.ts`: Discriminated union of `UserMessage`, `AssistantMessage` (`AssistantTextMessage` | `AssistantToolCallMessage`), and `ToolMessage`.
-  - `src/core/entities/ToolCall.ts`: Discriminated union of `ValidToolCall` and `MalformedToolCall` modeling parsed LLM function invocations.
+  - `src/core/entities/Message.ts`: Discriminated union of `UserMessage`, `AssistantMessage` (`AssistantTextMessage` | `AssistantToolCallMessage`), and `ToolResultMessage`.
+  - `src/core/entities/ToolCallRequest.ts`: Discriminated union of `ValidToolCallRequest` and `MalformedToolCallRequest` modeling parsed LLM function invocations.
   - `src/core/entities/DialogueTurn.ts`: Encapsulates a complete, turn-atomic interaction boundary (`UserMessage`, intermediate tool calls and results, final `AssistantTextMessage`, `startedAt`, and `completedAt`).
 - **Use Cases & Domain Services**: Application-specific business rules:
   - `src/core/use-cases/ProcessIncomingMessage.ts`: 4-phase orchestrator separating Conversation Context Retrieval, Reasoning, Delivery, and Persistence phases. Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
@@ -37,7 +37,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/outbound/whatsapp/BaileysPairingManager.ts`: Coordinates first-time device registration and 8-digit pairing code generation for unregistered sessions.
   - `src/adapters/outbound/llm/DeepseekAdapter.ts`: Lean coordinator delegating to pure collaborators:
     - `DeepseekMessageMapper.ts`: Pure message translation to OpenAI-compatible format with DeepSeek `reasoning_content` support.
-    - `DeepseekResponseParser.ts`: Pure parser extracting `ValidToolCall` and `MalformedToolCall` domain entities.
+    - `DeepseekResponseParser.ts`: Pure parser extracting `ValidToolCallRequest` and `MalformedToolCallRequest` domain entities.
     - `DeepseekErrorTranslator.ts`: Pure HTTP error status translator.
   - `src/adapters/outbound/chat-repository/postgres/PostgresChatRepository.ts`: Persistent conversation history repository implementing `ChatRepositoryPort` using Drizzle ORM and `postgres.js` under the Hybrid Envelope pattern with sliding-window queries and database-level invariant enforcement.
   - `src/adapters/outbound/chat-repository/postgres/schema.ts`: Drizzle ORM table schema defining `dialogue_turns` with stored generated `duration_ms`, composite index on `(user_id, completed_at DESC)`, and PostgreSQL `CHECK` constraints.
@@ -56,7 +56,7 @@ src/
 ├── core/                                   # The Pure Domain Core (Zero External Dependencies)
 │   ├── entities/
 │   │   ├── Message.ts                      # Message discriminated union
-│   │   ├── ToolCall.ts                     # ValidToolCall and MalformedToolCall union
+│   │   ├── ToolCallRequest.ts              # ValidToolCallRequest and MalformedToolCallRequest union
 │   │   └── DialogueTurn.ts                 # Turn-atomic conversation unit
 │   ├── use-cases/
 │   │   ├── ProcessIncomingMessage.ts       # 4-phase orchestrator (Retrieval, Reasoning, Delivery, Persistence)

@@ -37,7 +37,7 @@ describe('DeepseekResponseParser', () => {
     });
   });
 
-  it('should parse tool calls with valid JSON arguments into ValidToolCall', () => {
+  it('should parse tool calls with valid JSON arguments into ValidToolCallRequest', () => {
     const raw: any = {
       choices: [
         {
@@ -70,7 +70,7 @@ describe('DeepseekResponseParser', () => {
     }
   });
 
-  it('should parse tool call with empty arguments into ValidToolCall with empty object', () => {
+  it('should parse tool call with empty arguments into ValidToolCallRequest with empty object', () => {
     const raw: any = {
       choices: [
         {
@@ -99,7 +99,7 @@ describe('DeepseekResponseParser', () => {
     }
   });
 
-  it('should parse malformed JSON arguments into MalformedToolCall without throwing', () => {
+  it('should parse malformed JSON arguments into MalformedToolCallRequest without throwing', () => {
     const raw: any = {
       choices: [
         {
@@ -129,7 +129,7 @@ describe('DeepseekResponseParser', () => {
     }
   });
 
-  it('should treat non-object JSON tool arguments as MalformedToolCall', () => {
+  it('should treat non-object JSON tool arguments as MalformedToolCallRequest', () => {
     const raw: any = {
       choices: [
         {

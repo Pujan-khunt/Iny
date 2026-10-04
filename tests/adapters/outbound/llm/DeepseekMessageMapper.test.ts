@@ -6,7 +6,7 @@ import {
 import {
   Message,
   AssistantTextMessage,
-  ToolMessage,
+  ToolResultMessage,
 } from '../../../../src/core/entities/Message';
 import { ToolDefinition } from '../../../../src/core/ports/ToolRegistryPort';
 
@@ -109,7 +109,7 @@ describe('DeepseekMessageMapper', () => {
     });
 
     it('should map tool message to tool role with tool_call_id and content', () => {
-      const toolMsg: ToolMessage = {
+      const toolMsg: ToolResultMessage = {
         id: '6',
         userId: 'u1',
         role: 'tool',

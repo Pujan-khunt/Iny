@@ -4,7 +4,7 @@ import { LLMPort } from '../../../src/core/ports/LLMPort';
 import { ToolRegistryPort, ToolDefinition } from '../../../src/core/ports/ToolRegistryPort';
 import { LoggerPort } from '../../../src/core/ports/LoggerPort';
 import { UserMessage } from '../../../src/core/entities/Message';
-import { ValidToolCall, MalformedToolCall } from '../../../src/core/entities/ToolCall';
+import { ValidToolCallRequest, MalformedToolCallRequest } from '../../../src/core/entities/ToolCallRequest';
 
 describe('AgentLoop', () => {
   let mockLLM: LLMPort;
@@ -95,7 +95,7 @@ describe('AgentLoop', () => {
   });
 
   it('should execute tool and feed result back to LLM before delivering final response', async () => {
-    const validCall: ValidToolCall = {
+    const validCall: ValidToolCallRequest = {
       type: 'valid',
       id: 'call-1',
       name: 'calculator',
@@ -144,13 +144,13 @@ describe('AgentLoop', () => {
   });
 
   it('should execute multiple tool calls concurrently via Promise.all', async () => {
-    const call1: ValidToolCall = {
+    const call1: ValidToolCallRequest = {
       type: 'valid',
       id: 'call-1',
       name: 'calculator',
       arguments: { expr: '1+1' },
     };
-    const call2: ValidToolCall = {
+    const call2: ValidToolCallRequest = {
       type: 'valid',
       id: 'call-2',
       name: 'calculator',
@@ -197,7 +197,7 @@ describe('AgentLoop', () => {
   });
 
   it('should handle malformed tool calls without calling tool registry', async () => {
-    const malformedCall: MalformedToolCall = {
+    const malformedCall: MalformedToolCallRequest = {
       type: 'malformed',
       id: 'call-malformed',
       name: 'calculator',
@@ -238,7 +238,7 @@ describe('AgentLoop', () => {
   });
 
   it('should catch tool execution errors, log warning, and feed error message to model', async () => {
-    const validCall: ValidToolCall = {
+    const validCall: ValidToolCallRequest = {
       type: 'valid',
       id: 'call-error',
       name: 'calculator',
@@ -276,7 +276,7 @@ describe('AgentLoop', () => {
   });
 
   it('should trigger circuit breaker when max iterations is reached with forcedSynthesis', async () => {
-    const loopCall: ValidToolCall = {
+    const loopCall: ValidToolCallRequest = {
       type: 'valid',
       id: 'call-loop',
       name: 'calculator',
@@ -315,7 +315,7 @@ describe('AgentLoop', () => {
   });
 
   it('should provide fallback text when forced synthesis returns empty string', async () => {
-    const loopCall: ValidToolCall = {
+    const loopCall: ValidToolCallRequest = {
       type: 'valid',
       id: 'call-loop',
       name: 'calculator',

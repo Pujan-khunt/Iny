@@ -11,7 +11,7 @@ export interface DialogueTurn {
   userId: string;
   /**
    * Ordered sequence of messages for this turn.
-   * Invariant: [UserMessage, ...(AssistantToolCallMessage + ToolMessage[])*, AssistantTextMessage]
+   * Invariant: [UserMessage, ...(AssistantToolCallMessage + ToolResultMessage[])*, AssistantTextMessage]
    */
   messages: Message[];
   /** Timestamp when Iny began processing the incoming user message. */
