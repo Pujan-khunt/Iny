@@ -109,6 +109,7 @@ describe('PostgresAccessControlAdapter', () => {
     expect(await adapter.authenticate('919876543210@s.whatsapp.net')).toBeNull();
     expect(mockLogger.warn).toHaveBeenCalledWith(
       'Blocked interaction from inactive user',
+      undefined,
       expect.objectContaining({ phoneNumber: '919876543210', status: 'revoked' })
     );
 
@@ -117,6 +118,7 @@ describe('PostgresAccessControlAdapter', () => {
     expect(await adapter.authenticate('919876543210@s.whatsapp.net')).toBeNull();
     expect(mockLogger.warn).toHaveBeenCalledWith(
       'Blocked interaction from inactive user',
+      undefined,
       expect.objectContaining({ phoneNumber: '919876543210', status: 'suspended' })
     );
 
@@ -125,6 +127,7 @@ describe('PostgresAccessControlAdapter', () => {
     expect(await adapter.authenticate('919876543210@s.whatsapp.net')).toBeNull();
     expect(mockLogger.warn).toHaveBeenCalledWith(
       'Blocked interaction from inactive user',
+      undefined,
       expect.objectContaining({ phoneNumber: '919876543210', status: 'pending' })
     );
   });
@@ -145,6 +148,34 @@ describe('PostgresAccessControlAdapter', () => {
 
     // Subsequent lookup by LID must succeed
     expect(await adapter.authenticate('123456789012345@lid')).not.toBeNull();
+  });
+
+  it('should not mutate in-memory user.lidJid or log info if database write fails in cacheLidJid', async () => {
+    await adapter.seedUsers([{ phoneNumber: '919876543210' }]);
+
+    // Force cacheLidJid to fail
+    vi.spyOn(adapter as any, 'cacheLidJid').mockRejectedValueOnce(new Error('DB write failed'));
+
+    const authUser = await adapter.authenticate(
+      '919876543210@s.whatsapp.net',
+      '123456789012345@lid'
+    );
+
+    // User is still returned authenticated
+    expect(authUser).not.toBeNull();
+    // In-memory lidJid must NOT be mutated to false success state
+    expect(authUser?.lidJid).toBeNull();
+    // Warning logged
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      'Failed to cache user LID',
+      expect.any(Error),
+      expect.objectContaining({ phoneNumber: '919876543210', lidJid: '123456789012345@lid' })
+    );
+    // Info log for success must NOT be called
+    expect(mockLogger.info).not.toHaveBeenCalledWith(
+      'Cached linked identity (LID) for user',
+      expect.anything()
+    );
   });
 
   it('should handle malformed, empty, or group addresses safely without errors', async () => {

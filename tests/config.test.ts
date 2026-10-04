@@ -91,6 +91,18 @@ describe('Config', () => {
     expect(config.ALLOWED_USER_NAMES).toEqual(['Pujan', 'Alice']);
   });
 
+  it('should preserve empty slots in ALLOWED_USER_NAMES for positional correlation', () => {
+    const config = parseConfig({
+      DEEPSEEK_API_KEY: 'test-key',
+      SYSTEM_PROMPT: 'test-prompt',
+      BOT_PHONE_NUMBER: '15551234567',
+      ALLOWED_USERS: '15551111111, 15552222222, 15553333333',
+      ALLOWED_USER_NAMES: 'Alice, , Charlie',
+      DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+    });
+    expect(config.ALLOWED_USER_NAMES).toEqual(['Alice', '', 'Charlie']);
+  });
+
   it('should throw an error and log failure when required variables are missing', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -109,6 +121,32 @@ describe('Config', () => {
         SYSTEM_PROMPT: 'test-prompt',
         BOT_PHONE_NUMBER: '+91 (987) 654-3210',
         ALLOWED_USERS: '919876543211',
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+      })
+    ).toThrow('Invalid environment variables');
+
+    errorSpy.mockRestore();
+  });
+
+  it('should reject BOT_PHONE_NUMBER with fewer than 7 digits or more than 15 digits', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    // Too short (6 digits)
+    expect(() =>
+      parseConfig({
+        DEEPSEEK_API_KEY: 'test-key',
+        SYSTEM_PROMPT: 'test-prompt',
+        BOT_PHONE_NUMBER: '123456',
+        DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
+      })
+    ).toThrow('Invalid environment variables');
+
+    // Too long (16 digits)
+    expect(() =>
+      parseConfig({
+        DEEPSEEK_API_KEY: 'test-key',
+        SYSTEM_PROMPT: 'test-prompt',
+        BOT_PHONE_NUMBER: '1234567890123456',
         DATABASE_URL: 'postgresql://postgres:postgres@localhost:5432/iny',
       })
     ).toThrow('Invalid environment variables');

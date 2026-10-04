@@ -9,7 +9,10 @@ export const envSchema = z.object({
   BOT_PHONE_NUMBER: z
     .string()
     .trim()
-    .regex(/^\d+$/, 'BOT_PHONE_NUMBER must contain digits only with country code'),
+    .regex(
+      /^\d{7,15}$/,
+      'BOT_PHONE_NUMBER must contain 7 to 15 digits including country code (e.g. 15551234567)'
+    ),
   ALLOWED_USERS: emptyToUndefined(
     z
       .string()
@@ -27,12 +30,12 @@ export const envSchema = z.object({
       .string()
       .optional()
       .default('')
-      .transform((val) =>
-        val
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-      )
+      .transform((val) => {
+        if (!val || val.trim() === '') return [];
+        const names = val.split(',').map((s) => s.trim());
+        if (names.every((s) => s === '')) return [];
+        return names;
+      })
   ),
   DATABASE_URL: z
     .string()

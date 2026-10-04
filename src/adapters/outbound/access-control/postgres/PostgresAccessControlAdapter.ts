@@ -36,7 +36,7 @@ export class PostgresAccessControlAdapter implements AccessControlPort, AccessCo
     }
 
     if (user.status !== 'active') {
-      this.logger.warn('Blocked interaction from inactive user', {
+      this.logger.warn('Blocked interaction from inactive user', undefined, {
         phoneNumber: user.phoneNumber,
         status: user.status,
         address,
@@ -48,17 +48,19 @@ export class PostgresAccessControlAdapter implements AccessControlPort, AccessCo
     if (!user.lidJid && companionLidJid) {
       const normalizedLidJid = WhatsAppJid.normalize(companionLidJid);
       if (normalizedLidJid && WhatsAppJid.isLidUser(normalizedLidJid)) {
-        await this.cacheLidJid(user.phoneNumber, normalizedLidJid).catch((err) => {
+        try {
+          await this.cacheLidJid(user.phoneNumber, normalizedLidJid);
+          this.logger.info('Cached linked identity (LID) for user', {
+            phoneNumber: user.phoneNumber,
+            lidJid: normalizedLidJid,
+          });
+          user.lidJid = normalizedLidJid;
+        } catch (err) {
           this.logger.warn('Failed to cache user LID', err, {
             phoneNumber: user.phoneNumber,
             lidJid: normalizedLidJid,
           });
-        });
-        this.logger.info('Cached linked identity (LID) for user', {
-          phoneNumber: user.phoneNumber,
-          lidJid: normalizedLidJid,
-        });
-        user.lidJid = normalizedLidJid;
+        }
       }
     }
 

@@ -101,12 +101,9 @@ async function shutdown(signal: string, exitCode = 0) {
 
   logger.info(`Received ${signal}. Closing connections gracefully...`);
   try {
-    const socket = connectionManager.getSocket();
-    if (socket) {
-      socket.end(undefined);
-    }
+    connectionManager.disconnect();
   } catch (err) {
-    logger.error('Error closing WhatsApp socket during shutdown', err);
+    logger.error('Error closing WhatsApp connection during shutdown', err);
   }
   try {
     await sqlClient.end({ timeout: 5 });

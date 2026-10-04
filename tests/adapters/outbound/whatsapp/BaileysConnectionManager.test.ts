@@ -59,6 +59,22 @@ describe('BaileysConnectionManager', () => {
       expect(manager.isConnected()).toBe(false);
       expect(manager.getSocket()).toBeNull();
     });
+
+    it('should end socket and clear reference on disconnect()', () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const mockSocket = {
+        end: vi.fn(),
+      };
+
+      manager.setSocket(mockSocket as any);
+      expect(manager.isConnected()).toBe(true);
+
+      manager.disconnect();
+
+      expect(mockSocket.end).toHaveBeenCalledWith(undefined);
+      expect(manager.isConnected()).toBe(false);
+      expect(manager.getSocket()).toBeNull();
+    });
   });
 
   describe('handleConnectionClose', () => {
@@ -156,6 +172,7 @@ describe('BaileysConnectionManager', () => {
       capturedProcessHandler = null;
       mockSocket = {
         sendMessage: vi.fn().mockResolvedValue({}),
+        end: vi.fn(),
         authState: {
           creds: { registered: false },
         },
@@ -432,6 +449,81 @@ describe('BaileysConnectionManager', () => {
 
         expect(manager.isConnected()).toBe(false);
         expect(purgeSpy).not.toHaveBeenCalled();
+
+        vi.advanceTimersByTime(5000);
+        expect(startSpy).toHaveBeenCalledTimes(1); // not called again
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('should suppress reconnect attempts and log shutdown when closed after disconnect()', async () => {
+      vi.useFakeTimers();
+      try {
+        const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+        const startSpy = vi.spyOn(manager, 'start');
+        const options = {
+          session: {
+            state: { creds: { registered: true } as any, keys: {} as any },
+            saveCreds: vi.fn().mockResolvedValue(undefined),
+          },
+          botPhoneNumber: '919876543210',
+        };
+
+        await manager.start(options);
+        manager.disconnect();
+
+        await capturedProcessHandler!({
+          'connection.update': {
+            connection: 'close',
+            lastDisconnect: { error: new Error('Stream closed') },
+          },
+        });
+
+        expect(mockLogger.info).toHaveBeenCalledWith('WhatsApp connection closed during shutdown');
+        expect(mockLogger.warn).not.toHaveBeenCalledWith(
+          'WhatsApp connection closed. Attempting reconnect.',
+          expect.anything(),
+          expect.anything()
+        );
+
+        vi.advanceTimersByTime(5000);
+        expect(startSpy).toHaveBeenCalledTimes(1); // not called again
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('should clear any pending reconnect timer when disconnect() is called', async () => {
+      vi.useFakeTimers();
+      try {
+        const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+        const startSpy = vi.spyOn(manager, 'start');
+        const options = {
+          session: {
+            state: { creds: { registered: true } as any, keys: {} as any },
+            saveCreds: vi.fn().mockResolvedValue(undefined),
+          },
+          botPhoneNumber: '919876543210',
+        };
+
+        await manager.start(options);
+
+        // Connection close with transient error triggers a reconnect in 3s
+        const boomError = new Boom('Connection lost', {
+          statusCode: DisconnectReason.connectionLost,
+        });
+        await capturedProcessHandler!({
+          'connection.update': {
+            connection: 'close',
+            lastDisconnect: { error: boomError },
+          },
+        });
+
+        expect(mockLogger.info).toHaveBeenCalledWith('Restarting in 3 seconds');
+
+        // Disconnect called before 3s timer elapses
+        manager.disconnect();
 
         vi.advanceTimersByTime(5000);
         expect(startSpy).toHaveBeenCalledTimes(1); // not called again

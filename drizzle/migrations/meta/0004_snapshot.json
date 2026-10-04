@@ -1,0 +1,301 @@
+{
+  "id": "f5b4a50b-f1b8-4053-817c-68b9fc28d784",
+  "prevId": "9b8cbd1d-bf65-402c-8cae-6ae423753b91",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.dialogue_turns": {
+      "name": "dialogue_turns",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_query": {
+          "name": "user_query",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assistant_response": {
+          "name": "assistant_response",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tool_names": {
+          "name": "tool_names",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "reasoning": {
+          "name": "reasoning",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "ROUND(EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000)::integer",
+            "type": "stored"
+          }
+        },
+        "messages": {
+          "name": "messages",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_dialogue_turns_user_completed": {
+          "name": "idx_dialogue_turns_user_completed",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "completed_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_dialogue_turns_timing": {
+          "name": "chk_dialogue_turns_timing",
+          "value": "\"dialogue_turns\".\"completed_at\" >= \"dialogue_turns\".\"started_at\""
+        },
+        "chk_dialogue_turns_messages": {
+          "name": "chk_dialogue_turns_messages",
+          "value": "jsonb_array_length(\"dialogue_turns\".\"messages\") >= 2 AND (\"dialogue_turns\".\"messages\"->0->>'role') = 'user' AND (\"dialogue_turns\".\"messages\"->-1->>'role') = 'assistant' AND (\"dialogue_turns\".\"messages\"->-1->'toolCalls') IS NULL"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.whatsapp_auth": {
+      "name": "whatsapp_auth",
+      "schema": "",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'default'"
+        },
+        "key": {
+          "name": "key",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "whatsapp_auth_session_id_key_pk": {
+          "name": "whatsapp_auth_session_id_key_pk",
+          "columns": [
+            "session_id",
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "phone_number": {
+          "name": "phone_number",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "pn_jid": {
+          "name": "pn_jid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lid_jid": {
+          "name": "lid_jid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'user'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_users_pn_jid": {
+          "name": "idx_users_pn_jid",
+          "columns": [
+            {
+              "expression": "pn_jid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_users_lid_jid": {
+          "name": "idx_users_lid_jid",
+          "columns": [
+            {
+              "expression": "lid_jid",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"users\".\"lid_jid\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_users_status": {
+          "name": "idx_users_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_users_phone_digits": {
+          "name": "chk_users_phone_digits",
+          "value": "\"users\".\"phone_number\" ~ '^[0-9]+$'"
+        },
+        "chk_users_role": {
+          "name": "chk_users_role",
+          "value": "\"users\".\"role\" IN ('admin', 'user')"
+        },
+        "chk_users_status": {
+          "name": "chk_users_status",
+          "value": "\"users\".\"status\" IN ('active', 'pending', 'revoked', 'suspended')"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

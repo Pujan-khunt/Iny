@@ -28,6 +28,8 @@ export type BaileysEventHandler<T extends keyof BaileysEventMap> = (
  */
 export class BaileysConnectionManager {
   private socket: WASocket | null = null;
+  private isShuttingDown = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private subscribers = new Map<
     keyof BaileysEventMap,
     Array<BaileysEventHandler<any>>
@@ -49,6 +51,21 @@ export class BaileysConnectionManager {
 
   getSocket(): WASocket | null {
     return this.socket;
+  }
+
+  /**
+   * Disconnects the active socket and cancels any pending reconnection attempts.
+   */
+  disconnect(): void {
+    this.isShuttingDown = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.socket) {
+      this.socket.end(undefined);
+      this.socket = null;
+    }
   }
 
   /**
@@ -99,6 +116,7 @@ export class BaileysConnectionManager {
   }
 
   async start(options: StartConnectionOptions): Promise<void> {
+    this.isShuttingDown = false;
     const sock = makeWASocket({
       auth: options.session.state,
       logger: pino({ level: 'silent' }) as any,
@@ -122,6 +140,10 @@ export class BaileysConnectionManager {
           this.logger.info('WhatsApp connection opened successfully');
         } else if (connection === 'close') {
           this.setSocket(null);
+          if (this.isShuttingDown) {
+            this.logger.info('WhatsApp connection closed during shutdown');
+            return;
+          }
           const decision = this.handleConnectionClose(lastDisconnect?.error);
           if (decision.purgeSession) {
             try {
@@ -132,7 +154,7 @@ export class BaileysConnectionManager {
           }
           if (decision.shouldReconnect) {
             this.logger.info('Restarting in 3 seconds');
-            setTimeout(() => this.start(options), 3000);
+            this.reconnectTimer = setTimeout(() => this.start(options), 3000);
           }
         }
       }

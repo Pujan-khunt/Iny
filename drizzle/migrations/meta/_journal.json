@@ -33,22 +33,8 @@
     {
       "idx": 4,
       "version": "7",
-      "when": 1790920000000,
-      "tag": "0004_rename_jids",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1790930000000,
-      "tag": "0005_users_table_and_status",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1790940000000,
-      "tag": "0006_dialogue_turns_reasoning",
+      "when": 1791129860665,
+      "tag": "0004_shallow_timeslip",
       "breakpoints": true
     }
   ]
