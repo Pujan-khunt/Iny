@@ -38,6 +38,14 @@ describe('WhatsAppJid', () => {
       expect(WhatsAppJid.normalize('not-a-number')).toBeNull();
       expect(WhatsAppJid.normalize('+++---()')).toBeNull();
     });
+
+    it('should reject phone numbers outside ITU-T E.164 bounds (7 to 15 digits)', () => {
+      expect(WhatsAppJid.normalize('123')).toBeNull();
+      expect(WhatsAppJid.normalize('123456')).toBeNull();
+      expect(WhatsAppJid.normalize('1234567890123456')).toBeNull(); // 16 digits
+      expect(WhatsAppJid.normalize('1234567')).toBe('1234567@s.whatsapp.net'); // 7 digits
+      expect(WhatsAppJid.normalize('123456789012345')).toBe('123456789012345@s.whatsapp.net'); // 15 digits
+    });
   });
 
   describe('isUser, isPnUser, and isLidUser', () => {

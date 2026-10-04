@@ -16,7 +16,7 @@ describe('BaileysMessageParser', () => {
   });
 
   it('should correctly parse standard conversation text into a UserMessage', () => {
-    const raw: proto.IWebMessageInfo = {
+    const raw: EligibleWebMessageInfo = {
       key: {
         remoteJid: '919876543210@s.whatsapp.net',
         fromMe: false,
@@ -37,7 +37,7 @@ describe('BaileysMessageParser', () => {
   });
 
   it('should correctly parse extendedTextMessage (e.g. quoted text message)', () => {
-    const raw: proto.IWebMessageInfo = {
+    const raw: EligibleWebMessageInfo = {
       key: {
         remoteJid: '919876543210@s.whatsapp.net',
         fromMe: false,
@@ -60,7 +60,7 @@ describe('BaileysMessageParser', () => {
   });
 
   it('should correctly handle protobuf Long timestamp with .low property', () => {
-    const raw: proto.IWebMessageInfo = {
+    const raw: EligibleWebMessageInfo = {
       key: {
         remoteJid: '919876543210@s.whatsapp.net',
         fromMe: false,
@@ -75,7 +75,7 @@ describe('BaileysMessageParser', () => {
   });
 
   it('should correctly handle protobuf Long timestamp with .toNumber() method', () => {
-    const raw: proto.IWebMessageInfo = {
+    const raw: EligibleWebMessageInfo = {
       key: {
         remoteJid: '919876543210@s.whatsapp.net',
         fromMe: false,
@@ -122,5 +122,43 @@ describe('BaileysMessageParser', () => {
       timestamp: new Date(1727222400 * 1000),
       role: 'user',
     });
+  });
+
+  it('should correctly parse text from wrapped ephemeral messages (disappearing messages)', () => {
+    const raw: proto.IWebMessageInfo = {
+      key: {
+        remoteJid: '919876543210@s.whatsapp.net',
+        fromMe: false,
+        id: 'msg-eph',
+      },
+      message: {
+        ephemeralMessage: {
+          message: { conversation: 'Secret disappearing message' },
+        },
+      },
+      messageTimestamp: 1727222400,
+    };
+
+    const parsed = parser.parse(raw as EligibleWebMessageInfo, '919876543210@s.whatsapp.net');
+    expect(parsed.content).toBe('Secret disappearing message');
+  });
+
+  it('should correctly parse text from wrapped viewOnce messages', () => {
+    const raw: proto.IWebMessageInfo = {
+      key: {
+        remoteJid: '919876543210@s.whatsapp.net',
+        fromMe: false,
+        id: 'msg-vo',
+      },
+      message: {
+        viewOnceMessage: {
+          message: { extendedTextMessage: { text: 'View once payload' } },
+        },
+      },
+      messageTimestamp: 1727222400,
+    };
+
+    const parsed = parser.parse(raw as EligibleWebMessageInfo, '919876543210@s.whatsapp.net');
+    expect(parsed.content).toBe('View once payload');
   });
 });

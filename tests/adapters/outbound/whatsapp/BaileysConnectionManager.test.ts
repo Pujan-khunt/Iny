@@ -59,6 +59,22 @@ describe('BaileysConnectionManager', () => {
       expect(manager.isConnected()).toBe(false);
       expect(manager.getSocket()).toBeNull();
     });
+
+    it('should end socket and clear reference on disconnect()', () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const mockSocket = {
+        end: vi.fn(),
+      };
+
+      manager.setSocket(mockSocket as any);
+      expect(manager.isConnected()).toBe(true);
+
+      manager.disconnect();
+
+      expect(mockSocket.end).toHaveBeenCalledWith(undefined);
+      expect(manager.isConnected()).toBe(false);
+      expect(manager.getSocket()).toBeNull();
+    });
   });
 
   describe('handleConnectionClose', () => {
@@ -156,6 +172,7 @@ describe('BaileysConnectionManager', () => {
       capturedProcessHandler = null;
       mockSocket = {
         sendMessage: vi.fn().mockResolvedValue({}),
+        end: vi.fn(),
         authState: {
           creds: { registered: false },
         },
@@ -172,7 +189,7 @@ describe('BaileysConnectionManager', () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const options = {
         session: {
-          state: { creds: { registered: false }, keys: {} as any },
+          state: { creds: { registered: false } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -193,7 +210,7 @@ describe('BaileysConnectionManager', () => {
       const saveCredsMock = vi.fn().mockResolvedValue(undefined);
       const options = {
         session: {
-          state: { creds: { registered: false }, keys: {} as any },
+          state: { creds: { registered: false } as any, keys: {} as any },
           saveCreds: saveCredsMock,
         },
         botPhoneNumber: '919876543210',
@@ -217,7 +234,7 @@ describe('BaileysConnectionManager', () => {
 
       const options = {
         session: {
-          state: { creds: { registered: false }, keys: {} as any },
+          state: { creds: { registered: false } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -242,7 +259,7 @@ describe('BaileysConnectionManager', () => {
 
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -262,7 +279,7 @@ describe('BaileysConnectionManager', () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -285,7 +302,7 @@ describe('BaileysConnectionManager', () => {
         const startSpy = vi.spyOn(manager, 'start');
         const options = {
           session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
           botPhoneNumber: '919876543210',
@@ -324,7 +341,7 @@ describe('BaileysConnectionManager', () => {
         const startSpy = vi.spyOn(manager, 'start');
         const options = {
           session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
           botPhoneNumber: '919876543210',
@@ -356,7 +373,7 @@ describe('BaileysConnectionManager', () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -383,7 +400,7 @@ describe('BaileysConnectionManager', () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -412,7 +429,7 @@ describe('BaileysConnectionManager', () => {
         const startSpy = vi.spyOn(manager, 'start');
         const options = {
           session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
           botPhoneNumber: '919876543210',
@@ -440,46 +457,89 @@ describe('BaileysConnectionManager', () => {
       }
     });
 
-    it('should dispatch notify messages to onIncomingMessages handler', async () => {
-      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
-      const mockUpsertHandler = vi.fn().mockResolvedValue(undefined);
-      manager.onIncomingMessages(mockUpsertHandler);
+    it('should suppress reconnect attempts and log shutdown when closed after disconnect()', async () => {
+      vi.useFakeTimers();
+      try {
+        const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+        const startSpy = vi.spyOn(manager, 'start');
+        const options = {
+          session: {
+            state: { creds: { registered: true } as any, keys: {} as any },
+            saveCreds: vi.fn().mockResolvedValue(undefined),
+          },
+          botPhoneNumber: '919876543210',
+        };
 
-      const options = {
-        session: {
-          state: { creds: { registered: true }, keys: {} as any },
-          saveCreds: vi.fn().mockResolvedValue(undefined),
-        },
-        botPhoneNumber: '919876543210',
-      };
+        await manager.start(options);
+        manager.disconnect();
 
-      await manager.start(options);
+        await capturedProcessHandler!({
+          'connection.update': {
+            connection: 'close',
+            lastDisconnect: { error: new Error('Stream closed') },
+          },
+        });
 
-      const rawMessages: proto.IWebMessageInfo[] = [
-        {
-          key: { id: 'msg-1', remoteJid: '919876543210@s.whatsapp.net', fromMe: false },
-          message: { conversation: 'Hello' },
-        },
-      ];
+        expect(mockLogger.info).toHaveBeenCalledWith('WhatsApp connection closed during shutdown');
+        expect(mockLogger.warn).not.toHaveBeenCalledWith(
+          'WhatsApp connection closed. Attempting reconnect.',
+          expect.anything(),
+          expect.anything()
+        );
 
-      await capturedProcessHandler!({
-        'messages.upsert': {
-          type: 'notify',
-          messages: rawMessages,
-        },
-      });
-
-      expect(mockUpsertHandler).toHaveBeenCalledWith(rawMessages);
+        vi.advanceTimersByTime(5000);
+        expect(startSpy).toHaveBeenCalledTimes(1); // not called again
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
-    it('should ignore messages.upsert when type is append', async () => {
+    it('should clear any pending reconnect timer when disconnect() is called', async () => {
+      vi.useFakeTimers();
+      try {
+        const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+        const startSpy = vi.spyOn(manager, 'start');
+        const options = {
+          session: {
+            state: { creds: { registered: true } as any, keys: {} as any },
+            saveCreds: vi.fn().mockResolvedValue(undefined),
+          },
+          botPhoneNumber: '919876543210',
+        };
+
+        await manager.start(options);
+
+        // Connection close with transient error triggers a reconnect in 3s
+        const boomError = new Boom('Connection lost', {
+          statusCode: DisconnectReason.connectionLost,
+        });
+        await capturedProcessHandler!({
+          'connection.update': {
+            connection: 'close',
+            lastDisconnect: { error: boomError },
+          },
+        });
+
+        expect(mockLogger.info).toHaveBeenCalledWith('Restarting in 3 seconds');
+
+        // Disconnect called before 3s timer elapses
+        manager.disconnect();
+
+        vi.advanceTimersByTime(5000);
+        expect(startSpy).toHaveBeenCalledTimes(1); // not called again
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('should dispatch events to subscribed handlers when sock.ev.process receives matching events', async () => {
       const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
       const mockUpsertHandler = vi.fn().mockResolvedValue(undefined);
-      manager.onIncomingMessages(mockUpsertHandler);
+      manager.subscribe('messages.upsert', mockUpsertHandler);
 
       const options = {
         session: {
-          state: { creds: { registered: true }, keys: {} as any },
+          state: { creds: { registered: true } as any, keys: {} as any },
           saveCreds: vi.fn().mockResolvedValue(undefined),
         },
         botPhoneNumber: '919876543210',
@@ -487,14 +547,207 @@ describe('BaileysConnectionManager', () => {
 
       await manager.start(options);
 
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [
+          {
+            key: { id: 'msg-1', remoteJid: '919876543210@s.whatsapp.net', fromMe: false },
+            message: { conversation: 'Hello' },
+          },
+        ] as any,
+      };
+
+      await capturedProcessHandler!({
+        'messages.upsert': eventPayload,
+      });
+
+      expect(mockUpsertHandler).toHaveBeenCalledWith(eventPayload);
+    });
+
+    it('should unsubscribe handler when returned unsubscribe function is called', async () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const mockUpsertHandler = vi.fn().mockResolvedValue(undefined);
+      const unsubscribe = manager.subscribe('messages.upsert', mockUpsertHandler);
+
+      const options = {
+        session: {
+          state: { creds: { registered: true } as any, keys: {} as any },
+          saveCreds: vi.fn().mockResolvedValue(undefined),
+        },
+        botPhoneNumber: '919876543210',
+      };
+
+      await manager.start(options);
+
+      unsubscribe();
+
       await capturedProcessHandler!({
         'messages.upsert': {
-          type: 'append',
+          type: 'notify' as const,
           messages: [],
         },
       });
 
       expect(mockUpsertHandler).not.toHaveBeenCalled();
+    });
+
+    it('should dispatch events to multiple subscribers for the same event', async () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const handler1 = vi.fn().mockResolvedValue(undefined);
+      const handler2 = vi.fn().mockResolvedValue(undefined);
+
+      manager.subscribe('messages.upsert', handler1);
+      manager.subscribe('messages.upsert', handler2);
+
+      const options = {
+        session: {
+          state: { creds: { registered: true } as any, keys: {} as any },
+          saveCreds: vi.fn().mockResolvedValue(undefined),
+        },
+        botPhoneNumber: '919876543210',
+      };
+
+      await manager.start(options);
+
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [],
+      };
+
+      await capturedProcessHandler!({
+        'messages.upsert': eventPayload,
+      });
+
+      expect(handler1).toHaveBeenCalledWith(eventPayload);
+      expect(handler2).toHaveBeenCalledWith(eventPayload);
+    });
+
+    it('should execute multiple handlers concurrently without blocking sibling handlers', async () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const executionOrder: string[] = [];
+
+      let resolveSlowHandler!: () => void;
+      const slowHandler = vi.fn().mockImplementation(async () => {
+        executionOrder.push('slow-start');
+        await new Promise<void>((resolve) => {
+          resolveSlowHandler = resolve;
+        });
+        executionOrder.push('slow-end');
+      });
+
+      const fastHandler = vi.fn().mockImplementation(async () => {
+        executionOrder.push('fast-start');
+        executionOrder.push('fast-end');
+      });
+
+      manager.subscribe('messages.upsert', slowHandler);
+      manager.subscribe('messages.upsert', fastHandler);
+
+      const options = {
+        session: {
+          state: { creds: { registered: true } as any, keys: {} as any },
+          saveCreds: vi.fn().mockResolvedValue(undefined),
+        },
+        botPhoneNumber: '919876543210',
+      };
+
+      await manager.start(options);
+
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [],
+      };
+
+      const processPromise = capturedProcessHandler!({
+        'messages.upsert': eventPayload,
+      });
+
+      // Both should have started and fastHandler should have completed even while slowHandler is still pending
+      expect(slowHandler).toHaveBeenCalledTimes(1);
+      expect(fastHandler).toHaveBeenCalledTimes(1);
+      expect(executionOrder).toEqual(['slow-start', 'fast-start', 'fast-end']);
+
+      // Now resolve slow handler
+      resolveSlowHandler();
+      await processPromise;
+
+      expect(executionOrder).toEqual(['slow-start', 'fast-start', 'fast-end', 'slow-end']);
+    });
+
+    it('should isolate errors so a rejected handler does not prevent sibling handlers from running and logs error', async () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const error = new Error('Handler crash');
+      const failingHandler = vi.fn().mockRejectedValue(error);
+      const succeedingHandler = vi.fn().mockResolvedValue(undefined);
+
+      manager.subscribe('messages.upsert', failingHandler);
+      manager.subscribe('messages.upsert', succeedingHandler);
+
+      const options = {
+        session: {
+          state: { creds: { registered: true } as any, keys: {} as any },
+          saveCreds: vi.fn().mockResolvedValue(undefined),
+        },
+        botPhoneNumber: '919876543210',
+      };
+
+      await manager.start(options);
+
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [],
+      };
+
+      await capturedProcessHandler!({
+        'messages.upsert': eventPayload,
+      });
+
+      expect(failingHandler).toHaveBeenCalledTimes(1);
+      expect(succeedingHandler).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Handler failed for event "messages.upsert"',
+        error,
+        { eventName: 'messages.upsert' }
+      );
+    });
+
+    it('should safely catch synchronous throws from handlers without crashing', async () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const syncError = new Error('Sync throw');
+      const throwingHandler = vi.fn().mockImplementation(() => {
+        throw syncError;
+      });
+      const siblingHandler = vi.fn().mockResolvedValue(undefined);
+
+      manager.subscribe('messages.upsert', throwingHandler);
+      manager.subscribe('messages.upsert', siblingHandler);
+
+      const options = {
+        session: {
+          state: { creds: { registered: true } as any, keys: {} as any },
+          saveCreds: vi.fn().mockResolvedValue(undefined),
+        },
+        botPhoneNumber: '919876543210',
+      };
+
+      await manager.start(options);
+
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [],
+      };
+
+      await capturedProcessHandler!({
+        'messages.upsert': eventPayload,
+      });
+
+      expect(throwingHandler).toHaveBeenCalledTimes(1);
+      expect(siblingHandler).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Handler failed for event "messages.upsert"',
+        syncError,
+        { eventName: 'messages.upsert' }
+      );
     });
   });
 });

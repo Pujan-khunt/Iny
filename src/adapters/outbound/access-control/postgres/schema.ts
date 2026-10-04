@@ -1,23 +1,33 @@
-import { pgTable, text, boolean, timestamp, check, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, check, uniqueIndex, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { UserRecord, UserRole, UserStatus } from '../../../../core/ports/AccessControlPort';
 
-export const allowedUsers = pgTable(
-  'allowed_users',
+export const users = pgTable(
+  'users',
   {
     phoneNumber: text('phone_number').primaryKey(),
-    jid: text('jid').notNull(),
-    lid: text('lid'),
+    pnJid: text('pn_jid').notNull(),
+    lidJid: text('lid_jid'),
     name: text('name'),
-    role: text('role').notNull().default('user'),
-    isActive: boolean('is_active').notNull().default(true),
+    role: text('role').$type<UserRole>().notNull().default('user'),
+    status: text('status').$type<UserStatus>().notNull().default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('idx_allowed_users_jid').on(table.jid),
-    uniqueIndex('idx_allowed_users_lid').on(table.lid),
-    index('idx_allowed_users_is_active').on(table.isActive),
-    check('chk_allowed_users_phone_digits', sql`${table.phoneNumber} ~ '^[0-9]+$'`),
-    check('chk_allowed_users_role', sql`${table.role} IN ('admin', 'user')`),
+    uniqueIndex('idx_users_pn_jid').on(table.pnJid),
+    uniqueIndex('idx_users_lid_jid')
+      .on(table.lidJid)
+      .where(sql`${table.lidJid} IS NOT NULL`),
+    index('idx_users_status').on(table.status),
+    check('chk_users_phone_digits', sql`${table.phoneNumber} ~ '^[0-9]+$'`),
+    check('chk_users_role', sql`${table.role} IN ('admin', 'user')`),
+    check('chk_users_status', sql`${table.status} IN ('active', 'pending', 'revoked', 'suspended')`),
   ]
 );
+
+export type UserRow = typeof users.$inferSelect;
+export type NewUserRow = typeof users.$inferInsert;
+
+// Compile-time static assertion ensuring the Drizzle schema strictly satisfies the core UserRecord port interface
+type _AssertRowMatchesPort = UserRow extends UserRecord ? true : never;

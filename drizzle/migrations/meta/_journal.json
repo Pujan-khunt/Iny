@@ -22,6 +22,20 @@
       "when": 1790762670555,
       "tag": "0002_outgoing_colleen_wing",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790919935298,
+      "tag": "0003_striped_the_fury",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791129860665,
+      "tag": "0004_shallow_timeslip",
+      "breakpoints": true
     }
   ]
 }

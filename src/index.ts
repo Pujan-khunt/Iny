@@ -2,7 +2,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ProcessIncomingMessage } from './core/use-cases/ProcessIncomingMessage';
 import { AgentLoop } from './core/use-cases/AgentLoop';
-import { config } from './config';
+import { loadConfig } from './config';
 import { DeepseekAdapter } from './adapters/outbound/llm/DeepseekAdapter';
 import { InMemoryToolRegistry } from './adapters/outbound/tool-registry/InMemoryToolRegistry';
 import { CalculatorTool } from './tools/CalculatorTool';
@@ -12,7 +12,7 @@ import * as whatsappSchema from './adapters/outbound/whatsapp/postgres/schema';
 import * as accessControlSchema from './adapters/outbound/access-control/postgres/schema';
 import { PostgresChatRepository } from './adapters/outbound/chat-repository/postgres/PostgresChatRepository';
 import { runDatabaseMigrations } from './adapters/outbound/chat-repository/postgres/migrator';
-import { PostgresAllowlistAdapter } from './adapters/outbound/access-control/postgres/PostgresAllowlistAdapter';
+import { PostgresAccessControlAdapter } from './adapters/outbound/access-control/postgres/PostgresAccessControlAdapter';
 import { PostgresBaileysSessionManager } from './adapters/outbound/whatsapp/PostgresBaileysSessionManager';
 import { BaileysPairingManager } from './adapters/outbound/whatsapp/BaileysPairingManager';
 import { BaileysConnectionManager } from './adapters/outbound/whatsapp/BaileysConnectionManager';
@@ -20,6 +20,9 @@ import { BaileysMessageSenderAdapter } from './adapters/outbound/whatsapp/Bailey
 import { BaileysMessageFilter } from './adapters/inbound/whatsapp/BaileysMessageFilter';
 import { BaileysMessageParser } from './adapters/inbound/whatsapp/BaileysMessageParser';
 import { WhatsAppInboundAdapter } from './adapters/inbound/whatsapp/WhatsAppInboundAdapter';
+
+// Load & validate application configuration from environment
+const config = loadConfig();
 
 // 1. Logger
 const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
@@ -37,10 +40,12 @@ const sqlClient = postgres(config.DATABASE_URL, {
 const db = drizzle(sqlClient, {
   schema: { ...chatSchema, ...whatsappSchema, ...accessControlSchema },
 });
+
+
 const chatRepository = new PostgresChatRepository(db, logger);
 
-// 4. Access control allowlist
-const allowlist = new PostgresAllowlistAdapter(db, logger.child({ module: 'allowlist' }));
+// 4. Access control
+const accessControl = new PostgresAccessControlAdapter(db, logger.child({ module: 'access-control' }));
 
 // 5. LLM Adapter
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
@@ -53,7 +58,7 @@ const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
 const sessionManager = new PostgresBaileysSessionManager(db, logger, 'default');
 const pairingManager = new BaileysPairingManager(logger);
 const connectionManager = new BaileysConnectionManager(logger, pairingManager, sessionManager);
-const messageSender = new BaileysMessageSenderAdapter(connectionManager, allowlist, logger);
+const messageSender = new BaileysMessageSenderAdapter(connectionManager, logger);
 
 // 7. Autonomous AgentLoop
 const agentLoop = new AgentLoop(deepseekAdapter, registry, {
@@ -79,22 +84,26 @@ const parser = new BaileysMessageParser();
 const inboundAdapter = new WhatsAppInboundAdapter(
   useCase,
   connectionManager,
-  allowlist,
+  accessControl,
   filter,
   parser,
   logger
 );
 
 // Graceful Shutdown
-async function shutdown(signal: string) {
+let isShuttingDown = false;
+
+async function shutdown(signal: string, exitCode = 0) {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+
   logger.info(`Received ${signal}. Closing connections gracefully...`);
   try {
-    const socket = connectionManager.getSocket();
-    if (socket) {
-      socket.end(undefined);
-    }
+    connectionManager.disconnect();
   } catch (err) {
-    logger.error('Error closing WhatsApp socket during shutdown', err);
+    logger.error('Error closing WhatsApp connection during shutdown', err);
   }
   try {
     await sqlClient.end({ timeout: 5 });
@@ -102,11 +111,22 @@ async function shutdown(signal: string) {
   } catch (err) {
     logger.error('Error closing database connection pool', err);
   }
-  process.exit(0);
+  process.exit(exitCode);
 }
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT', 0));
+process.on('SIGTERM', () => shutdown('SIGTERM', 0));
+
+process.on('uncaughtException', (err) => {
+  logger.fatal('Uncaught exception', err);
+  shutdown('uncaughtException', 1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const error = reason instanceof Error ? reason : new Error(String(reason));
+  logger.fatal('Unhandled promise rejection', error);
+  shutdown('unhandledRejection', 1);
+});
 
 // Startup Sequence
 async function start() {
@@ -114,16 +134,20 @@ async function start() {
 
   // Seed initial admin users from configuration if provided
   if (config.ALLOWED_USERS.length > 0) {
-    await allowlist.seedUsers(config.ALLOWED_USERS);
+    const seedEntries = config.ALLOWED_USERS.map((phoneNumber, index) => ({
+      phoneNumber,
+      name: config.ALLOWED_USER_NAMES[index] || null,
+    }));
+    await accessControl.seedUsers(seedEntries);
   }
 
   // Fail-fast safety check: ensure at least one active user exists
-  const activeUserCount = await allowlist.countActiveUsers();
+  const activeUserCount = await accessControl.countActiveUsers();
   if (activeUserCount === 0) {
     logger.fatal(
-      'No active allowed users found in PostgreSQL and no ALLOWED_USERS provided in .env. Iny cannot start.'
+      'No active authorized users found in PostgreSQL and no ALLOWED_USERS provided in .env. Iny cannot start.'
     );
-    await sqlClient.end();
+    await sqlClient.end({ timeout: 5 });
     process.exit(1);
   }
   logger.info('Access control initialized', { activeUsers: activeUserCount });

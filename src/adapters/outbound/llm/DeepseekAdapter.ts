@@ -3,10 +3,8 @@ import { LLMPort, LLMResponse, GenerateResponseOptions } from '../../../core/por
 import { Message } from '../../../core/entities/Message';
 import { ToolDefinition } from '../../../core/ports/ToolRegistryPort';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
-import {
-  mapDomainMessagesToOpenAI,
-  mapToolDefinitionsToOpenAI,
-} from './DeepseekMessageMapper';
+import { mapDomainMessagesToOpenAI } from './DeepseekRequestMapper';
+import { mapToolDefinitionsToOpenAI } from './DeepseekToolMapper';
 import { parseOpenAIResponse } from './DeepseekResponseParser';
 import { translateAndThrowDeepseekError } from './DeepseekErrorTranslator';
 
@@ -69,6 +67,7 @@ export class DeepseekAdapter implements LLMPort {
         messages: openAIMessages,
         tools: openAITools,
         tool_choice: openAITools ? 'auto' : undefined,
+        n: 1,
       });
       return parseOpenAIResponse(response, this.logger);
     } catch (error) {

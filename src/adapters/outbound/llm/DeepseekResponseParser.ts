@@ -1,10 +1,8 @@
 import OpenAI from 'openai';
 import { LLMResponse } from '../../../core/ports/LLMPort';
-import { ToolCall } from '../../../core/entities/ToolCall';
 import { LLMResponseError } from '../../../core/errors/LLMErrors';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
-
-type FunctionToolCall = Extract<OpenAI.Chat.ChatCompletionMessageToolCall, { type: 'function' }>;
+import { parseToolCalls, FunctionToolCall } from './DeepseekToolCallParser';
 
 type DeepseekChatCompletionMessage = OpenAI.Chat.ChatCompletionMessage & {
   reasoning_content?: string | null;
@@ -29,81 +27,41 @@ export function parseOpenAIResponse(
     throw new LLMResponseError('No message returned from LLM provider');
   }
 
+  const reasoning = responseMessage.reasoning_content || undefined;
   const functionCalls =
     responseMessage.tool_calls?.filter(
       (tc): tc is FunctionToolCall => tc.type === 'function'
     ) ?? [];
 
   if (functionCalls.length > 0) {
-    const thought =
-      responseMessage.reasoning_content || responseMessage.content || undefined;
+    const content = responseMessage.content || undefined;
     const toolCalls = parseToolCalls(functionCalls);
 
     logger?.debug('Received response from Deepseek LLM', {
       hasToolCall: true,
       toolCallCount: toolCalls.length,
+      hasReasoning: Boolean(reasoning),
+      hasContent: Boolean(content),
     });
 
     return {
       type: 'tool_calls',
       toolCalls,
-      thought,
+      content,
+      reasoning,
     };
   }
 
-  const thought = responseMessage.reasoning_content || undefined;
   const content = responseMessage.content ?? '';
 
   logger?.debug('Received response from Deepseek LLM', {
     hasToolCall: false,
+    hasReasoning: Boolean(reasoning),
   });
 
   return {
     type: 'text',
     content,
-    thought,
+    reasoning,
   };
-}
-
-/**
- * Parses an array of OpenAI function tool calls into domain ToolCall entities.
- * Tool arguments that fail JSON deserialization or are not JSON objects are mapped
- * to MalformedToolCall instead of throwing.
- *
- * @param functionCalls Function calls returned from OpenAI API.
- * @returns Array of parsed ToolCall entities (ValidToolCall or MalformedToolCall).
- */
-function parseToolCalls(functionCalls: FunctionToolCall[]): ToolCall[] {
-  return functionCalls.map((tc) => {
-    const raw = tc.function.arguments;
-    if (!raw || raw.trim() === '') {
-      return {
-        type: 'valid',
-        id: tc.id,
-        name: tc.function.name,
-        arguments: {},
-      };
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        return {
-          type: 'valid',
-          id: tc.id,
-          name: tc.function.name,
-          arguments: parsed as Record<string, unknown>,
-        };
-      }
-      throw new Error('Tool arguments must be a JSON object');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      return {
-        type: 'malformed',
-        id: tc.id,
-        name: tc.function.name,
-        rawArguments: raw,
-        parseError: errorMessage,
-      };
-    }
-  });
 }

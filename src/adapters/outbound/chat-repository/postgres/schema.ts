@@ -23,6 +23,10 @@ export const dialogueTurns = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    reasoning: text('reasoning')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }).notNull(),
     durationMs: integer('duration_ms').generatedAlwaysAs(

@@ -33,9 +33,9 @@ export class WhatsAppJid {
       return null;
     }
 
-    // 2. Otherwise treat as a raw phone number: strip non-digits
+    // 2. Otherwise treat as a raw phone number: strip non-digits and validate E.164 length (7-15 digits)
     const digitsOnly = trimmed.replace(/\D/g, '');
-    if (!digitsOnly) {
+    if (digitsOnly.length < 7 || digitsOnly.length > 15) {
       return null;
     }
 

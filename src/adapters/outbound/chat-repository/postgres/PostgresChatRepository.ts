@@ -52,7 +52,7 @@ export class PostgresChatRepository implements ChatRepositoryPort {
 
   async saveTurn(turn: DialogueTurn): Promise<void> {
     assertValidDialogueTurn(turn);
-    const { userQuery, assistantResponse, toolNames } = extractTurnMetadata(turn);
+    const { userQuery, assistantResponse, toolNames, reasoning } = extractTurnMetadata(turn);
 
     try {
       await this.db.insert(dialogueTurns).values({
@@ -61,6 +61,7 @@ export class PostgresChatRepository implements ChatRepositoryPort {
         userQuery,
         assistantResponse,
         toolNames,
+        reasoning,
         startedAt: turn.startedAt,
         completedAt: turn.completedAt,
         messages: turn.messages,

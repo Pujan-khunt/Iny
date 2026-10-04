@@ -75,7 +75,7 @@ describe('PostgresBaileysSessionManager', () => {
       expect(session2.state.creds.registered).toBe(true);
       expect(session2.state.creds.me).toEqual({ id: '15551234567@s.whatsapp.net', name: 'Iny' });
       expect(Buffer.isBuffer(session2.state.creds.noiseKey.private)).toBe(true);
-      expect(session2.state.creds.noiseKey.private.equals(session1.state.creds.noiseKey.private)).toBe(true);
+      expect((session2.state.creds.noiseKey.private as Buffer).equals(session1.state.creds.noiseKey.private)).toBe(true);
     });
   });
 
@@ -96,9 +96,9 @@ describe('PostgresBaileysSessionManager', () => {
         'pre-key': {
           '100': { keyPair: { public: pubBuf, private: privBuf } },
         },
-      });
+      } as any);
 
-      const keys = await session.state.keys.get('pre-key', ['100']);
+      const keys: any = await session.state.keys.get('pre-key', ['100']);
       expect(keys['100']).toBeDefined();
       expect(Buffer.isBuffer(keys['100'].keyPair.public)).toBe(true);
       expect(Buffer.isBuffer(keys['100'].keyPair.private)).toBe(true);
@@ -130,7 +130,7 @@ describe('PostgresBaileysSessionManager', () => {
         'session': {
           'user-1': { active: true },
         },
-      });
+      } as any);
 
       const before = await session.state.keys.get('session', ['user-1']);
       expect(before['user-1']).toEqual({ active: true });
@@ -154,7 +154,7 @@ describe('PostgresBaileysSessionManager', () => {
         session: {
           'existing-bool': true,
         },
-      });
+      } as any);
 
       // Update existing key to false, and set other falsy non-null values (number 0, empty string "")
       await session.state.keys.set({
@@ -163,7 +163,7 @@ describe('PostgresBaileysSessionManager', () => {
           'num-zero': 0,
           'empty-string': '',
         },
-      });
+      } as any);
 
       // Direct DB query verifying that falsy non-null values were upserted and not deleted
       const rows = await db
@@ -193,7 +193,7 @@ describe('PostgresBaileysSessionManager', () => {
         'sender-key': {
           'group-1': { secret: Buffer.from('secret-bytes') },
         },
-      });
+      } as any);
 
       const selectSpy = vi.spyOn(db, 'select');
 
@@ -306,7 +306,7 @@ describe('PostgresBaileysSessionManager', () => {
           'pre-key': {
             'fail-id': { key: 'val' },
           },
-        })
+        } as any)
       ).rejects.toThrow('Transaction failed');
 
       expect(mockLogger.error).toHaveBeenCalledWith(

@@ -44,7 +44,7 @@ describe('DeepseekAdapter Coordinator', () => {
     expect(response).toEqual({
       type: 'text',
       content: 'Mock answer',
-      thought: undefined,
+      reasoning: undefined,
     });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -52,6 +52,7 @@ describe('DeepseekAdapter Coordinator', () => {
         messages: [{ role: 'system', content: 'System prompt' }],
         tools: undefined,
         tool_choice: undefined,
+        n: 1,
       })
     );
     expect(mockLogger.debug).toHaveBeenCalledWith(
@@ -60,7 +61,7 @@ describe('DeepseekAdapter Coordinator', () => {
     );
   });
 
-  it('should pass tool definitions to client completions', async () => {
+  it('should pass tool definitions to client completions with n: 1', async () => {
     mockCreate.mockResolvedValueOnce({
       choices: [
         {
@@ -90,6 +91,7 @@ describe('DeepseekAdapter Coordinator', () => {
           },
         ],
         tool_choice: 'auto',
+        n: 1,
       })
     );
   });
@@ -115,11 +117,12 @@ describe('DeepseekAdapter Coordinator', () => {
     expect(response).toEqual({
       type: 'text',
       content: 'Custom ok',
-      thought: undefined,
+      reasoning: undefined,
     });
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'custom-model',
+        n: 1,
       })
     );
   });
