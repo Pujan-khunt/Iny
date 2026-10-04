@@ -1,7 +1,7 @@
 import { WAMessage } from '@whiskeysockets/baileys';
 import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingMessage';
 import { BaileysConnectionManager } from '../../outbound/whatsapp/BaileysConnectionManager';
-import { AccessControlPort } from '../../../core/ports/AccessControlPort';
+import { AccessControlPort, UserRecord } from '../../../core/ports/AccessControlPort';
 import { BaileysMessageFilter } from './BaileysMessageFilter';
 import { BaileysMessageParser } from './BaileysMessageParser';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
@@ -60,7 +60,18 @@ export class WhatsAppInboundAdapter {
       });
 
       // Stage 2: Access control authorization & identity retrieval
-      const user = await this.accessControl.authenticate(lookupAddress, companionLidJid);
+      let user: UserRecord | null;
+      try {
+        user = await this.accessControl.authenticate(lookupAddress, companionLidJid);
+      } catch (authError) {
+        this.logger.error('Failed to authenticate sender', authError, {
+          lookupAddress,
+          remoteJid,
+          remoteJidAlt,
+        });
+        continue;
+      }
+
       if (!user) {
         this.logger.debug('Ignored message from unauthorized sender', { remoteJid, remoteJidAlt });
         continue;

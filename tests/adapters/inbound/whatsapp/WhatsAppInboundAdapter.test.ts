@@ -433,5 +433,64 @@ describe('WhatsAppInboundAdapter', () => {
         })
       );
     });
+
+    it('should catch authentication error for a message and continue processing subsequent messages', async () => {
+      const failingMessage: WAMessage = {
+        key: {
+          remoteJid: '919999999999@s.whatsapp.net',
+          fromMe: false,
+          id: 'msg-failing',
+        },
+        message: { conversation: 'Message that triggers db error' },
+        messageTimestamp: 1727223000,
+      };
+
+      const succeedingMessage: WAMessage = {
+        key: {
+          remoteJid: '919876543210@s.whatsapp.net',
+          fromMe: false,
+          id: 'msg-succeeding',
+        },
+        message: { conversation: 'Valid message following failure' },
+        messageTimestamp: 1727223001,
+      };
+
+      const dbError = new Error('Database connection timeout');
+      (mockAccessControl.authenticate as any).mockImplementation(async (address: string) => {
+        if (address.includes('919999999999')) {
+          throw dbError;
+        }
+        return {
+          phoneNumber: '919876543210',
+          pnJid: '919876543210@s.whatsapp.net',
+          lidJid: null,
+          name: 'Authorized User',
+          role: 'user',
+          status: 'active',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      });
+
+      await adapter.handleMessages([failingMessage, succeedingMessage]);
+
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Failed to authenticate sender',
+        dbError,
+        expect.objectContaining({
+          lookupAddress: '919999999999@s.whatsapp.net',
+          remoteJid: '919999999999@s.whatsapp.net',
+        })
+      );
+
+      expect(mockUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(mockUseCase.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'msg-succeeding',
+          userId: '919876543210@s.whatsapp.net',
+          content: 'Valid message following failure',
+        })
+      );
+    });
   });
 });
