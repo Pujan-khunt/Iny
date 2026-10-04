@@ -6,8 +6,8 @@ import { ToolCallRequest } from '../entities/ToolCallRequest';
  * Base interface for LLM decisions containing optional chain-of-thought reasoning.
  */
 export interface BaseLLMDecision {
-  /** Optional reasoning or scratchpad content emitted by the model. */
-  thought?: string;
+  /** Optional reasoning scratchpad or chain-of-thought emitted by the model. */
+  reasoning?: string;
 }
 
 /**
@@ -16,6 +16,8 @@ export interface BaseLLMDecision {
 export interface ToolCallDecision extends BaseLLMDecision {
   type: 'tool_calls';
   toolCalls: ToolCallRequest[];
+  /** Optional natural text emitted alongside the tool calls. */
+  content?: string;
 }
 
 /**

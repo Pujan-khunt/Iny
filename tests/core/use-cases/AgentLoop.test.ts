@@ -59,20 +59,20 @@ describe('AgentLoop', () => {
     vi.mocked(mockLLM.generateResponse).mockResolvedValueOnce({
       type: 'text',
       content: 'The answer is 4.',
-      thought: 'Simple math question.',
+      reasoning: 'Simple math question.',
     });
 
     const loop = createAgentLoop();
     const result = await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
 
     expect(result.finalText).toBe('The answer is 4.');
-    expect(result.thought).toBe('Simple math question.');
+    expect(result.reasoning).toEqual(['Simple math question.']);
     expect(result.sessionMessages).toHaveLength(2);
     expect(result.sessionMessages[0]).toEqual(sampleUserMessage);
     expect(result.sessionMessages[1]).toMatchObject({
       role: 'assistant',
       content: 'The answer is 4.',
-      thought: 'Simple math question.',
+      reasoning: 'Simple math question.',
       userId: 'user-123',
     });
     expect(mockRegistry.executeTool).not.toHaveBeenCalled();
@@ -106,7 +106,7 @@ describe('AgentLoop', () => {
       .mockResolvedValueOnce({
         type: 'tool_calls',
         toolCalls: [validCall],
-        thought: 'Let me calculate that.',
+        reasoning: 'Let me calculate that.',
       })
       .mockResolvedValueOnce({
         type: 'text',
@@ -122,13 +122,14 @@ describe('AgentLoop', () => {
     expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
 
     expect(result.finalText).toBe('Result is 4.');
+    expect(result.reasoning).toEqual(['Let me calculate that.']);
     expect(result.sessionMessages).toHaveLength(4);
 
     // Turn structure verification
     expect(result.sessionMessages[0]).toEqual(sampleUserMessage);
     expect(result.sessionMessages[1]).toMatchObject({
       role: 'assistant',
-      thought: 'Let me calculate that.',
+      reasoning: 'Let me calculate that.',
       toolCalls: [validCall],
     });
     expect(result.sessionMessages[2]).toMatchObject({
@@ -140,6 +141,66 @@ describe('AgentLoop', () => {
     expect(result.sessionMessages[3]).toMatchObject({
       role: 'assistant',
       content: 'Result is 4.',
+    });
+  });
+
+  it('should accumulate all intermediate reasoning across multiple tool call iterations in reasoning array', async () => {
+    const call1: ValidToolCallRequest = {
+      type: 'valid',
+      id: 'call-1',
+      name: 'calculator',
+      arguments: { expr: '2+2' },
+    };
+    const call2: ValidToolCallRequest = {
+      type: 'valid',
+      id: 'call-2',
+      name: 'calculator',
+      arguments: { expr: '4*2' },
+    };
+
+    vi.mocked(mockLLM.generateResponse)
+      .mockResolvedValueOnce({
+        type: 'tool_calls',
+        toolCalls: [call1],
+        content: 'Calculating 2+2 first.',
+        reasoning: 'Thought 1: evaluate inner addition',
+      })
+      .mockResolvedValueOnce({
+        type: 'tool_calls',
+        toolCalls: [call2],
+        content: 'Now calculating 4*2.',
+        reasoning: 'Thought 2: evaluate multiplication',
+      })
+      .mockResolvedValueOnce({
+        type: 'text',
+        content: 'The final result is 8.',
+        reasoning: 'Thought 3: formulate final answer',
+      });
+
+    vi.mocked(mockRegistry.executeTool)
+      .mockResolvedValueOnce('4')
+      .mockResolvedValueOnce('8');
+
+    const loop = createAgentLoop();
+    const result = await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
+
+    expect(result.finalText).toBe('The final result is 8.');
+    expect(result.reasoning).toEqual([
+      'Thought 1: evaluate inner addition',
+      'Thought 2: evaluate multiplication',
+      'Thought 3: formulate final answer',
+    ]);
+
+    // Verify content was preserved on assistant tool call messages
+    expect(result.sessionMessages[1]).toMatchObject({
+      role: 'assistant',
+      content: 'Calculating 2+2 first.',
+      reasoning: 'Thought 1: evaluate inner addition',
+    });
+    expect(result.sessionMessages[3]).toMatchObject({
+      role: 'assistant',
+      content: 'Now calculating 4*2.',
+      reasoning: 'Thought 2: evaluate multiplication',
     });
   });
 
@@ -297,7 +358,7 @@ describe('AgentLoop', () => {
       .mockResolvedValueOnce({
         type: 'text',
         content: 'Forced synthesis final answer.',
-        thought: 'Max iterations reached.',
+        reasoning: 'Max iterations reached.',
       });
 
     const loop = createAgentLoop({ maxToolIterations: 2 });
@@ -311,7 +372,7 @@ describe('AgentLoop', () => {
       { maxIterations: 2 }
     );
     expect(result.finalText).toBe('Forced synthesis final answer.');
-    expect(result.thought).toBe('Max iterations reached.');
+    expect(result.reasoning).toEqual(['Max iterations reached.']);
   });
 
   it('should provide fallback text when forced synthesis returns empty string', async () => {

@@ -30,22 +30,22 @@ describe('MessageFactory', () => {
     expect(msg.timestamp).toBe(customDate);
   });
 
-  it('should create an AssistantTextMessage with optional thought', () => {
+  it('should create an AssistantTextMessage with optional reasoning', () => {
     const msg = MessageFactory.createAssistantText({
       userId: 'user-1',
       content: 'Here is your answer',
-      thought: 'Reasoning steps...',
+      reasoning: 'Reasoning steps...',
     });
 
     expect(msg.role).toBe('assistant');
     expect(msg.userId).toBe('user-1');
     expect(msg.content).toBe('Here is your answer');
-    expect(msg.thought).toBe('Reasoning steps...');
+    expect(msg.reasoning).toBe('Reasoning steps...');
     expect(msg.id).toBeDefined();
     expect(msg.timestamp).toBeInstanceOf(Date);
   });
 
-  it('should create an AssistantToolCallMessage with toolCalls and optional thought', () => {
+  it('should create an AssistantToolCallMessage with toolCalls and optional reasoning', () => {
     const msg = MessageFactory.createAssistantToolCall({
       userId: 'user-1',
       toolCalls: [
@@ -56,16 +56,37 @@ describe('MessageFactory', () => {
           arguments: { expr: '2+2' },
         },
       ],
-      thought: 'Need to compute',
+      reasoning: 'Need to compute',
     });
 
     expect(msg.role).toBe('assistant');
     expect(msg.userId).toBe('user-1');
     expect(msg.toolCalls).toHaveLength(1);
     expect(msg.toolCalls[0].name).toBe('calc');
-    expect(msg.thought).toBe('Need to compute');
+    expect(msg.reasoning).toBe('Need to compute');
+    expect(msg.content).toBeUndefined();
     expect(msg.id).toBeDefined();
     expect(msg.timestamp).toBeInstanceOf(Date);
+  });
+
+  it('should create an AssistantToolCallMessage with accompanying natural content', () => {
+    const msg = MessageFactory.createAssistantToolCall({
+      userId: 'user-1',
+      toolCalls: [
+        {
+          type: 'valid',
+          id: 'call-1',
+          name: 'calc',
+          arguments: { expr: '2+2' },
+        },
+      ],
+      content: 'I will calculate that for you.',
+      reasoning: 'Step 1',
+    });
+
+    expect(msg.role).toBe('assistant');
+    expect(msg.content).toBe('I will calculate that for you.');
+    expect(msg.reasoning).toBe('Step 1');
   });
 
   it('should create a ToolResultMessage with tool metadata and content', () => {

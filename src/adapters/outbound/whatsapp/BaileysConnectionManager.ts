@@ -139,9 +139,17 @@ export class BaileysConnectionManager {
 
       for (const [eventName, handlers] of this.subscribers.entries()) {
         const eventData = events[eventName];
-        if (eventData) {
-          for (const handler of handlers) {
-            await handler(eventData);
+        if (eventData && handlers.length > 0) {
+          const results = await Promise.allSettled(
+            handlers.map(async (handler) => handler(eventData))
+          );
+
+          for (const result of results) {
+            if (result.status === 'rejected') {
+              this.logger.error(`Handler failed for event "${String(eventName)}"`, result.reason, {
+                eventName,
+              });
+            }
           }
         }
       }

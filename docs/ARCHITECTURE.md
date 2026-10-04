@@ -31,18 +31,19 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/outbound/access-control/postgres/PostgresAccessControlAdapter.ts`: Driven adapter implementing `AccessControlPort` and `AccessControlAdminPort` backed by PostgreSQL (`users` table) with O(1) indexed lookups, status gating, background asynchronous LID caching, and idempotent seeding.
   - `src/adapters/outbound/access-control/postgres/schema.ts`: Drizzle ORM schema defining `users` table with canonical `phone_number` PK, unique `pn_jid` and partial unique `lid_jid` indexes, and PostgreSQL check constraints.
   - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` to transmit text payloads over the active WhatsApp socket.
-  - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution. Accepts `BaileysSessionManagerPort`.
+  - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution via concurrent, fault-isolated subscriber dispatch (`Promise.allSettled`). Accepts `BaileysSessionManagerPort`.
   - `src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts`: Implements `BaileysSessionManagerPort` managing WhatsApp credentials and Signal Protocol keys in PostgreSQL (`whatsapp_auth` table) with in-memory caching (`makeCacheableSignalKeyStore`), `BufferJSON` buffer preservation, batch operations, and atomic purge upon logout.
   - `src/adapters/outbound/whatsapp/postgres/schema.ts`: Drizzle ORM table schema defining `whatsapp_auth` with composite primary key `(session_id, key)`.
-  - `src/adapters/outbound/whatsapp/BaileysPairingManager.ts`: Coordinates first-time device registration and 8-digit pairing code generation for unregistered sessions.
   - `src/adapters/outbound/llm/DeepseekAdapter.ts`: Lean coordinator delegating to pure collaborators:
-    - `DeepseekMessageMapper.ts`: Pure message translation to OpenAI-compatible format with DeepSeek `reasoning_content` support.
-    - `DeepseekResponseParser.ts`: Pure parser extracting `ValidToolCallRequest` and `MalformedToolCallRequest` domain entities.
-    - `DeepseekErrorTranslator.ts`: Pure HTTP error status translator.
+    - `DeepseekRequestMapper.ts`: Pure message and system prompt translation to OpenAI-compatible format with DeepSeek `reasoning_content` preservation.
+    - `DeepseekToolMapper.ts`: Pure translation of domain tool definitions to OpenAI function tool schemas.
+    - `DeepseekToolCallParser.ts`: Pure parser extracting `ValidToolCallRequest` and `MalformedToolCallRequest` domain entities.
+    - `DeepseekResponseParser.ts`: Pure OpenAI response parser extracting completion text, chain-of-thought `reasoning`, and delegating tool call extraction.
+    - `DeepseekErrorTranslator.ts`: Pure HTTP error status and SDK error translator.
   - `src/adapters/outbound/chat-repository/postgres/PostgresChatRepository.ts`: Persistent conversation history repository implementing `ChatRepositoryPort` using Drizzle ORM and `postgres.js` under the Hybrid Envelope pattern with sliding-window queries and database-level invariant enforcement.
-  - `src/adapters/outbound/chat-repository/postgres/schema.ts`: Drizzle ORM table schema defining `dialogue_turns` with stored generated `duration_ms`, composite index on `(user_id, completed_at DESC)`, and PostgreSQL `CHECK` constraints.
+  - `src/adapters/outbound/chat-repository/postgres/schema.ts`: Drizzle ORM table schema defining `dialogue_turns` with stored generated `duration_ms`, first-class `reasoning` text array, composite index on `(user_id, completed_at DESC)`, and PostgreSQL `CHECK` constraints.
   - `src/adapters/outbound/chat-repository/postgres/validation.ts`: Pure assertion validating dialogue turn structural and temporal invariants.
-  - `src/adapters/outbound/chat-repository/postgres/metadata.ts`: Pure extractor mapping domain `DialogueTurn` entities into first-class relational columns (`userQuery`, `assistantResponse`, `toolNames`).
+  - `src/adapters/outbound/chat-repository/postgres/metadata.ts`: Pure extractor mapping domain `DialogueTurn` entities into first-class relational columns (`userQuery`, `assistantResponse`, `toolNames`, `reasoning`).
   - `src/adapters/outbound/chat-repository/postgres/migrator.ts`: Startup database migration runner executing Drizzle migrations before service startup.
   - `src/adapters/outbound/logger/PinoLoggerAdapter.ts`: Structured logging wrapper around Pino with unambiguous signature routing.
   - `src/adapters/outbound/tool-registry/InMemoryToolRegistry.ts`: In-memory tool storage exposing clean tool definitions.
@@ -96,7 +97,9 @@ src/
 │       │       └── migrator.ts             # Startup Drizzle migration runner
 │       ├── llm/
 │       │   ├── DeepseekAdapter.ts          # Lean coordinator for DeepSeek completions
-│       │   ├── DeepseekMessageMapper.ts    # Pure domain to OpenAI message mapper
+│       │   ├── DeepseekRequestMapper.ts    # Pure domain to OpenAI message mapper
+│       │   ├── DeepseekToolMapper.ts       # Pure domain to OpenAI tool mapper
+│       │   ├── DeepseekToolCallParser.ts   # Pure OpenAI tool call to domain request parser
 │       │   ├── DeepseekResponseParser.ts   # Pure OpenAI response parser
 │       │   └── DeepseekErrorTranslator.ts  # Pure HTTP and SDK error translator
 │       ├── logger/
@@ -175,10 +178,10 @@ sequenceDiagram
                     loop ReAct Tool Loop (up to maxToolIterations)
                         Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools)
                         alt Response: Text
-                            LLM-->>Loop: { type: 'text', content, thought }
+                            LLM-->>Loop: { type: 'text', content, reasoning }
                             Note over Loop: Break loop
                         else Response: Tool Calls
-                            LLM-->>Loop: { type: 'tool_calls', toolCalls, thought }
+                            LLM-->>Loop: { type: 'tool_calls', toolCalls, content, reasoning }
                             Loop->>Reg: Promise.all(toolCalls.map(executeTool))
                             Reg-->>Loop: Tool results / reflected error strings
                             Note over Loop: Append tool messages to workingHistory & iterate
@@ -187,9 +190,9 @@ sequenceDiagram
 
                     opt Circuit Breaker (if max iterations reached without text)
                         Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools, { forcedSynthesis: true })
-                        LLM-->>Loop: { type: 'text', content }
+                        LLM-->>Loop: { type: 'text', content, reasoning }
                     end
-                    Loop-->>UC: loopResult (finalText, thought, sessionMessages)
+                    Loop-->>UC: loopResult (finalText, reasoning, sessionMessages)
                 end
 
                 rect rgb(240, 255, 240)

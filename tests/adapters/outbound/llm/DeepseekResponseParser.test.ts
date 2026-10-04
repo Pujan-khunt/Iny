@@ -3,7 +3,7 @@ import { parseOpenAIResponse } from '../../../../src/adapters/outbound/llm/Deeps
 import { LLMResponseError } from '../../../../src/core/errors/LLMErrors';
 
 describe('DeepseekResponseParser', () => {
-  it('should parse text response with reasoning_content thought', () => {
+  it('should parse text response with reasoning_content reasoning', () => {
     const raw: any = {
       choices: [
         {
@@ -16,7 +16,7 @@ describe('DeepseekResponseParser', () => {
     expect(parsed).toEqual({
       type: 'text',
       content: 'Hello',
-      thought: 'Thought trace',
+      reasoning: 'Thought trace',
     });
   });
 
@@ -33,7 +33,7 @@ describe('DeepseekResponseParser', () => {
     expect(parsed).toEqual({
       type: 'text',
       content: 'Hello world',
-      thought: undefined,
+      reasoning: undefined,
     });
   });
 
@@ -58,7 +58,7 @@ describe('DeepseekResponseParser', () => {
     const parsed = parseOpenAIResponse(raw);
     expect(parsed.type).toBe('tool_calls');
     if (parsed.type === 'tool_calls') {
-      expect(parsed.thought).toBe('Need to compute');
+      expect(parsed.reasoning).toBe('Need to compute');
       expect(parsed.toolCalls).toEqual([
         {
           type: 'valid',
@@ -67,6 +67,60 @@ describe('DeepseekResponseParser', () => {
           arguments: { expr: '2+2' },
         },
       ]);
+    }
+  });
+
+  it('should parse tool calls with both reasoning_content and natural content without conflation', () => {
+    const raw: any = {
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            reasoning_content: 'Let me calculate this.',
+            content: 'Calculating your expression...',
+            tool_calls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'calc', arguments: '{"expr":"2+2"}' },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const parsed = parseOpenAIResponse(raw);
+    expect(parsed.type).toBe('tool_calls');
+    if (parsed.type === 'tool_calls') {
+      expect(parsed.reasoning).toBe('Let me calculate this.');
+      expect(parsed.content).toBe('Calculating your expression...');
+      expect(parsed.toolCalls).toHaveLength(1);
+    }
+  });
+
+  it('should not treat natural content as reasoning when reasoning_content is absent in tool calls', () => {
+    const raw: any = {
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            content: 'I will now run the search.',
+            tool_calls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'search', arguments: '{"q":"weather"}' },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const parsed = parseOpenAIResponse(raw);
+    expect(parsed.type).toBe('tool_calls');
+    if (parsed.type === 'tool_calls') {
+      expect(parsed.reasoning).toBeUndefined();
+      expect(parsed.content).toBe('I will now run the search.');
     }
   });
 

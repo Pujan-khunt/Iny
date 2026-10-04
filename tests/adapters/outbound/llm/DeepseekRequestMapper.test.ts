@@ -1,16 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import {
-  mapDomainMessagesToOpenAI,
-  mapToolDefinitionsToOpenAI,
-} from '../../../../src/adapters/outbound/llm/DeepseekMessageMapper';
+import { mapDomainMessagesToOpenAI } from '../../../../src/adapters/outbound/llm/DeepseekRequestMapper';
 import {
   Message,
   AssistantTextMessage,
   ToolResultMessage,
 } from '../../../../src/core/entities/Message';
-import { ToolDefinition } from '../../../../src/core/ports/ToolRegistryPort';
 
-describe('DeepseekMessageMapper', () => {
+describe('DeepseekRequestMapper', () => {
   describe('mapDomainMessagesToOpenAI', () => {
     it('should map system prompt and user message', () => {
       const messages: Message[] = [
@@ -23,24 +19,27 @@ describe('DeepseekMessageMapper', () => {
       ]);
     });
 
-    it('should map assistant text message with and without thought', () => {
-      const textWithoutThought: AssistantTextMessage = {
+    it('should map assistant text message with and without reasoning', () => {
+      const textWithoutReasoning: AssistantTextMessage = {
         id: '2',
         userId: 'u1',
         role: 'assistant',
         content: 'General response',
         timestamp: new Date(),
       };
-      const textWithThought: AssistantTextMessage = {
+      const textWithReasoning: AssistantTextMessage = {
         id: '3',
         userId: 'u1',
         role: 'assistant',
         content: 'Reasoned response',
-        thought: 'deep thinking',
+        reasoning: 'deep thinking',
         timestamp: new Date(),
       };
 
-      const result = mapDomainMessagesToOpenAI('System', [textWithoutThought, textWithThought]);
+      const result = mapDomainMessagesToOpenAI('System', [
+        textWithoutReasoning,
+        textWithReasoning,
+      ]);
       expect(result[1]).toEqual({
         role: 'assistant',
         content: 'General response',
@@ -52,13 +51,13 @@ describe('DeepseekMessageMapper', () => {
       });
     });
 
-    it('should map assistant with reasoning_content thought and valid tool calls', () => {
+    it('should map assistant with reasoning and valid tool calls', () => {
       const messages: Message[] = [
         {
           id: '4',
           userId: 'u1',
           role: 'assistant',
-          thought: 'thinking step',
+          reasoning: 'thinking step',
           toolCalls: [{ type: 'valid', id: 'c1', name: 'calc', arguments: { expr: '2+2' } }],
           timestamp: new Date(),
         },
@@ -75,6 +74,52 @@ describe('DeepseekMessageMapper', () => {
             function: { name: 'calc', arguments: '{"expr":"2+2"}' },
           },
         ],
+      });
+    });
+
+    it('should map assistant with both natural content and reasoning alongside tool calls', () => {
+      const messages: Message[] = [
+        {
+          id: '4b',
+          userId: 'u1',
+          role: 'assistant',
+          content: 'Let me run that computation.',
+          reasoning: 'Detailed plan',
+          toolCalls: [{ type: 'valid', id: 'c1', name: 'calc', arguments: { expr: '2+2' } }],
+          timestamp: new Date(),
+        },
+      ];
+      const result = mapDomainMessagesToOpenAI('System', messages);
+      expect(result[1]).toMatchObject({
+        role: 'assistant',
+        content: 'Let me run that computation.',
+        reasoning_content: 'Detailed plan',
+        tool_calls: [
+          {
+            id: 'c1',
+            type: 'function',
+            function: { name: 'calc', arguments: '{"expr":"2+2"}' },
+          },
+        ],
+      });
+    });
+
+    it('should preserve empty reasoning string as reasoning_content', () => {
+      const messages: Message[] = [
+        {
+          id: '4c',
+          userId: 'u1',
+          role: 'assistant',
+          content: 'Direct answer',
+          reasoning: '',
+          timestamp: new Date(),
+        },
+      ];
+      const result = mapDomainMessagesToOpenAI('System', messages);
+      expect(result[1]).toMatchObject({
+        role: 'assistant',
+        content: 'Direct answer',
+        reasoning_content: '',
       });
     });
 
@@ -137,42 +182,6 @@ describe('DeepseekMessageMapper', () => {
       expect(() => mapDomainMessagesToOpenAI('System', [invalidMsg as Message])).toThrow(
         /Unhandled message:/
       );
-    });
-  });
-
-  describe('mapToolDefinitionsToOpenAI', () => {
-    it('should return undefined when tools array is empty', () => {
-      const result = mapToolDefinitionsToOpenAI([]);
-      expect(result).toBeUndefined();
-    });
-
-    it('should return undefined when forcedSynthesis is true', () => {
-      const tools: ToolDefinition[] = [
-        { name: 'calc', description: 'math', schema: { type: 'object' } },
-      ];
-      const result = mapToolDefinitionsToOpenAI(tools, true);
-      expect(result).toBeUndefined();
-    });
-
-    it('should map tool definitions to OpenAI tool format', () => {
-      const tools: ToolDefinition[] = [
-        {
-          name: 'calc',
-          description: 'Calculates math expressions',
-          schema: { type: 'object', properties: { expr: { type: 'string' } } },
-        },
-      ];
-      const result = mapToolDefinitionsToOpenAI(tools, false);
-      expect(result).toEqual([
-        {
-          type: 'function',
-          function: {
-            name: 'calc',
-            description: 'Calculates math expressions',
-            parameters: { type: 'object', properties: { expr: { type: 'string' } } },
-          },
-        },
-      ]);
     });
   });
 });

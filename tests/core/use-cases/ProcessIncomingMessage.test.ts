@@ -47,7 +47,7 @@ describe('ProcessIncomingMessage', () => {
     userId: 'user1',
     role: 'assistant',
     content: 'Hello! How can I help you today?',
-    thought: 'Friendly greeting',
+    reasoning: 'Friendly greeting',
     timestamp: new Date('2026-09-23T10:00:01Z'),
   };
 
@@ -83,7 +83,7 @@ describe('ProcessIncomingMessage', () => {
     mockAgentLoop = {
       run: vi.fn().mockResolvedValue({
         finalText: sampleAssistantMessage.content,
-        thought: sampleAssistantMessage.thought,
+        reasoning: [sampleAssistantMessage.reasoning!],
         sessionMessages: [sampleUserMessage, sampleAssistantMessage],
       }),
     } as unknown as AgentLoop;

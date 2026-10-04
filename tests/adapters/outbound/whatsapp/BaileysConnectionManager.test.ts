@@ -529,5 +529,133 @@ describe('BaileysConnectionManager', () => {
       expect(handler1).toHaveBeenCalledWith(eventPayload);
       expect(handler2).toHaveBeenCalledWith(eventPayload);
     });
+
+    it('should execute multiple handlers concurrently without blocking sibling handlers', async () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const executionOrder: string[] = [];
+
+      let resolveSlowHandler!: () => void;
+      const slowHandler = vi.fn().mockImplementation(async () => {
+        executionOrder.push('slow-start');
+        await new Promise<void>((resolve) => {
+          resolveSlowHandler = resolve;
+        });
+        executionOrder.push('slow-end');
+      });
+
+      const fastHandler = vi.fn().mockImplementation(async () => {
+        executionOrder.push('fast-start');
+        executionOrder.push('fast-end');
+      });
+
+      manager.subscribe('messages.upsert', slowHandler);
+      manager.subscribe('messages.upsert', fastHandler);
+
+      const options = {
+        session: {
+          state: { creds: { registered: true } as any, keys: {} as any },
+          saveCreds: vi.fn().mockResolvedValue(undefined),
+        },
+        botPhoneNumber: '919876543210',
+      };
+
+      await manager.start(options);
+
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [],
+      };
+
+      const processPromise = capturedProcessHandler!({
+        'messages.upsert': eventPayload,
+      });
+
+      // Both should have started and fastHandler should have completed even while slowHandler is still pending
+      expect(slowHandler).toHaveBeenCalledTimes(1);
+      expect(fastHandler).toHaveBeenCalledTimes(1);
+      expect(executionOrder).toEqual(['slow-start', 'fast-start', 'fast-end']);
+
+      // Now resolve slow handler
+      resolveSlowHandler();
+      await processPromise;
+
+      expect(executionOrder).toEqual(['slow-start', 'fast-start', 'fast-end', 'slow-end']);
+    });
+
+    it('should isolate errors so a rejected handler does not prevent sibling handlers from running and logs error', async () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const error = new Error('Handler crash');
+      const failingHandler = vi.fn().mockRejectedValue(error);
+      const succeedingHandler = vi.fn().mockResolvedValue(undefined);
+
+      manager.subscribe('messages.upsert', failingHandler);
+      manager.subscribe('messages.upsert', succeedingHandler);
+
+      const options = {
+        session: {
+          state: { creds: { registered: true } as any, keys: {} as any },
+          saveCreds: vi.fn().mockResolvedValue(undefined),
+        },
+        botPhoneNumber: '919876543210',
+      };
+
+      await manager.start(options);
+
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [],
+      };
+
+      await capturedProcessHandler!({
+        'messages.upsert': eventPayload,
+      });
+
+      expect(failingHandler).toHaveBeenCalledTimes(1);
+      expect(succeedingHandler).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Handler failed for event "messages.upsert"',
+        error,
+        { eventName: 'messages.upsert' }
+      );
+    });
+
+    it('should safely catch synchronous throws from handlers without crashing', async () => {
+      const manager = new BaileysConnectionManager(mockLogger, mockPairingManager, mockSessionManager);
+      const syncError = new Error('Sync throw');
+      const throwingHandler = vi.fn().mockImplementation(() => {
+        throw syncError;
+      });
+      const siblingHandler = vi.fn().mockResolvedValue(undefined);
+
+      manager.subscribe('messages.upsert', throwingHandler);
+      manager.subscribe('messages.upsert', siblingHandler);
+
+      const options = {
+        session: {
+          state: { creds: { registered: true } as any, keys: {} as any },
+          saveCreds: vi.fn().mockResolvedValue(undefined),
+        },
+        botPhoneNumber: '919876543210',
+      };
+
+      await manager.start(options);
+
+      const eventPayload = {
+        type: 'notify' as const,
+        messages: [],
+      };
+
+      await capturedProcessHandler!({
+        'messages.upsert': eventPayload,
+      });
+
+      expect(throwingHandler).toHaveBeenCalledTimes(1);
+      expect(siblingHandler).toHaveBeenCalledTimes(1);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Handler failed for event "messages.upsert"',
+        syncError,
+        { eventName: 'messages.upsert' }
+      );
+    });
   });
 });

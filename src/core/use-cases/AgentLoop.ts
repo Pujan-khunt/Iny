@@ -25,8 +25,8 @@ export interface AgentLoopConfig {
 export interface AgentLoopResult {
   /** The final natural language response synthesized by the model. */
   finalText: string;
-  /** Optional chain-of-thought or reasoning scratchpad emitted by the model. */
-  thought?: string;
+  /** All chain-of-thought reasoning scratchpads emitted across all iterations of this turn. */
+  reasoning: string[];
   /** All intermediate messages generated during this turn (assistant tool calls, tool results, final text). */
   sessionMessages: Message[];
 }
@@ -72,6 +72,7 @@ export class AgentLoop {
     log: LoggerPort
   ): Promise<AgentLoopResult> {
     const sessionMessages: Message[] = [userMessage];
+    const reasoning: string[] = [];
     let iteration = 0;
 
     while (iteration < this.maxToolIterations) {
@@ -82,6 +83,11 @@ export class AgentLoop {
         tools
       );
 
+      if (response.reasoning && response.reasoning.trim() !== '') {
+        reasoning.push(response.reasoning);
+        log.debug('Model reasoning step', { reasoning: response.reasoning, iteration });
+      }
+
       if (response.type === 'text') {
         const content =
           response.content.trim() !== ''
@@ -90,17 +96,18 @@ export class AgentLoop {
         const assistantMessage = MessageFactory.createAssistantText({
           userId: userMessage.userId,
           content,
-          thought: response.thought,
+          reasoning: response.reasoning,
         });
         sessionMessages.push(assistantMessage);
-        return { finalText: content, thought: response.thought, sessionMessages };
+        return { finalText: content, reasoning, sessionMessages };
       }
 
       // Handle tool calls step
       const toolCallMessage = MessageFactory.createAssistantToolCall({
         userId: userMessage.userId,
         toolCalls: response.toolCalls,
-        thought: response.thought,
+        content: response.content,
+        reasoning: response.reasoning,
       });
       sessionMessages.push(toolCallMessage);
 
@@ -114,7 +121,7 @@ export class AgentLoop {
     }
 
     // Circuit breaker forced synthesis
-    return this.handleCircuitBreaker(userMessage.userId, history, sessionMessages, tools, log);
+    return this.handleCircuitBreaker(userMessage.userId, history, sessionMessages, tools, log, reasoning);
   }
 
   /**
@@ -173,7 +180,8 @@ export class AgentLoop {
     history: Message[],
     sessionMessages: Message[],
     tools: ToolDefinition[],
-    log: LoggerPort
+    log: LoggerPort,
+    reasoning: string[]
   ): Promise<AgentLoopResult> {
     log.warn('Max tool iterations reached, forcing synthesis', undefined, {
       maxIterations: this.maxToolIterations,
@@ -187,6 +195,11 @@ export class AgentLoop {
       { forcedSynthesis: true }
     );
 
+    if (forcedResponse.reasoning && forcedResponse.reasoning.trim() !== '') {
+      reasoning.push(forcedResponse.reasoning);
+      log.debug('Model circuit-breaker reasoning step', { reasoning: forcedResponse.reasoning });
+    }
+
     const rawContent = forcedResponse.type === 'text' ? forcedResponse.content : '';
     const content =
       rawContent.trim() !== ''
@@ -196,10 +209,10 @@ export class AgentLoop {
     const assistantMessage = MessageFactory.createAssistantText({
       userId,
       content,
-      thought: forcedResponse.thought,
+      reasoning: forcedResponse.reasoning,
     });
     sessionMessages.push(assistantMessage);
 
-    return { finalText: content, thought: forcedResponse.thought, sessionMessages };
+    return { finalText: content, reasoning, sessionMessages };
   }
 }

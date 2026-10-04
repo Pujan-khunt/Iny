@@ -28,6 +28,7 @@ describe('PostgresChatRepository', () => {
         user_query TEXT NOT NULL,
         assistant_response TEXT NOT NULL,
         tool_names TEXT[] NOT NULL DEFAULT '{}',
+        reasoning TEXT[] NOT NULL DEFAULT '{}',
         started_at TIMESTAMPTZ NOT NULL,
         completed_at TIMESTAMPTZ NOT NULL,
         duration_ms INTEGER,

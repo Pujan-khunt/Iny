@@ -27,7 +27,7 @@ export interface UserMessage extends BaseMessage {
 export interface AssistantTextMessage extends BaseMessage {
   role: 'assistant';
   content: string;
-  thought?: string;
+  reasoning?: string;
   toolCalls?: never;
 }
 
@@ -38,7 +38,7 @@ export interface AssistantTextMessage extends BaseMessage {
 export interface AssistantToolCallMessage extends BaseMessage {
   role: 'assistant';
   content?: string;
-  thought?: string;
+  reasoning?: string;
   toolCalls: ToolCallRequest[];
 }
 
@@ -79,7 +79,7 @@ export interface CreateUserMessageParams {
 export interface CreateAssistantTextMessageParams {
   userId: string;
   content: string;
-  thought?: string;
+  reasoning?: string;
   id?: string;
   timestamp?: Date;
 }
@@ -90,7 +90,8 @@ export interface CreateAssistantTextMessageParams {
 export interface CreateAssistantToolCallMessageParams {
   userId: string;
   toolCalls: ToolCallRequest[];
-  thought?: string;
+  content?: string;
+  reasoning?: string;
   id?: string;
   timestamp?: Date;
 }
@@ -129,7 +130,7 @@ export class MessageFactory {
       userId: params.userId,
       role: 'assistant',
       content: params.content,
-      thought: params.thought,
+      reasoning: params.reasoning,
       timestamp: params.timestamp ?? new Date(),
     };
   }
@@ -142,7 +143,8 @@ export class MessageFactory {
       userId: params.userId,
       role: 'assistant',
       toolCalls: params.toolCalls,
-      thought: params.thought,
+      content: params.content,
+      reasoning: params.reasoning,
       timestamp: params.timestamp ?? new Date(),
     };
   }

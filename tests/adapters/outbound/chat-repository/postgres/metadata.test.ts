@@ -49,5 +49,44 @@ describe('extractTurnMetadata', () => {
     expect(metadata.userQuery).toBe('Calculate 2+2 and 3+3');
     expect(metadata.assistantResponse).toBe('Results are 4 and 6.');
     expect(metadata.toolNames).toEqual(['CalculatorTool']);
+    expect(metadata.reasoning).toEqual([]);
+  });
+
+  it('should extract reasoning across intermediate tool calls and final text', () => {
+    const turn: DialogueTurn = {
+      id: 'turn-3',
+      userId: 'user1',
+      startedAt: new Date(),
+      completedAt: new Date(),
+      messages: [
+        { id: 'm1', userId: 'user1', role: 'user', content: 'What is the weather?', timestamp: new Date() },
+        {
+          id: 'm2',
+          userId: 'user1',
+          role: 'assistant',
+          reasoning: 'Need to check location first.',
+          toolCalls: [{ type: 'valid', id: 'c1', name: 'GetWeather', arguments: { city: 'Tokyo' } }],
+          timestamp: new Date(),
+        },
+        { id: 'm3', userId: 'user1', role: 'tool', toolCallId: 'c1', name: 'GetWeather', content: 'Sunny 22C', timestamp: new Date() },
+        {
+          id: 'm4',
+          userId: 'user1',
+          role: 'assistant',
+          reasoning: 'Synthesizing weather summary.',
+          content: 'The weather in Tokyo is sunny at 22C.',
+          timestamp: new Date(),
+        },
+      ],
+    };
+
+    const metadata = extractTurnMetadata(turn);
+    expect(metadata.userQuery).toBe('What is the weather?');
+    expect(metadata.assistantResponse).toBe('The weather in Tokyo is sunny at 22C.');
+    expect(metadata.toolNames).toEqual(['GetWeather']);
+    expect(metadata.reasoning).toEqual([
+      'Need to check location first.',
+      'Synthesizing weather summary.',
+    ]);
   });
 });
