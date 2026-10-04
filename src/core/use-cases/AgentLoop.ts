@@ -10,21 +10,44 @@ import { LLMPort } from '../ports/LLMPort';
 import { ToolRegistryPort, ToolDefinition } from '../ports/ToolRegistryPort';
 import { LoggerPort } from '../ports/LoggerPort';
 
+/**
+ * Configuration options for the ReAct reasoning agent loop.
+ */
 export interface AgentLoopConfig {
+  /** Static system prompt instructing the language model on persona and rules. */
   systemPrompt: string;
+  /** Maximum number of tool execution cycles before forcing text synthesis. Defaults to 5. */
   maxToolIterations?: number;
 }
 
+/**
+ * Encapsulates the outcome of an AgentLoop execution cycle.
+ */
 export interface AgentLoopResult {
+  /** The final natural language response synthesized by the model. */
   finalText: string;
+  /** Optional chain-of-thought or reasoning scratchpad emitted by the model. */
   thought?: string;
+  /** All intermediate messages generated during this turn (assistant tool calls, tool results, final text). */
   sessionMessages: Message[];
 }
 
+/**
+ * Pure domain service executing the ReAct (Reasoning + Acting) loop.
+ * Coordinates multi-turn LLM reasoning, concurrent tool execution via Promise.all,
+ * malformed argument reflection, and circuit-breaker forced synthesis.
+ */
 export class AgentLoop {
   private readonly maxToolIterations: number;
   private readonly systemPrompt: string;
 
+  /**
+   * Initializes a new AgentLoop domain service instance.
+   *
+   * @param llm Outbound port for interacting with the language model provider.
+   * @param registry Outbound port for discovering and executing domain tools.
+   * @param config Agent loop operational parameters (system prompt, iteration limit).
+   */
   constructor(
     private llm: LLMPort,
     private registry: ToolRegistryPort,
@@ -34,6 +57,15 @@ export class AgentLoop {
     this.maxToolIterations = config.maxToolIterations ?? 5;
   }
 
+  /**
+   * Runs the ReAct reasoning loop until the model produces a text response or reaches max iterations.
+   *
+   * @param userMessage Inbound user message triggering this dialogue exchange.
+   * @param history Prior dialogue turns loaded from conversation history.
+   * @param tools Available tool definitions formatted for model function calling.
+   * @param log Request-scoped structured logger.
+   * @returns Synthesized final text, reasoning trace, and all turn session messages.
+   */
   async run(
     userMessage: UserMessage,
     history: Message[],
@@ -92,6 +124,10 @@ export class AgentLoop {
     return this.handleCircuitBreaker(userMessage.userId, history, sessionMessages, tools, log);
   }
 
+  /**
+   * Concurrently executes multiple tool calls requested by the model.
+   * Isolates failures and returns structured ToolResultMessage entities for model feedback.
+   */
   private async executeToolsConcurrently(
     userId: string,
     toolCalls: ToolCallRequest[],
@@ -144,6 +180,10 @@ export class AgentLoop {
     );
   }
 
+  /**
+   * Handles the circuit breaker condition when max tool iterations is reached.
+   * Forces the model to synthesize a final natural language answer without further tool calls.
+   */
   private async handleCircuitBreaker(
     userId: string,
     history: Message[],
