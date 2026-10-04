@@ -7,14 +7,14 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
 ## 2. Mental Model & Core Concepts
 
 - **Entities**: Pure data structures representing domain concepts:
-  - `src/core/entities/Message.ts`: Discriminated union of `UserMessage`, `AssistantMessage` (`AssistantTextMessage` | `AssistantToolCallMessage`), and `ToolResultMessage`.
+  - `src/core/entities/Message.ts`: Discriminated union of `UserMessage`, `AssistantMessage` (`AssistantTextMessage` | `AssistantToolCallMessage`), and `ToolResultMessage`. Exposes `MessageFactory` for strongly-typed construction.
   - `src/core/entities/ToolCallRequest.ts`: Discriminated union of `ValidToolCallRequest` and `MalformedToolCallRequest` modeling parsed LLM function invocations.
-  - `src/core/entities/DialogueTurn.ts`: Encapsulates a complete, turn-atomic interaction boundary (`UserMessage`, intermediate tool calls and results, final `AssistantTextMessage`, `startedAt`, and `completedAt`).
+  - `src/core/entities/DialogueTurn.ts`: Encapsulates a complete, turn-atomic interaction boundary (`UserMessage`, intermediate tool calls and results, final `AssistantTextMessage`, `startedAt`, and `completedAt`). Exposes `DialogueTurnFactory`.
 - **Use Cases & Domain Services**: Application-specific business rules:
   - `src/core/use-cases/ProcessIncomingMessage.ts`: 4-phase orchestrator separating Conversation Context Retrieval, Reasoning, Delivery, and Persistence phases. Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
   - `src/core/use-cases/AgentLoop.ts`: Pure domain service executing the ReAct (Reasoning + Acting) loop. Manages concurrent tool execution via `Promise.all`, circuit breaker forced synthesis, and malformed tool error injection.
 - **Ports**: Interfaces that define how the core communicates with the outside world without knowing implementation details:
-  - `src/core/ports/AllowlistPort.ts`: Core access control port (`AllowlistPort` with `authenticate`, `getAllowedUser`) and administrative user management port (`AllowlistAdminPort` with `seedUsers`, `countActiveUsers`).
+  - `src/core/ports/AccessControlPort.ts`: Core access control port (`AccessControlPort` with `authenticate`, `getUser`) and administrative user management port (`AccessControlAdminPort` with `seedUsers`, `countActiveUsers`).
   - `src/core/ports/MessageSenderPort.ts`: Outbound messaging transport.
   - `src/core/ports/LLMPort.ts`: Language model reasoning and tool call generation.
   - `src/core/ports/ChatRepositoryPort.ts`: Conversation history persistence.
@@ -24,12 +24,12 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/tools/BaseTool.ts`: Abstract base class using the Template Method pattern, declarative Zod schemas, automatic JSON Schema generation, and self-correcting error string returns.
   - `src/tools/CalculatorTool.ts`: Safe arithmetic evaluation tool using recursive descent parsing (zero `eval`).
 - **Inbound Adapters**: Entry points that trigger core use cases:
-  - `src/adapters/inbound/whatsapp/WhatsAppInboundAdapter.ts`: Driving adapter listening for incoming WhatsApp messages via Baileys, coordinating eligibility filtering, access control authorization via `AllowlistPort`, JID/LID duality resolution (mapping `@lid` stanzas to canonical `@s.whatsapp.net` PNJIDs), and dispatching valid user messages to `ProcessIncomingMessage`.
+  - `src/adapters/inbound/whatsapp/WhatsAppInboundAdapter.ts`: Driving adapter listening for incoming WhatsApp messages via Baileys, coordinating eligibility filtering, access control authorization via `AccessControlPort`, JID/LID duality routing (resolving lookup addresses and companion LIDs), and dispatching valid user messages to `ProcessIncomingMessage`.
   - `src/adapters/inbound/whatsapp/BaileysMessageFilter.ts`: Evaluates incoming raw WhatsApp message eligibility (rejecting self-messages, non-text messages, groups `@g.us`, and broadcasts `@broadcast`).
   - `src/adapters/inbound/whatsapp/BaileysMessageParser.ts`: Pure translator mapping eligible raw Baileys messages into domain `UserMessage` entities with normalized epoch timestamps and canonical user ID overrides.
 - **Outbound Adapters**: Concrete implementations of our core ports:
-  - `src/adapters/outbound/access-control/postgres/PostgresAllowlistAdapter.ts`: Driven adapter implementing `AllowlistPort` and `AllowlistAdminPort` backed by PostgreSQL (`allowed_users` table) with O(1) indexed lookups, soft revocation checks, background asynchronous LID caching, and idempotent seeding.
-  - `src/adapters/outbound/access-control/postgres/schema.ts`: Drizzle ORM schema defining `allowed_users` with canonical `phone_number` PK, unique `pn_jid` and `lid_jid` indexes, and PostgreSQL check constraints.
+  - `src/adapters/outbound/access-control/postgres/PostgresAccessControlAdapter.ts`: Driven adapter implementing `AccessControlPort` and `AccessControlAdminPort` backed by PostgreSQL (`users` table) with O(1) indexed lookups, status gating, background asynchronous LID caching, and idempotent seeding.
+  - `src/adapters/outbound/access-control/postgres/schema.ts`: Drizzle ORM schema defining `users` table with canonical `phone_number` PK, unique `pn_jid` and partial unique `lid_jid` indexes, and PostgreSQL check constraints.
   - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` to transmit text payloads over the active WhatsApp socket.
   - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution. Accepts `BaileysSessionManagerPort`.
   - `src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts`: Implements `BaileysSessionManagerPort` managing WhatsApp credentials and Signal Protocol keys in PostgreSQL (`whatsapp_auth` table) with in-memory caching (`makeCacheableSignalKeyStore`), `BufferJSON` buffer preservation, batch operations, and atomic purge upon logout.

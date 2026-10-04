@@ -62,3 +62,101 @@ export interface ToolResultMessage extends BaseMessage {
  * Discriminant is the "role" property ('user' | 'assistant' | 'tool').
  */
 export type Message = UserMessage | AssistantMessage | ToolResultMessage;
+
+/**
+ * Parameters for creating a UserMessage entity.
+ */
+export interface CreateUserMessageParams {
+  userId: string;
+  content: string;
+  id?: string;
+  timestamp?: Date;
+}
+
+/**
+ * Parameters for creating an AssistantTextMessage entity.
+ */
+export interface CreateAssistantTextMessageParams {
+  userId: string;
+  content: string;
+  thought?: string;
+  id?: string;
+  timestamp?: Date;
+}
+
+/**
+ * Parameters for creating an AssistantToolCallMessage entity.
+ */
+export interface CreateAssistantToolCallMessageParams {
+  userId: string;
+  toolCalls: ToolCallRequest[];
+  thought?: string;
+  id?: string;
+  timestamp?: Date;
+}
+
+/**
+ * Parameters for creating a ToolResultMessage entity.
+ */
+export interface CreateToolResultMessageParams {
+  userId: string;
+  toolCallId: string;
+  name: string;
+  content: string;
+  id?: string;
+  timestamp?: Date;
+}
+
+/**
+ * Factory for creating strongly-typed Message domain entities with defaulted IDs and timestamps.
+ */
+export class MessageFactory {
+  private constructor() {}
+
+  static createUser(params: CreateUserMessageParams): UserMessage {
+    return {
+      id: params.id ?? crypto.randomUUID(),
+      userId: params.userId,
+      role: 'user',
+      content: params.content,
+      timestamp: params.timestamp ?? new Date(),
+    };
+  }
+
+  static createAssistantText(params: CreateAssistantTextMessageParams): AssistantTextMessage {
+    return {
+      id: params.id ?? crypto.randomUUID(),
+      userId: params.userId,
+      role: 'assistant',
+      content: params.content,
+      thought: params.thought,
+      timestamp: params.timestamp ?? new Date(),
+    };
+  }
+
+  static createAssistantToolCall(
+    params: CreateAssistantToolCallMessageParams
+  ): AssistantToolCallMessage {
+    return {
+      id: params.id ?? crypto.randomUUID(),
+      userId: params.userId,
+      role: 'assistant',
+      toolCalls: params.toolCalls,
+      thought: params.thought,
+      timestamp: params.timestamp ?? new Date(),
+    };
+  }
+
+  static createToolResult(params: CreateToolResultMessageParams): ToolResultMessage {
+    return {
+      id: params.id ?? crypto.randomUUID(),
+      userId: params.userId,
+      role: 'tool',
+      toolCallId: params.toolCallId,
+      name: params.name,
+      content: params.content,
+      timestamp: params.timestamp ?? new Date(),
+    };
+  }
+}
+

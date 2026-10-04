@@ -19,3 +19,32 @@ export interface DialogueTurn {
   /** Timestamp when the final assistant response was delivered to the user. */
   completedAt: Date;
 }
+
+/**
+ * Parameters for creating a DialogueTurn entity.
+ */
+export interface CreateDialogueTurnParams {
+  userId: string;
+  messages: Message[];
+  startedAt: Date;
+  completedAt: Date;
+  id?: string;
+}
+
+/**
+ * Factory for creating strongly-typed DialogueTurn domain entities with defaulted IDs.
+ */
+export class DialogueTurnFactory {
+  private constructor() {}
+
+  static create(params: CreateDialogueTurnParams): DialogueTurn {
+    return {
+      id: params.id ?? crypto.randomUUID(),
+      userId: params.userId,
+      messages: params.messages,
+      startedAt: params.startedAt,
+      completedAt: params.completedAt,
+    };
+  }
+}
+

@@ -1,5 +1,5 @@
 import { normalizeMessageContent, proto, toNumber } from '@whiskeysockets/baileys';
-import { UserMessage } from '../../../core/entities/Message';
+import { MessageFactory, UserMessage } from '../../../core/entities/Message';
 import { EligibleWebMessageInfo } from './BaileysMessageFilter';
 
 /**
@@ -16,13 +16,12 @@ export class BaileysMessageParser {
     const text = this.extractText(raw.message);
     const timestampSeconds = this.resolveTimestamp(raw.messageTimestamp);
 
-    return {
+    return MessageFactory.createUser({
       id: raw.key.id,
       userId: canonicalUserId,
       content: text ? text.trim() : '',
       timestamp: new Date(timestampSeconds * 1000),
-      role: 'user',
-    };
+    });
   }
 
   private extractText(message: proto.IMessage): string | null {

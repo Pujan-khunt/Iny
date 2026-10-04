@@ -1,8 +1,7 @@
 import {
   Message,
   UserMessage,
-  AssistantTextMessage,
-  AssistantToolCallMessage,
+  MessageFactory,
   ToolResultMessage,
 } from '../entities/Message';
 import { ToolCallRequest } from '../entities/ToolCallRequest';
@@ -88,27 +87,21 @@ export class AgentLoop {
           response.content.trim() !== ''
             ? response.content
             : 'I apologize, but I was unable to formulate a response.';
-        const assistantMessage: AssistantTextMessage = {
-          id: crypto.randomUUID(),
+        const assistantMessage = MessageFactory.createAssistantText({
           userId: userMessage.userId,
-          role: 'assistant',
           content,
           thought: response.thought,
-          timestamp: new Date(),
-        };
+        });
         sessionMessages.push(assistantMessage);
         return { finalText: content, thought: response.thought, sessionMessages };
       }
 
       // Handle tool calls step
-      const toolCallMessage: AssistantToolCallMessage = {
-        id: crypto.randomUUID(),
+      const toolCallMessage = MessageFactory.createAssistantToolCall({
         userId: userMessage.userId,
-        role: 'assistant',
-        thought: response.thought,
         toolCalls: response.toolCalls,
-        timestamp: new Date(),
-      };
+        thought: response.thought,
+      });
       sessionMessages.push(toolCallMessage);
 
       const toolResults = await this.executeToolsConcurrently(
@@ -140,41 +133,32 @@ export class AgentLoop {
             toolName: tc.name,
             parseError: tc.parseError,
           });
-          return {
-            id: crypto.randomUUID(),
+          return MessageFactory.createToolResult({
             userId,
-            role: 'tool',
             toolCallId: tc.id,
             name: tc.name,
             content: `Error executing tool '${tc.name}': Failed to parse tool arguments: ${tc.parseError}`,
-            timestamp: new Date(),
-          };
+          });
         }
 
         try {
           log.info('Executing tool call', { toolName: tc.name });
           const result = await this.registry.executeTool(tc.name, tc.arguments);
-          return {
-            id: crypto.randomUUID(),
+          return MessageFactory.createToolResult({
             userId,
-            role: 'tool',
             toolCallId: tc.id,
             name: tc.name,
             content: result,
-            timestamp: new Date(),
-          };
+          });
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           log.warn('Tool execution failed', error, { toolName: tc.name });
-          return {
-            id: crypto.randomUUID(),
+          return MessageFactory.createToolResult({
             userId,
-            role: 'tool',
             toolCallId: tc.id,
             name: tc.name,
             content: `Error executing tool '${tc.name}': ${errorMessage}`,
-            timestamp: new Date(),
-          };
+          });
         }
       })
     );
@@ -209,14 +193,11 @@ export class AgentLoop {
         ? rawContent
         : "I've reached the maximum number of tool iterations and was unable to complete your request.";
 
-    const assistantMessage: AssistantTextMessage = {
-      id: crypto.randomUUID(),
+    const assistantMessage = MessageFactory.createAssistantText({
       userId,
-      role: 'assistant',
       content,
       thought: forcedResponse.thought,
-      timestamp: new Date(),
-    };
+    });
     sessionMessages.push(assistantMessage);
 
     return { finalText: content, thought: forcedResponse.thought, sessionMessages };

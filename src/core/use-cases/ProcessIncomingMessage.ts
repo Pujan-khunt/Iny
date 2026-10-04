@@ -1,5 +1,5 @@
 import { Message, UserMessage } from '../entities/Message';
-import { DialogueTurn } from '../entities/DialogueTurn';
+import { DialogueTurnFactory } from '../entities/DialogueTurn';
 import { MessageSenderPort } from '../ports/MessageSenderPort';
 import { ChatRepositoryPort } from '../ports/ChatRepositoryPort';
 import { ToolRegistryPort } from '../ports/ToolRegistryPort';
@@ -71,13 +71,12 @@ export class ProcessIncomingMessage {
 
     // 4. PERSISTENCE PHASE
     try {
-      const turn: DialogueTurn = {
-        id: crypto.randomUUID(),
+      const turn = DialogueTurnFactory.create({
         userId: message.userId,
         messages: loopResult.sessionMessages,
         startedAt,
         completedAt,
-      };
+      });
       await this.chatRepository.saveTurn(turn);
       log.info('Message processed successfully');
     } catch (persistenceError) {
