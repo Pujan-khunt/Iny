@@ -32,3 +32,42 @@ export interface MalformedToolCallRequest {
  * Discriminant is the "type" property ('valid' | 'malformed').
  */
 export type ToolCallRequest = ValidToolCallRequest | MalformedToolCallRequest;
+
+export interface CreateValidToolCallRequestParams {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface CreateMalformedToolCallRequestParams {
+  id: string;
+  name: string;
+  rawArguments: string;
+  parseError: string;
+}
+
+/**
+ * Factory for creating strongly-typed ToolCallRequest domain entities.
+ */
+export class ToolCallRequestFactory {
+  private constructor() {}
+
+  static createValid(params: CreateValidToolCallRequestParams): ValidToolCallRequest {
+    return {
+      type: 'valid',
+      id: params.id,
+      name: params.name,
+      arguments: params.arguments,
+    };
+  }
+
+  static createMalformed(params: CreateMalformedToolCallRequestParams): MalformedToolCallRequest {
+    return {
+      type: 'malformed',
+      id: params.id,
+      name: params.name,
+      rawArguments: params.rawArguments,
+      parseError: params.parseError,
+    };
+  }
+}

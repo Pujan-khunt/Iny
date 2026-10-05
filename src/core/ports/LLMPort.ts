@@ -34,6 +34,41 @@ export interface TextResponseDecision extends BaseLLMDecision {
  */
 export type LLMResponse = ToolCallDecision | TextResponseDecision;
 
+export interface CreateToolCallDecisionParams {
+  toolCalls: ToolCallRequest[];
+  content?: string;
+  reasoning?: string;
+}
+
+export interface CreateTextResponseDecisionParams {
+  content: string;
+  reasoning?: string;
+}
+
+/**
+ * Factory for creating strongly-typed LLMResponse decisions.
+ */
+export class LLMResponseFactory {
+  private constructor() {}
+
+  static createToolCalls(params: CreateToolCallDecisionParams): ToolCallDecision {
+    return {
+      type: 'tool_calls',
+      toolCalls: params.toolCalls,
+      content: params.content,
+      reasoning: params.reasoning,
+    };
+  }
+
+  static createText(params: CreateTextResponseDecisionParams): TextResponseDecision {
+    return {
+      type: 'text',
+      content: params.content,
+      reasoning: params.reasoning,
+    };
+  }
+}
+
 /**
  * Optional execution flags for response generation.
  */

@@ -1,7 +1,8 @@
-import { Message, UserMessage } from '../entities/Message';
+import { UserMessage } from '../entities/Message';
 import { DialogueTurnFactory } from '../entities/DialogueTurn';
 import { MessageSenderPort } from '../ports/MessageSenderPort';
 import { ChatRepositoryPort } from '../ports/ChatRepositoryPort';
+import { ContextRetrievalPort } from '../ports/ContextRetrievalPort';
 import { ToolRegistryPort } from '../ports/ToolRegistryPort';
 import { LoggerPort } from '../ports/LoggerPort';
 import { AgentLoop, AgentLoopResult } from './AgentLoop';
@@ -13,42 +14,47 @@ import {
   LLMServerOverloadedError,
 } from '../errors/LLMErrors';
 
-export interface ProcessIncomingMessageConfig {
-  maxHistoryTurns?: number;
-}
-
+/**
+ * Orchestrating use case that processes incoming user messages.
+ * Coordinates conversation context retrieval, agent reasoning loop execution,
+ * transport delivery, and dialogue turn persistence.
+ */
 export class ProcessIncomingMessage {
-  private readonly maxHistoryTurns: number;
-
+  /**
+   * Initializes the use case with its required ports and collaborators.
+   *
+   * @param sender Transport port used to transmit outbound text responses.
+   * @param chatRepository Persistence port used to store completed dialogue turns.
+   * @param contextRetrieval Port used to retrieve historical context messages for the user.
+   * @param agentLoop Domain service executing the ReAct agent reasoning loop.
+   * @param toolRegistry Registry providing active tool definitions to the LLM.
+   * @param logger Leveled structured logger port.
+   */
   constructor(
     private sender: MessageSenderPort,
     private chatRepository: ChatRepositoryPort,
+    private contextRetrieval: ContextRetrievalPort,
     private agentLoop: AgentLoop,
     private toolRegistry: ToolRegistryPort,
-    private logger: LoggerPort,
-    config?: ProcessIncomingMessageConfig
-  ) {
-    this.maxHistoryTurns = config?.maxHistoryTurns ?? 10;
-  }
+    private logger: LoggerPort
+  ) {}
 
+  /**
+   * Executes the end-to-end processing pipeline for an incoming user message:
+   * 1. Context Retrieval: Loads historical messages via ContextRetrievalPort.
+   * 2. Reasoning: Runs the autonomous AgentLoop with active tools.
+   * 3. Delivery: Dispatches the assistant's final response via MessageSenderPort.
+   * 4. Persistence: Saves the completed dialogue turn to ChatRepositoryPort.
+   *
+   * @param message The verified inbound user message.
+   */
   async execute(message: UserMessage): Promise<void> {
     const startedAt = new Date();
     const log = this.logger.child({ userId: message.userId, messageId: message.id });
     log.info('Processing incoming message');
 
-    // 1. CONVERSATION CONTEXT RETRIEVAL
-    let history: Message[] = [];
-    try {
-      history = await this.loadHistoricalMessages(message.userId);
-    } catch (historyError) {
-      log.warn(
-        'Failed to load conversation history from database, proceeding with empty context',
-        historyError
-      );
-      history = [];
-    }
+    const history = await this.contextRetrieval.retrieveContext(message.userId);
 
-    // 2. REASONING PHASE
     let loopResult: AgentLoopResult;
     try {
       const tools = this.toolRegistry.getToolDefinitions();
@@ -59,17 +65,14 @@ export class ProcessIncomingMessage {
       return;
     }
 
-    // 3. DELIVERY PHASE
     try {
       await this.sender.sendMessage(message.userId, loopResult.finalText);
     } catch (deliveryError) {
       log.error('Failed to deliver message to user via transport', deliveryError);
-      // Transport failed: do not attempt to send error notification through the dead transport.
       return;
     }
     const completedAt = new Date();
 
-    // 4. PERSISTENCE PHASE
     try {
       const turn = DialogueTurnFactory.create({
         userId: message.userId,
@@ -81,15 +84,16 @@ export class ProcessIncomingMessage {
       log.info('Message processed successfully');
     } catch (persistenceError) {
       log.error('Failed to persist dialogue turn', persistenceError);
-      // User already received their message, so do not crash or message user.
     }
   }
 
-  private async loadHistoricalMessages(userId: string): Promise<Message[]> {
-    const recentTurns = await this.chatRepository.getRecentTurns(userId, this.maxHistoryTurns);
-    return recentTurns.flatMap((turn) => turn.messages);
-  }
-
+  /**
+   * Categorizes and logs reasoning-phase errors with appropriate severity levels.
+   * Logs fatal for unrecoverable authentication/balance failures, and error for general LLM failures.
+   *
+   * @param error The error thrown during the reasoning loop.
+   * @param log Contextual logger instance.
+   */
   private handleReasoningError(error: unknown, log: LoggerPort): void {
     if (error instanceof LLMAuthenticationError || error instanceof LLMInsufficientBalanceError) {
       log.fatal('Unrecoverable LLM account or authentication failure', error, {
@@ -104,6 +108,14 @@ export class ProcessIncomingMessage {
     }
   }
 
+  /**
+   * Attempts to transmit a user-friendly error notification when the reasoning phase fails.
+   * Suppresses secondary transport failures to avoid masking the primary error.
+   *
+   * @param userId Unique identifier of the user to notify.
+   * @param error The original error that triggered fallback notification.
+   * @param log Contextual logger instance.
+   */
   private async safeSendFallback(userId: string, error: unknown, log: LoggerPort): Promise<void> {
     try {
       const userMessage =

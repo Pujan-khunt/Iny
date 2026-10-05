@@ -17,7 +17,7 @@ export class PostgresAccessControlAdapter implements AccessControlPort, AccessCo
   constructor(
     private db: PgDb,
     private logger: LoggerPort
-  ) {}
+  ) { }
 
   /**
    * Authenticates the given address (phone, PNJID, or LIDJID) and verifies the user is active.
@@ -27,7 +27,7 @@ export class PostgresAccessControlAdapter implements AccessControlPort, AccessCo
    * Inactive states ('pending', 'revoked', 'suspended') return null and log an appropriate warning.
    *
    * If an incoming companion LIDJID is provided and not yet cached for this user,
-   * automatically persists it to PostgreSQL.
+   * synchronously persists it to PostgreSQL.
    */
   async authenticate(address: string, companionLidJid?: string | null): Promise<UserRecord | null> {
     const user = await this.getUser(address);
@@ -44,7 +44,8 @@ export class PostgresAccessControlAdapter implements AccessControlPort, AccessCo
       return null;
     }
 
-    // Auto-cache companion LIDJID if not yet populated
+    // Auto-cache companion LIDJID if not yet populated.
+    // Normalization strips any multi-device suffixes (e.g. :1, :2) ensuring canonical persistence.
     if (!user.lidJid && companionLidJid) {
       const normalizedLidJid = WhatsAppJid.normalize(companionLidJid);
       if (normalizedLidJid && WhatsAppJid.isLidUser(normalizedLidJid)) {
@@ -70,15 +71,7 @@ export class PostgresAccessControlAdapter implements AccessControlPort, AccessCo
   /**
    * Retrieves the full record for a user by phone number, PNJID, or LIDJID.
    *
-   * Architectural & Performance Design:
-   * 1. Hexagonal Boundary & Static Type Verification:
-   *    In our Drizzle schema (`schema.ts`), the inferred table shape (`UserRow`) is statically
-   *    asserted against the domain port interface via `UserRow extends UserRecord ? true : never`.
-   *    In production systems, this ensures zero runtime mapping overhead (the database row is directly
-   *    returned as a valid `UserRecord`) while guaranteeing at compile-time that any schema drift or
-   *    type incompatibility will immediately fail the TypeScript build (`tsc --noEmit`).
-   *
-   * 2. Partitioned Single-Index Lookup:
+   * Partitioned Single-Index Lookup:
    *    Incoming WhatsApp identifiers strictly conform to one of two mutually exclusive schemas:
    *    - Linked Identity (`<lid>@lid`): searched against the `idx_users_lid_jid` partial unique index.
    *    - Phone Number Identity (`<phone>@s.whatsapp.net` or raw digits): normalized to canonical PNJID
@@ -87,6 +80,7 @@ export class PostgresAccessControlAdapter implements AccessControlPort, AccessCo
    *    costly BitmapOr multi-index scan.
    */
   async getUser(address: string): Promise<UserRecord | null> {
+    // Normalizes phone numbers into a PNJID.
     const normalized = WhatsAppJid.normalize(address);
     if (!normalized) {
       return null;

@@ -20,6 +20,7 @@ import { BaileysMessageSenderAdapter } from './adapters/outbound/whatsapp/Bailey
 import { BaileysMessageFilter } from './adapters/inbound/whatsapp/BaileysMessageFilter';
 import { BaileysMessageParser } from './adapters/inbound/whatsapp/BaileysMessageParser';
 import { WhatsAppInboundAdapter } from './adapters/inbound/whatsapp/WhatsAppInboundAdapter';
+import { ChatRepositoryContextRetrievalAdapter } from './adapters/outbound/context-retrieval/ChatRepositoryContextRetrievalAdapter';
 
 // Load & validate application configuration from environment
 const config = loadConfig();
@@ -66,16 +67,18 @@ const agentLoop = new AgentLoop(deepseekAdapter, registry, {
   systemPrompt: config.SYSTEM_PROMPT,
 });
 
-// 8. Orchestrating ProcessIncomingMessage use case
+// 8. Context Retrieval & Orchestrating ProcessIncomingMessage use case
+const contextRetrieval = new ChatRepositoryContextRetrievalAdapter(chatRepository, logger, {
+  maxTurns: config.MAX_HISTORY_TURNS,
+});
+
 const useCase = new ProcessIncomingMessage(
   messageSender,
   chatRepository,
+  contextRetrieval,
   agentLoop,
   registry,
-  logger,
-  {
-    maxHistoryTurns: config.MAX_HISTORY_TURNS,
-  }
+  logger
 );
 
 // 9. Inbound WhatsApp Driving Adapter

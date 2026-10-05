@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { LLMResponse } from '../../../core/ports/LLMPort';
+import { LLMResponse, LLMResponseFactory } from '../../../core/ports/LLMPort';
 import { LLMResponseError } from '../../../core/errors/LLMErrors';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
 import { parseToolCalls, FunctionToolCall } from './DeepseekToolCallParser';
@@ -44,12 +44,11 @@ export function parseOpenAIResponse(
       hasContent: Boolean(content),
     });
 
-    return {
-      type: 'tool_calls',
+    return LLMResponseFactory.createToolCalls({
       toolCalls,
       content,
       reasoning,
-    };
+    });
   }
 
   const content = responseMessage.content ?? '';
@@ -59,9 +58,8 @@ export function parseOpenAIResponse(
     hasReasoning: Boolean(reasoning),
   });
 
-  return {
-    type: 'text',
+  return LLMResponseFactory.createText({
     content,
     reasoning,
-  };
+  });
 }

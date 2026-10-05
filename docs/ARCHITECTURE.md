@@ -18,6 +18,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/core/ports/MessageSenderPort.ts`: Outbound messaging transport.
   - `src/core/ports/LLMPort.ts`: Language model reasoning and tool call generation.
   - `src/core/ports/ChatRepositoryPort.ts`: Conversation history persistence.
+  - `src/core/ports/ContextRetrievalPort.ts`: Outbound port for retrieving contextual conversation history for a user.
   - `src/core/ports/LoggerPort.ts`: Structured, leveled logging.
   - `src/core/ports/ToolRegistryPort.ts`: Tool registration and execution contracts (`ToolDefinition` and `Tool`).
 - **Tools**: Declarative tool extensions available to the LLM:
@@ -45,6 +46,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/outbound/chat-repository/postgres/validation.ts`: Pure assertion validating dialogue turn structural and temporal invariants.
   - `src/adapters/outbound/chat-repository/postgres/metadata.ts`: Pure extractor mapping domain `DialogueTurn` entities into first-class relational columns (`userQuery`, `assistantResponse`, `toolNames`, `reasoning`).
   - `src/adapters/outbound/chat-repository/postgres/migrator.ts`: Startup database migration runner executing Drizzle migrations before service startup.
+  - `src/adapters/outbound/context-retrieval/ChatRepositoryContextRetrievalAdapter.ts`: Outbound adapter implementing `ContextRetrievalPort` backed by `ChatRepositoryPort`, flattening turns into `Message[]` with optional TTL filtering and graceful error fallback.
   - `src/adapters/outbound/logger/PinoLoggerAdapter.ts`: Structured logging wrapper around Pino with unambiguous signature routing.
   - `src/adapters/outbound/tool-registry/InMemoryToolRegistry.ts`: In-memory tool storage exposing clean tool definitions.
 - **Shared Adapter Collaborators**: Reusable access control and identity validation components:
@@ -142,12 +144,12 @@ sequenceDiagram
     Conn->>Inbound: dispatch('messages.upsert', { messages })
     
     loop For each message in batch
-        Inbound->>Filter: isEligible(rawMessage)
+        Inbound->>Filter: evaluate(rawMessage)
         alt Ineligible (fromMe / non-text / group / broadcast)
-            Filter-->>Inbound: false
-            Note over Inbound: Discard (zero token cost)
+            Filter-->>Inbound: { eligible: false, reason }
+            Note over Inbound: Discard & log debug (zero token cost)
         else Eligible
-            Filter-->>Inbound: true
+            Filter-->>Inbound: { eligible: true, message }
             Note over Inbound: resolveSenderRouting -> lookupAddress, companionLidJid
             Inbound->>AccessControl: authenticate(lookupAddress, companionLidJid)
             alt Unauthorized or Inactive Sender

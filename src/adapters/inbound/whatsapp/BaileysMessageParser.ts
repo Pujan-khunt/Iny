@@ -24,6 +24,15 @@ export class BaileysMessageParser {
     });
   }
 
+  /**
+   * Extracts the plain text body from a Baileys message.
+   * Unwraps container messages (e.g. ephemeral, view-once) via `normalizeMessageContent`,
+   * then reads `conversation` (plain text) or, failing that, `extendedTextMessage.text`
+   * (text with reply context, link preview, or mentions).
+   *
+   * @param message The raw Baileys message payload.
+   * @returns The untrimmed text, or null if the message carries no text content.
+   */
   private extractText(message: proto.IMessage): string | null {
     const unwrapped = normalizeMessageContent(message);
     if (!unwrapped) {
@@ -45,7 +54,7 @@ export class BaileysMessageParser {
    * while ensuring safe numeric coercion and fallback to current system time.
    */
   private resolveTimestamp(rawTimestamp: proto.IWebMessageInfo['messageTimestamp']): number {
-    const rawNumber = toNumber(rawTimestamp as any);
+    const rawNumber = toNumber(rawTimestamp);
     const parsed = Number(rawNumber);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : Math.floor(Date.now() / 1000);
   }

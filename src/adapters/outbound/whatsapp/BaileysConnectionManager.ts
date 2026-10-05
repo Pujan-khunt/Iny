@@ -9,22 +9,36 @@ import { LoggerPort } from '../../../core/ports/LoggerPort';
 import { BaileysPairingManager } from './BaileysPairingManager';
 import { BaileysSession, BaileysSessionManagerPort } from './PostgresBaileysSessionManager';
 
+/**
+ * Configuration options for initializing a Baileys WhatsApp connection.
+ */
 export interface StartConnectionOptions {
+  /** Authenticated session state and credential management helpers. */
   session: BaileysSession;
+  /** Primary bot phone number used to request pairing code when unregistered. */
   botPhoneNumber: string;
 }
 
+/**
+ * Policy decision determining reconnection behavior and credential purge requirements on socket close.
+ */
 export interface ConnectionCloseDecision {
+  /** True if the connection manager should schedule an automated reconnection attempt. */
   shouldReconnect: boolean;
+  /** True if persisted session credentials are invalid/logged-out and must be deleted. */
   purgeSession: boolean;
 }
 
+/**
+ * Event subscriber callback signature for typed Baileys event notifications.
+ */
 export type BaileysEventHandler<T extends keyof BaileysEventMap> = (
   data: BaileysEventMap[T]
 ) => Promise<void> | void;
 
 /**
- * Coordinates Baileys WebSocket lifecycle, connection updates, and reconnection policy.
+ * Coordinates Baileys WebSocket lifecycle, phone pairing, event dispatching,
+ * and disconnect error recovery policies.
  */
 export class BaileysConnectionManager {
   private socket: WASocket | null = null;
@@ -35,20 +49,34 @@ export class BaileysConnectionManager {
     Array<BaileysEventHandler<any>>
   >();
 
+  /**
+   * @param logger Leveled structured logger port.
+   * @param pairingManager Manager responsible for pairing code requests during onboarding.
+   * @param sessionManager Port managing persistence and purging of WhatsApp auth state.
+   */
   constructor(
     private logger: LoggerPort,
     private pairingManager: BaileysPairingManager,
     private sessionManager: BaileysSessionManagerPort
   ) {}
 
+  /**
+   * Checks whether an active WhatsApp socket connection exists.
+   */
   isConnected(): boolean {
     return this.socket !== null;
   }
 
+  /**
+   * Directly sets or clears the active socket instance.
+   */
   setSocket(socket: WASocket | null): void {
     this.socket = socket;
   }
 
+  /**
+   * Retrieves the active socket instance, or null if disconnected.
+   */
   getSocket(): WASocket | null {
     return this.socket;
   }
@@ -70,7 +98,11 @@ export class BaileysConnectionManager {
 
   /**
    * Subscribes to a specific Baileys event across current and future socket reconnections.
-   * Returns an unsubscribe function.
+   * Handlers run with fault isolation via Promise.allSettled.
+   *
+   * @param event The Baileys event name to listen for.
+   * @param handler Async or sync callback invoked when the event occurs.
+   * @returns An unsubscription function.
    */
   subscribe<T extends keyof BaileysEventMap>(
     event: T,
@@ -89,6 +121,16 @@ export class BaileysConnectionManager {
     };
   }
 
+  /**
+   * Evaluates a socket disconnect error to decide whether to reconnect or purge credentials:
+   * - 401 (loggedOut): Purges session credentials; does not reconnect.
+   * - 400 (badSession): Corrupted session; does not reconnect without manual intervention.
+   * - 515 (restartRequired): Server requests restart; reconnects immediately.
+   * - Transient disconnects (network drop): Logs warning and triggers scheduled reconnection.
+   *
+   * @param lastDisconnectError The error received from Baileys connection.update.
+   * @returns Policy decision with shouldReconnect and purgeSession flags.
+   */
   handleConnectionClose(lastDisconnectError: unknown): ConnectionCloseDecision {
     const statusCode = (lastDisconnectError as Boom)?.output?.statusCode;
 
@@ -115,6 +157,13 @@ export class BaileysConnectionManager {
     return { shouldReconnect: true, purgeSession: false };
   }
 
+  /**
+   * Starts the Baileys WebSocket connection and begins event processing.
+   * Automatically coordinates pairing code generation, credential saving,
+   * subscriber dispatching, and reconnection on unexpected disconnects.
+   *
+   * @param options Connection options including session state and bot phone number.
+   */
   async start(options: StartConnectionOptions): Promise<void> {
     this.isShuttingDown = false;
     const sock = makeWASocket({

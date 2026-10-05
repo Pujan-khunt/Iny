@@ -140,7 +140,7 @@ describe('WhatsAppInboundAdapter', () => {
       expect(mockUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('should skip ineligible messages (e.g. fromMe === true)', async () => {
+    it('should skip ineligible messages (e.g. fromMe === true) and log debug', async () => {
       const selfMsg: WAMessage = {
         key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: true, id: 'self-1' },
         message: { conversation: 'I sent this' },
@@ -149,9 +149,14 @@ describe('WhatsAppInboundAdapter', () => {
       await adapter.handleMessages([selfMsg]);
 
       expect(mockUseCase.execute).not.toHaveBeenCalled();
+      expect(mockLogger.debug).toHaveBeenCalledWith('Ignored ineligible message', {
+        messageId: 'self-1',
+        remoteJid: '919876543210@s.whatsapp.net',
+        reason: 'from_me',
+      });
     });
 
-    it('should skip ineligible messages without text or from groups without calling use case', async () => {
+    it('should skip ineligible messages without text or from groups and log debug without calling use case', async () => {
       const nonTextMessage: WAMessage = {
         key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm2' },
         message: { imageMessage: { caption: '' } },
@@ -164,6 +169,16 @@ describe('WhatsAppInboundAdapter', () => {
       await adapter.handleMessages([nonTextMessage, groupMessage]);
 
       expect(mockUseCase.execute).not.toHaveBeenCalled();
+      expect(mockLogger.debug).toHaveBeenCalledWith('Ignored ineligible message', {
+        messageId: 'm2',
+        remoteJid: '919876543210@s.whatsapp.net',
+        reason: 'non_text',
+      });
+      expect(mockLogger.debug).toHaveBeenCalledWith('Ignored ineligible message', {
+        messageId: 'm-grp',
+        remoteJid: '123456789-987654@g.us',
+        reason: 'group_or_broadcast',
+      });
     });
 
     it('should ignore incoming messages from unauthorized senders, log debug, and not call use case', async () => {
@@ -243,7 +258,7 @@ describe('WhatsAppInboundAdapter', () => {
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Unhandled error processing incoming message',
         error,
-        { messageId: 'm-err' }
+        { messageId: 'm-err', userId: '919876543210@s.whatsapp.net' }
       );
     });
 
@@ -275,7 +290,7 @@ describe('WhatsAppInboundAdapter', () => {
       expect(mockLogger.error).toHaveBeenCalledWith(
         'Unhandled error processing incoming message',
         error,
-        { messageId: 'batch-2' }
+        { messageId: 'batch-2', userId: '919876543210@s.whatsapp.net' }
       );
     });
 
