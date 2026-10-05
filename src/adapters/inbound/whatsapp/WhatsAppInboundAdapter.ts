@@ -2,14 +2,14 @@ import { WAMessage } from '@whiskeysockets/baileys';
 import { ProcessIncomingMessage } from '../../../core/use-cases/ProcessIncomingMessage';
 import { BaileysConnectionManager } from '../../outbound/whatsapp/BaileysConnectionManager';
 import { AccessControlPort, UserRecord } from '../../../core/ports/AccessControlPort';
-import { BaileysMessageFilter } from './BaileysMessageFilter';
+import { BaileysMessageFilter, EligibleWebMessageInfo } from './BaileysMessageFilter';
 import { BaileysMessageParser } from './BaileysMessageParser';
 import { LoggerPort } from '../../../core/ports/LoggerPort';
 import { UserMessage } from '../../../core/entities/Message';
 import { WhatsAppJid } from '../../common/whatsapp/WhatsAppJid';
 
 /**
- * Driving adapter that listens for incoming WhatsApp messages from Baileys,
+ * Inbound adapter that listens for incoming WhatsApp messages from Baileys,
  * enforces eligibility policy and access control authorization, parses payloads,
  * and triggers ProcessIncomingMessage.
  */
@@ -21,7 +21,7 @@ export class WhatsAppInboundAdapter {
     private filter: BaileysMessageFilter,
     private parser: BaileysMessageParser,
     private logger: LoggerPort
-  ) {}
+  ) { }
 
   /**
    * Registers the message upsert listener with the Baileys connection manager.
@@ -36,25 +36,30 @@ export class WhatsAppInboundAdapter {
   }
 
   /**
-   * Handles a batch of incoming raw WebMessageInfo objects from Baileys.
+   * Handles a batch of incoming raw WAMessage objects from Baileys.
    *
    * @param messages The raw messages received from the WhatsApp connection.
    */
   async handleMessages(messages: WAMessage[]): Promise<void> {
     for (const raw of messages) {
       // Stage 1: Eligibility check (reject fromMe, groups, broadcasts, non-text)
-      if (!this.filter.isEligible(raw)) {
+      const evaluation = this.filter.evaluate(raw);
+      if (!evaluation.eligible) {
+        this.logger.debug('Ignored ineligible message', {
+          messageId: raw?.key?.id,
+          remoteJid: raw?.key?.remoteJid,
+          reason: evaluation.reason,
+        });
         continue;
       }
 
-      const remoteJid = raw.key.remoteJid;
-      const remoteJidAlt = raw.key.remoteJidAlt;
+      const eligible = evaluation.message;
 
       // Extract lookup address and companion LIDJID for access control routing
-      const { lookupAddress, companionLidJid } = this.resolveSenderRouting(remoteJid, remoteJidAlt);
+      const { lookupAddress, companionLidJid } = this.resolveSenderRouting(eligible);
       this.logger.debug('Resolved sender routing', {
-        remoteJid,
-        remoteJidAlt,
+        remoteJid: eligible.key.remoteJid,
+        remoteJidAlt: eligible.key.remoteJidAlt,
         lookupAddress,
         companionLidJid,
       });
@@ -66,21 +71,24 @@ export class WhatsAppInboundAdapter {
       } catch (authError) {
         this.logger.error('Failed to authenticate sender', authError, {
           lookupAddress,
-          remoteJid,
-          remoteJidAlt,
+          remoteJid: eligible.key.remoteJid,
+          remoteJidAlt: eligible.key.remoteJidAlt,
         });
         continue;
       }
 
       if (!user) {
-        this.logger.debug('Ignored message from unauthorized sender', { remoteJid, remoteJidAlt });
+        this.logger.debug('Ignored message from unauthorized sender', {
+          remoteJid: eligible.key.remoteJid,
+          remoteJidAlt: eligible.key.remoteJidAlt,
+        });
         continue;
       }
 
       // Stage 3: Pure transformation (user.pnJid is verified canonical phone identity)
       let userMessage: UserMessage;
       try {
-        userMessage = this.parser.parse(raw, user.pnJid);
+        userMessage = this.parser.parse(eligible, user.pnJid);
       } catch (parseError) {
         this.logger.error('Failed to parse eligible WhatsApp message', parseError);
         continue;
@@ -92,29 +100,27 @@ export class WhatsAppInboundAdapter {
       } catch (err) {
         this.logger.error('Unhandled error processing incoming message', err, {
           messageId: userMessage.id,
+          userId: userMessage.userId
         });
       }
     }
   }
 
   /**
-   * Resolves incoming stanza keys into the database query address and optional companion LIDJID.
+   * Resolves incoming stanza keys from an eligible message into the database lookup address
+   * (which may be a PNJID or a LIDJID) and an optional companion LIDJID for caching.
    *
-   * WhatsApp dual identity handling:
-   * 1. Linked Identity (LID) stanza:
-   *    - First interaction (accompanied): `remoteJid` is `<lid>@lid`, `remoteJidAlt` is `<phone>@s.whatsapp.net`.
-   *      Query by phone number to match newly seeded users whose LID is not yet known. Cache the new LID.
-   *    - Subsequent interaction: `remoteJid` is `<lid>@lid`, `remoteJidAlt` is undefined.
-   *      Query directly by already-cached LID. Nothing new to cache.
-   *
-   * 2. Phone Number (PN) stanza:
-   *    - `remoteJid` is `<phone>@s.whatsapp.net`. Query by phone number.
-   *    - Cache companion LID if present in `remoteJidAlt`.
+   * @param message An inbound message that has passed eligibility validation.
+   * @returns An object containing:
+   *   - `lookupAddress`: either a canonical PNJID or LIDJID to query against the `users` table.
+   *   - `companionLidJid`: a companion LIDJID to cache in the database if new, or null.
    */
   private resolveSenderRouting(
-    remoteJid: string,
-    remoteJidAlt?: string
+    message: EligibleWebMessageInfo
   ): { lookupAddress: string; companionLidJid: string | null } {
+    const remoteJid = message.key.remoteJid;
+    const remoteJidAlt = message.key.remoteJidAlt;
+
     if (WhatsAppJid.isLidUser(remoteJid)) {
       if (remoteJidAlt && WhatsAppJid.isPnUser(remoteJidAlt)) {
         return { lookupAddress: remoteJidAlt, companionLidJid: remoteJid };

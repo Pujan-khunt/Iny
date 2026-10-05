@@ -6,13 +6,13 @@ describe('BaileysMessageFilter', () => {
   const filter = new BaileysMessageFilter();
 
   it('should reject null or undefined payloads', () => {
-    expect(filter.isEligible(null)).toBe(false);
-    expect(filter.isEligible(undefined)).toBe(false);
+    expect(filter.evaluate(null)).toEqual({ eligible: false, reason: 'missing_key' });
+    expect(filter.evaluate(undefined)).toEqual({ eligible: false, reason: 'missing_key' });
   });
 
   it('should reject messages without key', () => {
     const raw = {} as proto.IWebMessageInfo;
-    expect(filter.isEligible(raw)).toBe(false);
+    expect(filter.evaluate(raw)).toEqual({ eligible: false, reason: 'missing_key' });
   });
 
   it('should reject messages sent by the bot (fromMe === true)', () => {
@@ -20,7 +20,7 @@ describe('BaileysMessageFilter', () => {
       key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: true, id: 'm1' },
       message: { conversation: 'Hello' },
     };
-    expect(filter.isEligible(raw)).toBe(false);
+    expect(filter.evaluate(raw)).toEqual({ eligible: false, reason: 'from_me' });
   });
 
   it('should reject messages without remoteJid', () => {
@@ -28,7 +28,7 @@ describe('BaileysMessageFilter', () => {
       key: { fromMe: false, id: 'm2' },
       message: { conversation: 'Hello' },
     };
-    expect(filter.isEligible(raw)).toBe(false);
+    expect(filter.evaluate(raw)).toEqual({ eligible: false, reason: 'missing_address' });
   });
 
   it('should reject messages without id', () => {
@@ -36,7 +36,7 @@ describe('BaileysMessageFilter', () => {
       key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false },
       message: { conversation: 'Hello' },
     };
-    expect(filter.isEligible(raw)).toBe(false);
+    expect(filter.evaluate(raw)).toEqual({ eligible: false, reason: 'missing_address' });
   });
 
   it('should reject group messages (@g.us)', () => {
@@ -44,7 +44,7 @@ describe('BaileysMessageFilter', () => {
       key: { remoteJid: '123456789-987654@g.us', fromMe: false, id: 'm3' },
       message: { conversation: 'Group text' },
     };
-    expect(filter.isEligible(raw)).toBe(false);
+    expect(filter.evaluate(raw)).toEqual({ eligible: false, reason: 'group_or_broadcast' });
   });
 
   it('should reject status broadcast messages', () => {
@@ -56,8 +56,8 @@ describe('BaileysMessageFilter', () => {
       key: { remoteJid: '12345@broadcast', fromMe: false, id: 'm5' },
       message: { conversation: 'Broadcast update' },
     };
-    expect(filter.isEligible(raw1)).toBe(false);
-    expect(filter.isEligible(raw2)).toBe(false);
+    expect(filter.evaluate(raw1)).toEqual({ eligible: false, reason: 'group_or_broadcast' });
+    expect(filter.evaluate(raw2)).toEqual({ eligible: false, reason: 'group_or_broadcast' });
   });
 
   it('should reject messages with empty or missing message payload', () => {
@@ -68,8 +68,8 @@ describe('BaileysMessageFilter', () => {
       key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm7' },
       message: null,
     };
-    expect(filter.isEligible(raw1)).toBe(false);
-    expect(filter.isEligible(raw2)).toBe(false);
+    expect(filter.evaluate(raw1)).toEqual({ eligible: false, reason: 'non_text' });
+    expect(filter.evaluate(raw2)).toEqual({ eligible: false, reason: 'non_text' });
   });
 
   it('should reject non-text messages (e.g. image, reaction, audio without text)', () => {
@@ -77,7 +77,7 @@ describe('BaileysMessageFilter', () => {
       key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm8' },
       message: { imageMessage: { caption: '' } },
     };
-    expect(filter.isEligible(raw)).toBe(false);
+    expect(filter.evaluate(raw)).toEqual({ eligible: false, reason: 'non_text' });
   });
 
   it('should reject messages with empty or whitespace-only text', () => {
@@ -89,8 +89,8 @@ describe('BaileysMessageFilter', () => {
       key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm10' },
       message: { extendedTextMessage: { text: '  \n  ' } },
     };
-    expect(filter.isEligible(raw1)).toBe(false);
-    expect(filter.isEligible(raw2)).toBe(false);
+    expect(filter.evaluate(raw1)).toEqual({ eligible: false, reason: 'non_text' });
+    expect(filter.evaluate(raw2)).toEqual({ eligible: false, reason: 'non_text' });
   });
 
   it('should accept valid 1-on-1 direct message with standard conversation text', () => {
@@ -98,7 +98,7 @@ describe('BaileysMessageFilter', () => {
       key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm11' },
       message: { conversation: 'Hello Iny!' },
     };
-    expect(filter.isEligible(raw)).toBe(true);
+    expect(filter.evaluate(raw)).toEqual({ eligible: true, message: raw });
   });
 
   it('should accept valid 1-on-1 direct message with extendedTextMessage text', () => {
@@ -106,7 +106,7 @@ describe('BaileysMessageFilter', () => {
       key: { remoteJid: '919876543210@s.whatsapp.net', fromMe: false, id: 'm12' },
       message: { extendedTextMessage: { text: 'Calculate 5 + 5' } },
     };
-    expect(filter.isEligible(raw)).toBe(true);
+    expect(filter.evaluate(raw)).toEqual({ eligible: true, message: raw });
   });
 
   it('should accept wrapped ephemeral messages (disappearing messages)', () => {
@@ -118,7 +118,7 @@ describe('BaileysMessageFilter', () => {
         },
       },
     };
-    expect(filter.isEligible(raw)).toBe(true);
+    expect(filter.evaluate(raw)).toEqual({ eligible: true, message: raw });
   });
 
   it('should accept wrapped viewOnce messages with text content', () => {
@@ -130,6 +130,6 @@ describe('BaileysMessageFilter', () => {
         },
       },
     };
-    expect(filter.isEligible(raw)).toBe(true);
+    expect(filter.evaluate(raw)).toEqual({ eligible: true, message: raw });
   });
 });

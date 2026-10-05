@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { ToolCallRequest } from '../../../core/entities/ToolCallRequest';
+import { ToolCallRequest, ToolCallRequestFactory } from '../../../core/entities/ToolCallRequest';
 
 export type FunctionToolCall = Extract<
   OpenAI.Chat.ChatCompletionMessageToolCall,
@@ -18,33 +18,30 @@ export function parseToolCalls(functionCalls: FunctionToolCall[]): ToolCallReque
   return functionCalls.map((tc) => {
     const raw = tc.function.arguments;
     if (!raw || raw.trim() === '') {
-      return {
-        type: 'valid',
+      return ToolCallRequestFactory.createValid({
         id: tc.id,
         name: tc.function.name,
         arguments: {},
-      };
+      });
     }
     try {
       const parsed = JSON.parse(raw);
       if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-        return {
-          type: 'valid',
+        return ToolCallRequestFactory.createValid({
           id: tc.id,
           name: tc.function.name,
           arguments: parsed as Record<string, unknown>,
-        };
+        });
       }
       throw new Error('Tool arguments must be a JSON object');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      return {
-        type: 'malformed',
+      return ToolCallRequestFactory.createMalformed({
         id: tc.id,
         name: tc.function.name,
         rawArguments: raw,
         parseError: errorMessage,
-      };
+      });
     }
   });
 }

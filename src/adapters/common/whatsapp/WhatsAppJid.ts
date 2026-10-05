@@ -9,14 +9,22 @@ import {
 } from '@whiskeysockets/baileys';
 
 /**
- * Utility collaborator for parsing, formatting, and classifying WhatsApp JIDs.
- * Integrates natively with @whiskeysockets/baileys for PN and LID duality handling.
+ * Stateless utility for normalizing, classifying, and comparing WhatsApp JIDs.
+ * Thin wrapper over @whiskeysockets/baileys JID helpers that adds input
+ * trimming/lowercasing and handles the PNJID (@s.whatsapp.net) / LIDJID (@lid) duality.
+ * Does not parse messages or resolve a LIDJID to a PNJID (or the reverse).
  */
 export class WhatsAppJid {
   /**
-   * Normalizes an identifier (phone number, PNJID, or LIDJID) into its standard canonical user form.
-   * Strips multi-device suffixes (e.g. :1, :2) and returns lowercase user JID.
-   * Returns null if the identifier is malformed or not a direct user.
+   * Normalizes an identifier into its canonical, lowercase individual-user JID.
+   *
+   * Returns:
+   * - A PNJID (`<digits>@s.whatsapp.net`) when given a raw phone number (formatting
+   *   characters are stripped; must be 7-15 digits, i.e. E.164 length) or a PNJID.
+   *   Device suffixes (e.g. `:1`) are removed.
+   * - A LIDJID (`<id>@lid`), with any device suffix removed, when given a LIDJID.
+   * - `null` when the input is empty, has an invalid digit count (phone numbers only),
+   *   or is a JID that is not an individual user (e.g. group or broadcast).
    */
   static normalize(raw: string): string | null {
     const trimmed = raw.trim().toLowerCase();

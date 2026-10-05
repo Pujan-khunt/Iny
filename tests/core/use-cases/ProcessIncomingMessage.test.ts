@@ -1,15 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  ProcessIncomingMessage,
-  ProcessIncomingMessageConfig,
-} from '../../../src/core/use-cases/ProcessIncomingMessage';
+import { ProcessIncomingMessage } from '../../../src/core/use-cases/ProcessIncomingMessage';
 import { MessageSenderPort } from '../../../src/core/ports/MessageSenderPort';
 import { ChatRepositoryPort } from '../../../src/core/ports/ChatRepositoryPort';
+import { ContextRetrievalPort } from '../../../src/core/ports/ContextRetrievalPort';
 import { ToolRegistryPort, ToolDefinition } from '../../../src/core/ports/ToolRegistryPort';
 import { LoggerPort } from '../../../src/core/ports/LoggerPort';
 import { AgentLoop } from '../../../src/core/use-cases/AgentLoop';
-import { UserMessage, AssistantTextMessage } from '../../../src/core/entities/Message';
-import { DialogueTurn } from '../../../src/core/entities/DialogueTurn';
+import { UserMessage, AssistantTextMessage, Message } from '../../../src/core/entities/Message';
 import {
   LLMAuthenticationError,
   LLMInsufficientBalanceError,
@@ -21,6 +18,7 @@ import {
 describe('ProcessIncomingMessage', () => {
   let mockSender: MessageSenderPort;
   let mockChatRepository: ChatRepositoryPort;
+  let mockContextRetrieval: ContextRetrievalPort;
   let mockAgentLoop: AgentLoop;
   let mockToolRegistry: ToolRegistryPort;
   let mockLogger: LoggerPort;
@@ -60,16 +58,14 @@ describe('ProcessIncomingMessage', () => {
     child: vi.fn(),
   });
 
-  const createUseCase = (
-    config?: ProcessIncomingMessageConfig
-  ): ProcessIncomingMessage => {
+  const createUseCase = (): ProcessIncomingMessage => {
     return new ProcessIncomingMessage(
       mockSender,
       mockChatRepository,
+      mockContextRetrieval,
       mockAgentLoop,
       mockToolRegistry,
-      mockLogger,
-      config
+      mockLogger
     );
   };
 
@@ -79,6 +75,9 @@ describe('ProcessIncomingMessage', () => {
       getRecentTurns: vi.fn().mockResolvedValue([]),
       saveTurn: vi.fn().mockResolvedValue(undefined),
       clearHistory: vi.fn().mockResolvedValue(undefined),
+    };
+    mockContextRetrieval = {
+      retrieveContext: vi.fn().mockResolvedValue([]),
     };
     mockAgentLoop = {
       run: vi.fn().mockResolvedValue({
@@ -98,17 +97,11 @@ describe('ProcessIncomingMessage', () => {
 
   describe('Happy path (Reasoning -> Delivery -> Persistence)', () => {
     it('should coordinate all 4 phases and persist valid dialogue turn', async () => {
-      const historicalTurn: DialogueTurn = {
-        id: 'turn-old',
-        userId: 'user1',
-        messages: [
-          { id: 'm-old-1', userId: 'user1', role: 'user', content: 'Prior question', timestamp: new Date() },
-          { id: 'm-old-2', userId: 'user1', role: 'assistant', content: 'Prior answer', timestamp: new Date() },
-        ],
-        startedAt: new Date(),
-        completedAt: new Date(),
-      };
-      vi.mocked(mockChatRepository.getRecentTurns).mockResolvedValueOnce([historicalTurn]);
+      const historicalMessages: Message[] = [
+        { id: 'm-old-1', userId: 'user1', role: 'user', content: 'Prior question', timestamp: new Date() },
+        { id: 'm-old-2', userId: 'user1', role: 'assistant', content: 'Prior answer', timestamp: new Date() },
+      ];
+      vi.mocked(mockContextRetrieval.retrieveContext).mockResolvedValueOnce(historicalMessages);
 
       const useCase = createUseCase();
       await useCase.execute(sampleUserMessage);
@@ -119,12 +112,12 @@ describe('ProcessIncomingMessage', () => {
         messageId: 'msg-1',
       });
 
-      // Phase 1: Reasoning
-      expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith('user1', 10);
+      // Phase 1: Context retrieval & Reasoning
+      expect(mockContextRetrieval.retrieveContext).toHaveBeenCalledWith('user1');
       expect(mockToolRegistry.getToolDefinitions).toHaveBeenCalledTimes(1);
       expect(mockAgentLoop.run).toHaveBeenCalledWith(
         sampleUserMessage,
-        historicalTurn.messages,
+        historicalMessages,
         sampleTools,
         mockChildLogger
       );
@@ -140,13 +133,6 @@ describe('ProcessIncomingMessage', () => {
       expect(savedTurn.messages).toEqual([sampleUserMessage, sampleAssistantMessage]);
       expect(savedTurn.startedAt).toBeInstanceOf(Date);
       expect(savedTurn.completedAt).toBeInstanceOf(Date);
-    });
-
-    it('should respect custom maxHistoryTurns configuration', async () => {
-      const useCase = createUseCase({ maxHistoryTurns: 3 });
-      await useCase.execute(sampleUserMessage);
-
-      expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith('user1', 3);
     });
 
     it('should save completed turn with startedAt and completedAt timestamps', async () => {
@@ -181,33 +167,23 @@ describe('ProcessIncomingMessage', () => {
     });
   });
 
-  describe('Phase 1: Conversation context retrieval error handling', () => {
-    it('should degrade gracefully with empty history and proceed when database fails to load history', async () => {
-      const dbError = new Error('Postgres connection timeout');
-      vi.mocked(mockChatRepository.getRecentTurns).mockRejectedValueOnce(dbError);
+  describe('Phase 1: Conversation context retrieval', () => {
+    it('should retrieve conversation context from ContextRetrievalPort and pass to AgentLoop', async () => {
+      const priorMessages: Message[] = [
+        { id: 'm-old-1', userId: 'user1', role: 'user', content: 'Prior question', timestamp: new Date() },
+      ];
+      vi.mocked(mockContextRetrieval.retrieveContext).mockResolvedValueOnce(priorMessages);
 
       const useCase = createUseCase();
       await useCase.execute(sampleUserMessage);
 
-      // Warn logged with error details
-      expect(mockChildLogger.warn).toHaveBeenCalledWith(
-        'Failed to load conversation history from database, proceeding with empty context',
-        dbError
-      );
-
-      // Reasoning proceeded with empty history
+      expect(mockContextRetrieval.retrieveContext).toHaveBeenCalledWith('user1');
       expect(mockAgentLoop.run).toHaveBeenCalledWith(
         sampleUserMessage,
-        [],
+        priorMessages,
         sampleTools,
         mockChildLogger
       );
-
-      // Delivery succeeded
-      expect(mockSender.sendMessage).toHaveBeenCalledWith('user1', 'Hello! How can I help you today?');
-
-      // Turn persistence attempted
-      expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
     });
   });
 
