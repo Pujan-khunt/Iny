@@ -13,7 +13,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "ingest": "tsx --env-file=.env scripts/ingest-announcements.ts",
+    "mess:reset": "tsx --env-file=.env scripts/reset-mess.ts"
   },
   "keywords": [],
   "author": "",
