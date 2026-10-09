@@ -13,7 +13,7 @@ describe('InMemoryToolRegistry', () => {
       name: 'test_tool',
       description: 'A test tool',
       schema: { type: 'object', properties: {} },
-      execute: vi.fn().mockResolvedValue('tool success result'),
+      execute: vi.fn().mockResolvedValue({ content: 'tool success result', isTerminal: false }),
     };
   });
 
@@ -22,13 +22,12 @@ describe('InMemoryToolRegistry', () => {
 
     const definitions = registry.getToolDefinitions();
     expect(definitions).toHaveLength(1);
-    expect(definitions[0]).toEqual({
-      name: 'test_tool',
-      description: 'A test tool',
-      schema: { type: 'object', properties: {} },
-    });
+    expect(definitions[0].name).toBe('test_tool');
+    expect(definitions[0].description).toBe('A test tool');
+    expect(definitions[0].schema).toEqual({ type: 'object', properties: {} });
     expect((definitions[0] as unknown as Record<string, unknown>).execute).toBeUndefined();
   });
+
 
   it('should throw an error when registering a duplicate tool name', () => {
     registry.register(dummyTool);
@@ -52,7 +51,7 @@ describe('InMemoryToolRegistry', () => {
 
     const result = await loggingRegistry.executeTool('test_tool', { key: 'value' });
     expect(dummyTool.execute).toHaveBeenCalledWith({ key: 'value' });
-    expect(result).toBe('tool success result');
+    expect(result).toEqual({ content: 'tool success result', isTerminal: false });
     expect(mockLogger.error).not.toHaveBeenCalled();
   });
 
