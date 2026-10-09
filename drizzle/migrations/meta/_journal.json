@@ -36,6 +36,13 @@
       "when": 1791129860665,
       "tag": "0004_shallow_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791799856362,
+      "tag": "0005_soft_scalphunter",
+      "breakpoints": true
     }
   ]
 }
