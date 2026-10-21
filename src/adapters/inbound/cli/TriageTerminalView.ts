@@ -1,9 +1,12 @@
 import type { WhatsappGroupFoodAnnouncementsMessageRow } from '../../outbound/mess/postgres/schema.js';
+import type { ResolvedMealSwapInput } from '../../outbound/mess/postgres/PostgresMessStagingRepository.js';
 import type {
   ExtractedWeeklyMenu,
   ExtractedLocationDetail,
   ExtractedTimingExtension,
   ExtractedMealChange,
+  ExtractedMealSwap,
+  ExtractedCompositeAnnouncement,
 } from '../../outbound/mess/extraction/ExtractionSchemas.js';
 
 export interface TriageTerminalViewOptions {
@@ -159,7 +162,7 @@ export class TriageTerminalView {
    */
   renderInspectionCard(
     message: WhatsappGroupFoodAnnouncementsMessageRow,
-    selectedIntent: string,
+    selectedIntent?: string,
     selectedIntentIndex?: string | number
   ): string {
     const timeStr = formatIst(message.receivedAt);
@@ -175,11 +178,32 @@ export class TriageTerminalView {
 
     const captionOrFile = message.textBody ? `"${message.textBody.split('\n')[0]}"` : '[None]';
     const fullText = message.textBody ? message.textBody : '[None / Extracted filename]';
-    const intentIdx = selectedIntentIndex || '1';
+
+    if (selectedIntent) {
+      const intentIdx = selectedIntentIndex || '1';
+      return [
+        this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
+        `${this.ansi.bold}${this.ansi.cyan}🔍 MESSAGE INSPECTION & CONFIRMATION${this.ansi.reset}`,
+        this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
+        `Message ID:     ${message.id}`,
+        `Sender:         ${sender}`,
+        `Received At:    ${timeStr}`,
+        `Message Type:   ${typeStr}`,
+        `File / Caption: ${captionOrFile}`,
+        `Full Text Body: ${fullText}`,
+        `Selected Action:[${intentIdx}] ${selectedIntent}`,
+        this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
+        'Actions:',
+        `  ${this.ansi.bold}[y]${this.ansi.reset} Proceed with Extraction`,
+        `  ${this.ansi.bold}[o]${this.ansi.reset} Open Media (writes mediaBuffer to temp file and launches native viewer via xdg-open/open)`,
+        `  ${this.ansi.bold}[c]${this.ansi.reset} Cancel / Back to List`,
+        DIVIDER_LINE,
+      ].join('\n');
+    }
 
     return [
       this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
-      `${this.ansi.bold}${this.ansi.cyan}🔍 MESSAGE INSPECTION & CONFIRMATION${this.ansi.reset}`,
+      `${this.ansi.bold}${this.ansi.cyan}🔍 MESSAGE INSPECTION${this.ansi.reset}`,
       this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
       `Message ID:     ${message.id}`,
       `Sender:         ${sender}`,
@@ -187,12 +211,6 @@ export class TriageTerminalView {
       `Message Type:   ${typeStr}`,
       `File / Caption: ${captionOrFile}`,
       `Full Text Body: ${fullText}`,
-      `Selected Action:[${intentIdx}] ${selectedIntent}`,
-      this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
-      'Actions:',
-      `  ${this.ansi.bold}[y]${this.ansi.reset} Proceed with Extraction`,
-      `  ${this.ansi.bold}[o]${this.ansi.reset} Open Media (writes mediaBuffer to temp file and launches native viewer via xdg-open/open)`,
-      `  ${this.ansi.bold}[c]${this.ansi.reset} Cancel / Back to List`,
       DIVIDER_LINE,
     ].join('\n');
   }
@@ -204,14 +222,36 @@ export class TriageTerminalView {
     const errorType = error?.name || error?.constructor?.name || 'ExtractionError';
     const errorDetails = error?.message ? `"${error.message}"` : String(error);
 
+    const validationLines: string[] = [];
+    if (error?.cause?.issues && Array.isArray(error.cause.issues)) {
+      validationLines.push(`${this.ansi.bold}${this.ansi.yellow}Validation Issues:${this.ansi.reset}`);
+      for (const issue of error.cause.issues) {
+        const path = issue.path?.length ? issue.path.join('.') : '(root)';
+        validationLines.push(`  • ${path}: ${issue.message}`);
+      }
+    }
+
+    const rawResponseLines: string[] = [];
+    if (error?.rawResponse) {
+      rawResponseLines.push(
+        this.ansi.bold + '- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -' + this.ansi.reset,
+        `${this.ansi.bold}${this.ansi.cyan}Raw LLM Response:${this.ansi.reset}`,
+        typeof error.rawResponse === 'string'
+          ? error.rawResponse.trim()
+          : JSON.stringify(error.rawResponse, null, 2)
+      );
+    }
+
     return [
       this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
       `${this.ansi.bold}${this.ansi.red}❌ EXTRACTION ENCOUNTERED AN ERROR${this.ansi.reset}`,
       this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
       `Error Type:    ${this.ansi.bold}${errorType}${this.ansi.reset}`,
       `Error Details: ${this.ansi.red}${errorDetails}${this.ansi.reset}`,
+      ...(validationLines.length > 0 ? validationLines : []),
       `Target Message:${targetMessageId}`,
       `Staging State: ${this.ansi.yellow}UNCHANGED (message remains 'pending' in database)${this.ansi.reset}`,
+      ...(rawResponseLines.length > 0 ? rawResponseLines : []),
       this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
       'Actions:',
       `  ${this.ansi.bold}[r]${this.ansi.reset} Retry Extraction (immediately re-attempts extraction on this message)`,
@@ -486,5 +526,127 @@ export class TriageTerminalView {
       `  ${this.ansi.bold}[c]${this.ansi.reset} Cancel / Back to List`,
       DIVIDER_LINE,
     ].join('\n');
+  }
+
+  /**
+   * Formats unified composite announcement preview card matching Spec Section 5.2 and 5.3.
+   */
+  renderCompositeAnnouncementCard(
+    composite: ExtractedCompositeAnnouncement,
+    resolvedSwaps?: ResolvedMealSwapInput[],
+    missingSwaps?: ExtractedMealSwap[]
+  ): string {
+    const lines: string[] = [
+      `${this.ansi.bold}${this.ansi.cyan}┌─ Extracted Announcement Events (Date: ${composite.mealDate}) ──────────────────────────┐${this.ansi.reset}`,
+    ];
+
+    // 1. Location
+    if (composite.location) {
+      const loc = composite.location;
+      const slotStr = loc.mealSlot
+        ? `(${loc.mealSlot.charAt(0).toUpperCase() + loc.mealSlot.slice(1)})`
+        : '(Lunch)';
+      let locText = '';
+      if (
+        loc.hostelBatches &&
+        loc.hostelBatches.length > 0 &&
+        loc.collegeBatches &&
+        loc.collegeBatches.length > 0
+      ) {
+        locText = `${loc.hostelBatches.join(', ')} in Hostel | ${loc.collegeBatches.join(', ')} in College ${slotStr}`;
+      } else if (loc.hostelBatches && loc.hostelBatches.length > 0) {
+        locText = `${loc.hostelBatches.join(', ')} in Hostel ${slotStr}`;
+      } else if (loc.collegeBatches && loc.collegeBatches.length > 0) {
+        locText = `${loc.collegeBatches.join(', ')} in College ${slotStr}`;
+      } else {
+        locText = `None ${slotStr}`;
+      }
+      lines.push(`│  📍 Location: ${locText}`);
+    } else {
+      lines.push(`│  📍 Location: None`);
+    }
+
+    // 2. Timing
+    if (composite.timingExtensions && composite.timingExtensions.length > 0) {
+      composite.timingExtensions.forEach((t) => {
+        const slotCap = t.mealSlot.charAt(0).toUpperCase() + t.mealSlot.slice(1);
+        const vendorStr = t.targetVendor ? ` (${t.targetVendor})` : '';
+        lines.push(`│  ⏰ Timing: ${slotCap}${vendorStr} ${t.extendedTimings}`);
+      });
+    } else {
+      lines.push(`│  ⏰ Timing: None`);
+    }
+
+    // 3. Changes
+    if (composite.mealChanges && composite.mealChanges.length > 0) {
+      composite.mealChanges.forEach((c) => {
+        const slotCap = c.mealSlot.charAt(0).toUpperCase() + c.mealSlot.slice(1);
+        const vendorStr = c.targetVendor ? ` (${c.targetVendor})` : '';
+        let changeDesc = '';
+        if (c.changeType === 'replacement' && c.originalItem) {
+          changeDesc = `${c.originalItem} -> ${c.affectedItem} [${c.changeType}]`;
+        } else {
+          changeDesc = `${c.affectedItem} [${c.changeType}]`;
+        }
+        lines.push(`│  🔄 Changes: ${slotCap}${vendorStr}: ${changeDesc}`);
+      });
+    } else {
+      lines.push(`│  🔄 Changes: None`);
+    }
+
+    // 4. Swaps
+    if (composite.mealSwaps && composite.mealSwaps.length > 0) {
+      composite.mealSwaps.forEach((s) => {
+        const targetSlot = s.targetMealSlot.charAt(0).toUpperCase() + s.targetMealSlot.slice(1);
+        const sourceSlot = s.sourceMealSlot.charAt(0).toUpperCase() + s.sourceMealSlot.slice(1);
+        lines.push(
+          `│  🔁 Meal Swap: ${s.targetMealDate} ${targetSlot} <- ${s.sourceMealDate} ${sourceSlot}`
+        );
+
+        const matches = resolvedSwaps?.filter(
+          (r) =>
+            r.targetMealDate === s.targetMealDate &&
+            r.targetMealSlot === s.targetMealSlot &&
+            r.sourceMealDate === s.sourceMealDate &&
+            r.sourceMealSlot === s.sourceMealSlot
+        );
+        if (matches && matches.length > 0) {
+          for (const resolved of matches) {
+            const vendorLabel = resolved.vendor ? ` (${resolved.vendor})` : '';
+            lines.push(`│     Resolved Items${vendorLabel}: [${resolved.newItems.join(', ')}]`);
+          }
+        }
+      });
+    } else {
+      lines.push(`│  🔁 Swaps: None`);
+    }
+
+    lines.push(`└─────────────────────────────────────────────────────────────────────────────┘`);
+
+    // 5. Hard Gate / Missing Swaps
+    if (missingSwaps && missingSwaps.length > 0) {
+      for (const m of missingSwaps) {
+        if ((m as any).missingReason === 'target') {
+          const targetSlot = m.targetMealSlot.charAt(0).toUpperCase() + m.targetMealSlot.slice(1);
+          lines.push(
+            `${this.ansi.bold}${this.ansi.red}❌ Cannot Commit Swap: Target menu for ${m.targetMealDate} ${targetSlot} not found in database. Please ingest that date's weekly menu before committing this announcement.${this.ansi.reset}`
+          );
+        } else {
+          const sourceSlot = m.sourceMealSlot.charAt(0).toUpperCase() + m.sourceMealSlot.slice(1);
+          lines.push(
+            `${this.ansi.bold}${this.ansi.red}❌ Cannot Commit Swap: Source menu for ${m.sourceMealDate} ${sourceSlot} not found in database. Please ingest that date's weekly menu before committing this announcement.${this.ansi.reset}`
+          );
+        }
+      }
+      lines.push(
+        `Actions: ${this.ansi.bold}[e]${this.ansi.reset} Edit in Neovim | ${this.ansi.bold}[c]${this.ansi.reset} Cancel`
+      );
+    } else {
+      lines.push(
+        `Actions: ${this.ansi.bold}[y]${this.ansi.reset} Confirm & Commit | ${this.ansi.bold}[e]${this.ansi.reset} Edit in Neovim | ${this.ansi.bold}[c]${this.ansi.reset} Cancel`
+      );
+    }
+
+    return lines.join('\n');
   }
 }

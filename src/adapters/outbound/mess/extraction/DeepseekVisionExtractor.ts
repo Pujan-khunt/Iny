@@ -91,6 +91,7 @@ Requirements:
       userPrompt += `\n\nEmbedded document text context:\n${textContext}`;
     }
 
+    let content: string | undefined;
     try {
       const completion = await this.client.chat.completions.create({
         model: this.model,
@@ -118,7 +119,7 @@ Requirements:
         response_format: { type: 'json_object' },
       });
 
-      const content = completion.choices[0]?.message?.content;
+      content = completion.choices[0]?.message?.content ?? undefined;
       if (!content) {
         throw new Error('LLM returned empty response during menu extraction');
       }
@@ -127,7 +128,7 @@ Requirements:
       const parsedJson = JSON.parse(cleaned);
       return ExtractedWeeklyMenuSchema.parse(parsedJson);
     } catch (error) {
-      classifyAndThrowExtractorError(error);
+      classifyAndThrowExtractorError(error, content);
     }
   }
 }

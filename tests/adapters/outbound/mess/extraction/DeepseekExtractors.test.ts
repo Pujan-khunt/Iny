@@ -5,6 +5,7 @@ import { DeepseekTextExtractor } from '../../../../../src/adapters/outbound/mess
 import {
   LLMError,
   LLMRateLimitError,
+  LLMResponseError,
   LLMServerOverloadedError,
 } from '../../../../../src/core/errors/LLMErrors.js';
 
@@ -265,6 +266,464 @@ describe('DeepseekExtractors', () => {
       await expect(
         textExtractor502.extractTimingExtension('text', new Date())
       ).rejects.toThrow(LLMError);
+    });
+
+    describe('extractAnnouncementEvents', () => {
+      it('extracts multi-event combo message (location + timing extension)', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        mealDate: '2026-10-20',
+                        location: {
+                          mealDate: '2026-10-20',
+                          mealSlot: 'lunch',
+                          hostelBatches: ['2028', '2029'],
+                          collegeBatches: ['ALL_OTHER_BATCHES'],
+                        },
+                        timingExtensions: [
+                          {
+                            mealDate: '2026-10-20',
+                            mealSlot: 'lunch',
+                            targetVendor: null,
+                            extendedTimings: 'Extended till 15:00',
+                          },
+                        ],
+                        mealChanges: [],
+                        mealSwaps: [],
+                      }),
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        const result = await extractor.extractAnnouncementEvents(
+          'Lunch extended till 3:00 PM. 2028 and 2029 will have lunch in Hostel, others in College.',
+          new Date('2026-10-20T08:00:00Z')
+        );
+
+        expect(result.mealDate).toBe('2026-10-20');
+        expect(result.location?.hostelBatches).toEqual(['2028', '2029']);
+        expect(result.location?.collegeBatches).toEqual(['ALL_OTHER_BATCHES']);
+        expect(result.timingExtensions[0].extendedTimings).toBe('Extended till 15:00');
+        expect(result.mealSwaps).toEqual([]);
+        expect(mockOpenAi.chat.completions.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            temperature: 0.0,
+            response_format: { type: 'json_object' },
+          })
+        );
+      });
+
+      it('extracts early start timing and location from announcement text with date notation', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockImplementation(async (opts) => {
+                expect(opts.messages[0].content).toContain('early start times');
+                expect(opts.messages[0].content).toContain('DD/MM/YY');
+                return {
+                  choices: [
+                    {
+                      message: {
+                        content: JSON.stringify({
+                          mealDate: '2026-10-20',
+                          location: {
+                            mealDate: '2026-10-20',
+                            mealSlot: 'lunch',
+                            hostelBatches: ['ALL_BATCHES'],
+                            collegeBatches: [],
+                          },
+                          timingExtensions: [
+                            {
+                              mealDate: '2026-10-20',
+                              mealSlot: 'lunch',
+                              targetVendor: null,
+                              extendedTimings: 'From 12:00 PM',
+                            },
+                          ],
+                          mealChanges: [],
+                          mealSwaps: [],
+                        }),
+                      },
+                    },
+                  ],
+                };
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        const result = await extractor.extractAnnouncementEvents(
+          'Tommorow (20/10/26), lunch will be arranged in the hostel for all batches. Lunch will be arranged from 12 PM tommorow.',
+          new Date('2026-10-19T10:00:00Z')
+        );
+
+        expect(result.mealDate).toBe('2026-10-20');
+        expect(result.location?.hostelBatches).toEqual(['ALL_BATCHES']);
+        expect(result.timingExtensions).toHaveLength(1);
+        expect(result.timingExtensions[0].extendedTimings).toBe('From 12:00 PM');
+      });
+
+      it('extracts meal swap reference relative to receivedAt', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        mealDate: '2026-10-20',
+                        location: null,
+                        timingExtensions: [],
+                        mealChanges: [],
+                        mealSwaps: [
+                          {
+                            targetMealDate: '2026-10-20',
+                            targetMealSlot: 'dinner',
+                            sourceMealDate: '2026-10-21',
+                            sourceMealSlot: 'lunch',
+                            targetVendor: null,
+                          },
+                        ],
+                      }),
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        const result = await extractor.extractAnnouncementEvents(
+          "Today's dinner will serve tomorrow's lunch menu.",
+          new Date('2026-10-20T10:00:00Z')
+        );
+
+        expect(result.mealSwaps).toHaveLength(1);
+        expect(result.mealSwaps[0].targetMealDate).toBe('2026-10-20');
+        expect(result.mealSwaps[0].targetMealSlot).toBe('dinner');
+        expect(result.mealSwaps[0].sourceMealDate).toBe('2026-10-21');
+        expect(result.mealSwaps[0].sourceMealSlot).toBe('lunch');
+      });
+
+      it('extracts combo message with dish change and cleans markdown fences', async () => {
+        const comboPayload = {
+          mealDate: '2026-10-20',
+          location: null,
+          timingExtensions: [
+            {
+              mealDate: '2026-10-20',
+              mealSlot: 'lunch',
+              targetVendor: 'cheftalk_regular',
+              extendedTimings: 'Extended till 14:30',
+            },
+          ],
+          mealChanges: [
+            {
+              mealDate: '2026-10-20',
+              mealSlot: 'lunch',
+              targetVendor: 'cheftalk_regular',
+              changeType: 'replacement',
+              affectedItem: 'Kadai Paneer',
+              originalItem: 'Paneer Butter Masala',
+            },
+          ],
+          mealSwaps: [],
+        };
+
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [
+                  {
+                    message: {
+                      content: `\`\`\`json\n${JSON.stringify(comboPayload)}\n\`\`\``,
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        const result = await extractor.extractAnnouncementEvents(
+          'Lunch extended till 2:30 PM. Paneer Butter Masala replaced with Kadai Paneer at Cheftalk Regular.',
+          new Date('2026-10-20T07:00:00Z')
+        );
+
+        expect(result.mealDate).toBe('2026-10-20');
+        expect(result.location).toBeNull();
+        expect(result.timingExtensions).toHaveLength(1);
+        expect(result.mealChanges).toHaveLength(1);
+        expect(result.mealChanges[0].affectedItem).toBe('Kadai Paneer');
+      });
+
+      it('wraps 429 rate limit errors as LLMRateLimitError', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockRejectedValue({ status: 429, message: 'Rate limit hit' }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        await expect(
+          extractor.extractAnnouncementEvents('Lunch announcement', new Date())
+        ).rejects.toThrow(LLMRateLimitError);
+      });
+
+      it('wraps 503 errors as LLMServerOverloadedError', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockRejectedValue({ status: 503, message: 'Service unavailable' }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        await expect(
+          extractor.extractAnnouncementEvents('Lunch announcement', new Date())
+        ).rejects.toThrow(LLMServerOverloadedError);
+      });
+
+      it('defaults receivedAt to current Date if omitted', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        mealDate: '2026-10-20',
+                        location: null,
+                        timingExtensions: [],
+                        mealChanges: [],
+                        mealSwaps: [],
+                      }),
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        const result = await extractor.extractAnnouncementEvents('Simple notice');
+        expect(result.mealDate).toBe('2026-10-20');
+        expect(mockOpenAi.chat.completions.create).toHaveBeenCalled();
+      });
+
+      it('throws LLMError when LLM returns empty content', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [{ message: { content: null } }],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        await expect(
+          extractor.extractAnnouncementEvents('Announcement')
+        ).rejects.toThrow(LLMError);
+      });
+
+      it('throws LLMResponseError with rawResponse attached when JSON does not match schema', async () => {
+        const rawInvalidJson = JSON.stringify({
+          mealDate: '2026-10-21',
+          location: {
+            mealSlot: 'invalid-meal-slot',
+          },
+        });
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [
+                  {
+                    message: {
+                      content: rawInvalidJson,
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        let caughtErr: any;
+        try {
+          await extractor.extractAnnouncementEvents('Announcement', new Date());
+        } catch (err) {
+          caughtErr = err;
+        }
+
+        expect(caughtErr).toBeInstanceOf(LLMResponseError);
+        expect(caughtErr.rawResponse).toBe(rawInvalidJson);
+      });
+
+      it('normalizes missing mealDate in location using root mealDate', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        mealDate: '2026-10-21',
+                        location: {
+                          mealSlot: 'lunch',
+                          hostelBatches: ['ALL_BATCHES'],
+                          collegeBatches: [],
+                        },
+                        timingExtensions: [],
+                        mealChanges: [],
+                        mealSwaps: [],
+                      }),
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        const result = await extractor.extractAnnouncementEvents('Lunch in hostel for all batches');
+        expect(result.mealDate).toBe('2026-10-21');
+        expect(result.location?.mealDate).toBe('2026-10-21');
+        expect(result.location?.mealSlot).toBe('lunch');
+        expect(result.location?.hostelBatches).toEqual(['ALL_BATCHES']);
+      });
+
+      it('normalizes missing mealDate in timingExtensions and mealChanges', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        mealDate: '2026-10-21',
+                        location: null,
+                        timingExtensions: [
+                          {
+                            mealSlot: 'lunch',
+                            targetVendor: null,
+                            extendedTimings: 'From 12:00 PM',
+                          },
+                        ],
+                        mealChanges: [
+                          {
+                            mealSlot: 'lunch',
+                            targetVendor: 'cheftalk_regular',
+                            changeType: 'replacement',
+                            affectedItem: 'Kadai Paneer',
+                            originalItem: 'Paneer Butter Masala',
+                          },
+                        ],
+                        mealSwaps: [],
+                      }),
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        const result = await extractor.extractAnnouncementEvents('Timing and meal change');
+        expect(result.timingExtensions[0].mealDate).toBe('2026-10-21');
+        expect(result.mealChanges[0].mealDate).toBe('2026-10-21');
+      });
+
+      it('normalizes malformed non-ISO mealDate string to reference IST date', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        mealDate: 'today', // Malformed non-ISO date
+                        location: null,
+                        timingExtensions: [],
+                        mealChanges: [],
+                        mealSwaps: [],
+                      }),
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        const refDate = new Date('2026-10-21T06:00:00Z');
+        const result = await extractor.extractAnnouncementEvents('Lunch notice', refDate);
+        expect(result.mealDate).toBe('2026-10-21');
+      });
+
+      it('normalizes missing targetMealDate in mealSwaps using top-level mealDate', async () => {
+        const mockOpenAi = {
+          chat: {
+            completions: {
+              create: vi.fn().mockResolvedValue({
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({
+                        mealDate: '2026-10-20',
+                        location: null,
+                        timingExtensions: [],
+                        mealChanges: [],
+                        mealSwaps: [
+                          {
+                            targetMealSlot: 'dinner',
+                            sourceMealDate: '2026-10-21',
+                            sourceMealSlot: 'lunch',
+                            targetVendor: 'cheftalk_regular',
+                          },
+                        ],
+                      }),
+                    },
+                  },
+                ],
+              }),
+            },
+          },
+        };
+
+        const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+        const result = await extractor.extractAnnouncementEvents('Swap announcement');
+        expect(result.mealSwaps[0].targetMealDate).toBe('2026-10-20');
+      });
     });
   });
 });

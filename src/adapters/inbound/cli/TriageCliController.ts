@@ -1,16 +1,18 @@
 import readline from 'node:readline';
-import { PostgresMessStagingRepository } from '../../outbound/mess/postgres/PostgresMessStagingRepository.js';
+import {
+  PostgresMessStagingRepository,
+  type ResolvedMealSwapInput,
+} from '../../outbound/mess/postgres/PostgresMessStagingRepository.js';
 import { DeepseekVisionExtractor } from '../../outbound/mess/extraction/DeepseekVisionExtractor.js';
 import { DeepseekTextExtractor } from '../../outbound/mess/extraction/DeepseekTextExtractor.js';
 import { PdfRasterizer } from '../../outbound/mess/extraction/PdfRasterizer.js';
 import {
   ExtractedWeeklyMenuSchema,
-  ExtractedLocationDetailSchema,
+  ExtractedCompositeAnnouncementSchema,
   type ExtractedWeeklyMenu,
   type ExtractedWeeklyMealItem,
-  type ExtractedLocationDetail,
-  type ExtractedTimingExtension,
-  type ExtractedMealChange,
+  type ExtractedMealSwap,
+  type ExtractedCompositeAnnouncement,
 } from '../../outbound/mess/extraction/ExtractionSchemas.js';
 import { InteractiveJsonEditor } from './InteractiveJsonEditor.js';
 import { MediaPreviewer } from './MediaPreviewer.js';
@@ -156,107 +158,168 @@ export class TriageCliController {
 
         this.io.print(this.terminalView.renderMessagesTable(messages));
 
-      const selectionInput = await this.io.prompt(
-        `Select message [1-${messages.length}] or [q] to quit: `
-      );
+        const selectionInput = await this.io.prompt(
+          `Select message [1-${messages.length}] or [q] to quit: `
+        );
 
-      if (selectionInput.toLowerCase() === 'q' || selectionInput.toLowerCase() === 'quit') {
-        break;
-      }
-
-      const selectedIdx = parseInt(selectionInput, 10);
-      if (isNaN(selectedIdx) || selectedIdx < 1 || selectedIdx > messages.length) {
-        this.io.print('Invalid selection index. Please enter a valid number or [q] to quit.');
-        continue;
-      }
-
-      const selectedMessage = messages[selectedIdx - 1];
-
-      // If message is already processed, display processed rollback card
-      if (selectedMessage.status === 'processed') {
-        this.io.print(this.terminalView.renderProcessedMessageCard(selectedMessage));
-        const rollbackChoice = (await this.io.prompt('Choice [u/c]: ')).toLowerCase();
-        if (rollbackChoice === 'u') {
-          await this.stagingRepo.atomicUndo(selectedMessage.id);
-          this.io.print('Surgically reverted message ingestion. Status reset to pending.');
-        }
-        continue;
-      }
-
-      // Prompt Intent Action
-      this.io.print('\nSelect Intent Action:');
-      this.io.print('  [1] Weekly Menu');
-      this.io.print('  [2] Location Detail');
-      this.io.print('  [3] Timing Extension');
-      this.io.print('  [4] Meal Change');
-      this.io.print('  [5] Mark Ignored');
-      this.io.print('  [c] Cancel / Back to List');
-
-      const intentChoice = (await this.io.prompt('Choice [1-5/c]: ')).toLowerCase();
-
-      if (intentChoice === 'c') {
-        continue;
-      }
-
-      if (intentChoice === '5') {
-        // Mark Ignored
-        this.io.print(this.terminalView.renderIgnorePreview(selectedMessage));
-        const ignoreConfirm = (await this.io.prompt('Choice [y/c]: ')).toLowerCase();
-        if (ignoreConfirm === 'y') {
-          await this.stagingRepo.markIgnored(selectedMessage.id);
-          this.io.print(`Message ${selectedMessage.id} marked as ignored.`);
-        }
-        continue;
-      }
-
-      const intentMap: Record<string, string> = {
-        '1': 'Weekly Menu',
-        '2': 'Location Detail',
-        '3': 'Timing Extension',
-        '4': 'Meal Change',
-      };
-
-      const intentName = intentMap[intentChoice];
-      if (!intentName) {
-        this.io.print('Invalid intent action selected.');
-        continue;
-      }
-
-      // Mandatory Pre-Extraction Inspection & Confirmation
-      let proceed = false;
-      while (true) {
-        this.io.print(this.terminalView.renderInspectionCard(selectedMessage, intentName, intentChoice));
-        const inspChoice = (await this.io.prompt('Choice [y/o/c]: ')).toLowerCase();
-
-        if (inspChoice === 'c') {
+        if (selectionInput.toLowerCase() === 'q' || selectionInput.toLowerCase() === 'quit') {
           break;
-        } else if (inspChoice === 'o') {
-          if (selectedMessage.mediaBuffer && selectedMessage.mediaMimeType) {
-            const previewRes = await this.previewer.previewMedia(
-              selectedMessage.mediaBuffer,
-              selectedMessage.mediaMimeType,
-              selectedMessage.textBody ?? undefined
-            );
-            if (previewRes.success) {
-              this.io.print(`Media opened in native viewer: ${previewRes.filePath}`);
-            } else {
-              this.io.print(`Failed to launch viewer: ${previewRes.error}`);
-            }
-          } else {
-            this.io.print('No binary media attached to this message.');
+        }
+
+        const selectedIdx = parseInt(selectionInput, 10);
+        if (isNaN(selectedIdx) || selectedIdx < 1 || selectedIdx > messages.length) {
+          this.io.print('Invalid selection index. Please enter a valid number or [q] to quit.');
+          continue;
+        }
+
+        const selectedMessage = messages[selectedIdx - 1];
+
+        // If message is already processed, display processed rollback card
+        if (selectedMessage.status === 'processed') {
+          this.io.print(this.terminalView.renderProcessedMessageCard(selectedMessage));
+          const rollbackChoice = (await this.io.prompt('Choice [u/c]: ')).toLowerCase();
+          if (rollbackChoice === 'u') {
+            await this.stagingRepo.atomicUndo(selectedMessage.id);
+            this.io.print('Surgically reverted message ingestion. Status reset to pending.');
           }
-        } else if (inspChoice === 'y') {
-          proceed = true;
-          break;
+          continue;
         }
-      }
 
-      if (!proceed) {
-        continue;
-      }
+        // Display the Message Inspection Card so operator can preview full text and metadata
+        this.io.print(this.terminalView.renderInspectionCard(selectedMessage));
 
-        // Execute Extraction with Non-Fatal Error Recovery
-        await this.handleExtractionAndReview(selectedMessage, intentChoice);
+        const isMedia = Boolean(
+          selectedMessage.mediaMimeType ||
+          selectedMessage.mediaBuffer ||
+          selectedMessage.messageType !== 'text'
+        );
+
+        if (!isMedia) {
+          // Streamlined Text Announcement Menu: Spec 5.1
+          this.io.print('\nSelect action:');
+          this.io.print('  [1] Process Announcement (Auto-Extract All Events)');
+          this.io.print('  [2] Ignore Message');
+          this.io.print('  [c] Cancel / Back to List');
+
+          const intentChoice = (await this.io.prompt('Choice [1/2/c]: ')).toLowerCase();
+
+          if (intentChoice === 'c') {
+            continue;
+          }
+
+          if (intentChoice === '2') {
+            // Mark Ignored
+            this.io.print(this.terminalView.renderIgnorePreview(selectedMessage));
+            const ignoreConfirm = (await this.io.prompt('Choice [y/c]: ')).toLowerCase();
+            if (ignoreConfirm === 'y') {
+              await this.stagingRepo.markIgnored(selectedMessage.id);
+              this.io.print(`Message ${selectedMessage.id} marked as ignored.`);
+            }
+            continue;
+          }
+
+          if (intentChoice === '1') {
+            await this.handleCompositeExtraction(selectedMessage);
+            continue;
+          }
+
+          this.io.print('Invalid choice.');
+          continue;
+        } else {
+          // Streamlined Media Announcement Menu: Spec 5.1
+          let exitMediaMenu = false;
+          while (!exitMediaMenu) {
+            this.io.print('\nSelect action:');
+            this.io.print('  [1] Extract Weekly Menu');
+            this.io.print('  [2] Process Announcement (Auto-Extract All Events)');
+            this.io.print('  [3] Open in Viewer');
+            this.io.print('  [4] Ignore Message');
+            this.io.print('  [c] Cancel / Back to List');
+
+            const intentChoice = (await this.io.prompt('Choice [1-4/c]: ')).toLowerCase();
+
+            if (intentChoice === 'c') {
+              break;
+            }
+
+            if (intentChoice === '4' || intentChoice === '5') {
+              // Mark Ignored
+              this.io.print(this.terminalView.renderIgnorePreview(selectedMessage));
+              const ignoreConfirm = (await this.io.prompt('Choice [y/c]: ')).toLowerCase();
+              if (ignoreConfirm === 'y') {
+                await this.stagingRepo.markIgnored(selectedMessage.id);
+                this.io.print(`Message ${selectedMessage.id} marked as ignored.`);
+              }
+              break;
+            }
+
+            if (intentChoice === '3') {
+              if (selectedMessage.mediaBuffer && selectedMessage.mediaMimeType) {
+                const previewRes = await this.previewer.previewMedia(
+                  selectedMessage.mediaBuffer,
+                  selectedMessage.mediaMimeType,
+                  selectedMessage.textBody ?? undefined
+                );
+                if (previewRes.success) {
+                  this.io.print(`Media opened in native viewer: ${previewRes.filePath}`);
+                } else {
+                  this.io.print(`Failed to launch viewer: ${previewRes.error}`);
+                }
+              } else {
+                this.io.print('No binary media attached to this message.');
+              }
+              continue;
+            }
+
+            if (intentChoice === '2') {
+              await this.handleCompositeExtraction(selectedMessage);
+              break;
+            }
+
+            if (intentChoice === '1') {
+              // Mandatory Pre-Extraction Inspection & Confirmation
+              let proceed = false;
+              while (true) {
+                this.io.print(
+                  this.terminalView.renderInspectionCard(selectedMessage, 'Weekly Menu', '1')
+                );
+                const inspChoice = (await this.io.prompt('Choice [y/o/c]: ')).toLowerCase();
+
+                if (inspChoice === 'c') {
+                  break;
+                } else if (inspChoice === 'o') {
+                  if (selectedMessage.mediaBuffer && selectedMessage.mediaMimeType) {
+                    const previewRes = await this.previewer.previewMedia(
+                      selectedMessage.mediaBuffer,
+                      selectedMessage.mediaMimeType,
+                      selectedMessage.textBody ?? undefined
+                    );
+                    if (previewRes.success) {
+                      this.io.print(`Media opened in native viewer: ${previewRes.filePath}`);
+                    } else {
+                      this.io.print(`Failed to launch viewer: ${previewRes.error}`);
+                    }
+                  } else {
+                    this.io.print('No binary media attached to this message.');
+                  }
+                } else if (inspChoice === 'y') {
+                  proceed = true;
+                  break;
+                }
+              }
+
+              if (!proceed) {
+                break;
+              }
+
+              await this.handleWeeklyMenuExtraction(selectedMessage);
+              break;
+            }
+
+            this.io.print('Invalid choice.');
+          }
+          continue;
+        }
       }
     } finally {
       this.close();
@@ -264,59 +327,37 @@ export class TriageCliController {
   }
 
   /**
-   * Executes the respective extraction engine and reviews / remediates the result.
+   * Executes weekly menu extraction and remediation review.
    */
-  private async handleExtractionAndReview(
-    message: WhatsappGroupFoodAnnouncementsMessageRow,
-    intentChoice: string
+  private async handleWeeklyMenuExtraction(
+    message: WhatsappGroupFoodAnnouncementsMessageRow
   ): Promise<void> {
-    const runExtraction = async (): Promise<any> => {
-      if (intentChoice === '1') {
-        // Weekly Menu
-        const isPdf =
-          message.mediaMimeType === 'application/pdf' ||
-          Boolean(message.mediaBuffer?.subarray(0, 4).toString().startsWith('%PDF'));
+    const runExtraction = async (): Promise<ExtractedWeeklyMenu> => {
+      const isPdf =
+        message.mediaMimeType === 'application/pdf' ||
+        Boolean(message.mediaBuffer?.subarray(0, 4).toString().startsWith('%PDF'));
 
-        if (isPdf && message.mediaBuffer) {
-          const pngBuffer = await this.pdfRasterizer.rasterizePageOneToPng(message.mediaBuffer);
-          return await this.visionExtractor.extractWeeklyMenu(pngBuffer, {
-            mimeType: 'image/png',
-            textContext: message.textBody ?? undefined,
-          });
-        } else if (message.mediaBuffer) {
-          return await this.visionExtractor.extractWeeklyMenu(message.mediaBuffer, {
-            mimeType: message.mediaMimeType ?? 'image/png',
-            textContext: message.textBody ?? undefined,
-          });
-        } else {
-          throw new Error('Weekly menu extraction requires image or PDF media attachment.');
-        }
-      } else if (intentChoice === '2') {
-        // Location Detail
-        return await this.textExtractor.extractLocationDetail(
-          message.textBody ?? '',
-          message.receivedAt
-        );
-      } else if (intentChoice === '3') {
-        // Timing Extension
-        return await this.textExtractor.extractTimingExtension(
-          message.textBody ?? '',
-          message.receivedAt
-        );
-      } else if (intentChoice === '4') {
-        // Meal Change
-        return await this.textExtractor.extractMealChange(
-          message.textBody ?? '',
-          message.receivedAt
-        );
+      if (isPdf && message.mediaBuffer) {
+        const pngBuffer = await this.pdfRasterizer.rasterizePageOneToPng(message.mediaBuffer);
+        return await this.visionExtractor.extractWeeklyMenu(pngBuffer, {
+          mimeType: 'image/png',
+          textContext: message.textBody ?? undefined,
+        });
+      } else if (message.mediaBuffer) {
+        return await this.visionExtractor.extractWeeklyMenu(message.mediaBuffer, {
+          mimeType: message.mediaMimeType ?? 'image/png',
+          textContext: message.textBody ?? undefined,
+        });
+      } else {
+        throw new Error('Weekly menu extraction requires image or PDF media attachment.');
       }
     };
 
-    let extractedData: any = null;
+    let menu: ExtractedWeeklyMenu | null = null;
     while (true) {
       try {
-        this.io.print('\n⏳ Extracting data via DeepSeek engine...');
-        extractedData = await runExtraction();
+        this.io.print('\n⏳ Extracting weekly menu via DeepSeek vision engine...');
+        menu = await runExtraction();
         break;
       } catch (err: any) {
         this.io.print(this.terminalView.renderExtractionErrorCard(err, message.id));
@@ -324,21 +365,176 @@ export class TriageCliController {
         if (retryChoice === 'r') {
           continue;
         } else {
-          return; // Abort back to list
+          return;
         }
       }
     }
 
-    // Interactive Review & Remediation by Intent
-    if (intentChoice === '1') {
-      await this.reviewWeeklyMenu(message, extractedData as ExtractedWeeklyMenu);
-    } else if (intentChoice === '2') {
-      await this.reviewLocationDetail(message, extractedData as ExtractedLocationDetail);
-    } else if (intentChoice === '3') {
-      await this.reviewTimingExtension(message, extractedData as ExtractedTimingExtension);
-    } else if (intentChoice === '4') {
-      await this.reviewMealChange(message, extractedData as ExtractedMealChange);
+    if (menu) {
+      await this.reviewWeeklyMenu(message, menu);
     }
+  }
+
+  /**
+   * Executes composite announcement extraction and remediation review.
+   */
+  private async handleCompositeExtraction(
+    message: WhatsappGroupFoodAnnouncementsMessageRow
+  ): Promise<void> {
+    let composite: ExtractedCompositeAnnouncement | null = null;
+    while (true) {
+      try {
+        this.io.print('\n⏳ Extracting announcement events via DeepSeek engine...');
+        composite = await this.textExtractor.extractAnnouncementEvents(
+          message.textBody ?? '',
+          message.receivedAt
+        );
+        break;
+      } catch (err: any) {
+        this.io.print(this.terminalView.renderExtractionErrorCard(err, message.id));
+        const retryChoice = (await this.io.prompt('Choice [r/c]: ')).toLowerCase();
+        if (retryChoice === 'r') {
+          continue;
+        } else {
+          return;
+        }
+      }
+    }
+
+    if (composite) {
+      await this.reviewCompositeAnnouncement(message, composite);
+    }
+  }
+
+  /**
+   * Reviews composite announcement preview, verifies meal swaps against DB (Option B gate),
+   * provides Neovim JSON editing, and atomically commits.
+   */
+  private async reviewCompositeAnnouncement(
+    message: WhatsappGroupFoodAnnouncementsMessageRow,
+    composite: ExtractedCompositeAnnouncement
+  ): Promise<void> {
+    let currentComposite = composite;
+
+    while (true) {
+      const { resolvedSwaps, missingSwaps } = await this.resolveSwaps(currentComposite.mealSwaps);
+
+      this.io.print(
+        this.terminalView.renderCompositeAnnouncementCard(
+          currentComposite,
+          resolvedSwaps,
+          missingSwaps
+        )
+      );
+
+      const hasMissingSwaps = missingSwaps.length > 0;
+      const promptStr = hasMissingSwaps ? 'Choice [e/c]: ' : 'Choice [y/e/c]: ';
+      const choice = (await this.io.prompt(promptStr)).toLowerCase();
+
+      if (choice === 'y') {
+        if (hasMissingSwaps) {
+          const firstMissing = missingSwaps[0];
+          const isTarget = (firstMissing as any).missingReason === 'target';
+          const dateStr = isTarget ? firstMissing.targetMealDate : firstMissing.sourceMealDate;
+          const slotStr = isTarget ? firstMissing.targetMealSlot : firstMissing.sourceMealSlot;
+          const menuType = isTarget ? 'Target' : 'Source';
+          this.io.print(
+            `❌ Cannot Commit Swap: ${menuType} menu for ${dateStr} ${slotStr} not found in database. Please ingest that date's weekly menu before committing this announcement.`
+          );
+          continue;
+        }
+
+        await this.stagingRepo.atomicCommitComposite({
+          messageId: message.id,
+          composite: currentComposite,
+          resolvedSwaps,
+        });
+        this.io.print('✅ Successfully committed announcement events to database!');
+        break;
+      } else if (choice === 'e') {
+        const editRes = await this.editor.editJson(
+          currentComposite,
+          ExtractedCompositeAnnouncementSchema
+        );
+        if (editRes.success && editRes.data) {
+          currentComposite = editRes.data;
+          this.io.print('Successfully updated announcement events from editor.');
+        } else if (editRes.cancelled) {
+          this.io.print('Edit cancelled.');
+        } else if (editRes.error) {
+          this.io.print(`Edit error: ${editRes.error}`);
+        }
+      } else if (choice === 'c') {
+        this.io.print('Cancelled commit.');
+        break;
+      } else {
+        this.io.print('Invalid choice.');
+      }
+    }
+  }
+
+  /**
+   * Option B Pre-Commit Verification Gate:
+   * Inspects database for (sourceMealDate, sourceMealSlot).
+   * Populates resolvedSwaps with backup of current target meal items if found;
+   * otherwise populates missingSwaps to block commitment.
+   */
+  private async resolveSwaps(
+    mealSwaps?: ExtractedMealSwap[]
+  ): Promise<{ resolvedSwaps: ResolvedMealSwapInput[]; missingSwaps: ExtractedMealSwap[] }> {
+    const resolvedSwaps: ResolvedMealSwapInput[] = [];
+    const missingSwaps: ExtractedMealSwap[] = [];
+
+    if (!mealSwaps || mealSwaps.length === 0) {
+      return { resolvedSwaps, missingSwaps };
+    }
+
+    for (const swap of mealSwaps) {
+      const sourceMeals = await this.stagingRepo.getMealsByDateAndSlot(
+        swap.sourceMealDate,
+        swap.sourceMealSlot,
+        swap.targetVendor ?? undefined
+      );
+
+      if (!sourceMeals || sourceMeals.length === 0) {
+        missingSwaps.push({ ...swap, missingReason: 'source' } as any);
+        continue;
+      }
+
+      let missingTarget = false;
+      const currentResolved: ResolvedMealSwapInput[] = [];
+
+      for (const sourceMeal of sourceMeals) {
+        const targetMeals = await this.stagingRepo.getMealsByDateAndSlot(
+          swap.targetMealDate,
+          swap.targetMealSlot,
+          sourceMeal.vendor
+        );
+
+        if (!targetMeals || targetMeals.length === 0) {
+          missingTarget = true;
+          break;
+        }
+
+        currentResolved.push({
+          targetMealDate: swap.targetMealDate,
+          targetMealSlot: swap.targetMealSlot as any,
+          vendor: sourceMeal.vendor as any,
+          newItems: sourceMeal.items,
+          previousItems: targetMeals[0].items,
+          sourceMealDate: swap.sourceMealDate,
+          sourceMealSlot: swap.sourceMealSlot as any,
+        });
+      }
+
+      if (missingTarget) {
+        missingSwaps.push({ ...swap, missingReason: 'target' } as any);
+      } else {
+        resolvedSwaps.push(...currentResolved);
+      }
+    }
+
+    return { resolvedSwaps, missingSwaps };
   }
 
   private async reviewWeeklyMenu(
@@ -383,114 +579,6 @@ export class TriageCliController {
         } else if (editRes.error) {
           this.io.print(`Edit error: ${editRes.error}`);
         }
-      } else if (choice === 'c') {
-        this.io.print('Cancelled commit.');
-        break;
-      }
-    }
-  }
-
-  private async reviewLocationDetail(
-    message: WhatsappGroupFoodAnnouncementsMessageRow,
-    detail: ExtractedLocationDetail
-  ): Promise<void> {
-    let currentDetail = detail;
-
-    while (true) {
-      this.io.print(this.terminalView.renderLocationDetailPreview(currentDetail, message));
-      const choice = (await this.io.prompt('Choice [y/d/e/c]: ')).toLowerCase();
-
-      if (choice === 'y') {
-        await this.stagingRepo.atomicCommit({
-          messageId: message.id,
-          locationDetail: currentDetail,
-        });
-        this.io.print('✅ Successfully committed location seating details!');
-        break;
-      } else if (choice === 'd') {
-        const newDate = await this.io.prompt(
-          `Enter new meal date (current: ${currentDetail.mealDate}, YYYY-MM-DD): `
-        );
-        if (/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
-          currentDetail.mealDate = newDate;
-        } else {
-          this.io.print('Invalid date format. Expected YYYY-MM-DD.');
-        }
-      } else if (choice === 'e') {
-        const editRes = await this.editor.editJson(currentDetail, ExtractedLocationDetailSchema);
-        if (editRes.success && editRes.data) {
-          currentDetail = editRes.data;
-          this.io.print('Successfully updated location detail from editor.');
-        } else if (editRes.cancelled) {
-          this.io.print('Edit cancelled.');
-        } else if (editRes.error) {
-          this.io.print(`Edit error: ${editRes.error}`);
-        }
-      } else if (choice === 'c') {
-        this.io.print('Cancelled commit.');
-        break;
-      }
-    }
-  }
-
-  private async reviewTimingExtension(
-    message: WhatsappGroupFoodAnnouncementsMessageRow,
-    timing: ExtractedTimingExtension
-  ): Promise<void> {
-    const currentTiming = timing;
-
-    while (true) {
-      this.io.print(this.terminalView.renderTimingExtensionPreview(currentTiming, message));
-      const choice = (await this.io.prompt('Choice [y/v/c]: ')).toLowerCase();
-
-      if (choice === 'y') {
-        await this.stagingRepo.atomicCommit({
-          messageId: message.id,
-          timingExtension: currentTiming,
-        });
-        this.io.print('✅ Successfully committed timing extension!');
-        break;
-      } else if (choice === 'v') {
-        const vChoice = await this.io.prompt(
-          'Assign to specific vendor: [0] ALL, [1] regular, [2] jain, [3] tcb: '
-        );
-        if (vChoice === '0') currentTiming.targetVendor = null;
-        else if (vChoice === '1') currentTiming.targetVendor = 'cheftalk_regular';
-        else if (vChoice === '2') currentTiming.targetVendor = 'cheftalk_jain';
-        else if (vChoice === '3') currentTiming.targetVendor = 'tcb';
-        else this.io.print('Invalid vendor choice.');
-      } else if (choice === 'c') {
-        this.io.print('Cancelled commit.');
-        break;
-      }
-    }
-  }
-
-  private async reviewMealChange(
-    message: WhatsappGroupFoodAnnouncementsMessageRow,
-    change: ExtractedMealChange
-  ): Promise<void> {
-    const currentChange = change;
-
-    while (true) {
-      this.io.print(this.terminalView.renderMealChangePreview(currentChange, message));
-      const choice = (await this.io.prompt('Choice [y/t/c]: ')).toLowerCase();
-
-      if (choice === 'y') {
-        await this.stagingRepo.atomicCommit({
-          messageId: message.id,
-          mealChange: currentChange,
-        });
-        this.io.print('✅ Successfully committed meal change!');
-        break;
-      } else if (choice === 't') {
-        const tChoice = await this.io.prompt(
-          `Change Type (current: ${currentChange.changeType} ➔ [1] replacement, [2] addition, [3] cancellation): `
-        );
-        if (tChoice === '1') currentChange.changeType = 'replacement';
-        else if (tChoice === '2') currentChange.changeType = 'addition';
-        else if (tChoice === '3') currentChange.changeType = 'cancellation';
-        else this.io.print('Invalid change type choice.');
       } else if (choice === 'c') {
         this.io.print('Cancelled commit.');
         break;

@@ -4,6 +4,8 @@ import {
   ExtractedLocationDetailSchema,
   ExtractedTimingExtensionSchema,
   ExtractedMealChangeSchema,
+  ExtractedMealSwapSchema,
+  ExtractedCompositeAnnouncementSchema,
 } from '../../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas.js';
 
 describe('Extraction Schemas', () => {
@@ -219,4 +221,100 @@ describe('Extraction Schemas', () => {
       ).toThrow();
     });
   });
+
+  describe('ExtractedMealSwapSchema', () => {
+    it('validates a correct one-way meal swap', () => {
+      const valid = {
+        targetMealDate: '2026-10-20',
+        targetMealSlot: 'dinner',
+        sourceMealDate: '2026-10-21',
+        sourceMealSlot: 'lunch',
+        targetVendor: 'cheftalk_regular',
+      };
+      const parsed = ExtractedMealSwapSchema.parse(valid);
+      expect(parsed.targetMealSlot).toBe('dinner');
+      expect(parsed.sourceMealSlot).toBe('lunch');
+    });
+
+    it('allows targetVendor to be null or undefined (applies to all vendors)', () => {
+      const valid = {
+        targetMealDate: '2026-10-20',
+        targetMealSlot: 'dinner',
+        sourceMealDate: '2026-10-21',
+        sourceMealSlot: 'lunch',
+        targetVendor: null,
+      };
+      const parsed = ExtractedMealSwapSchema.parse(valid);
+      expect(parsed.targetVendor).toBeNull();
+    });
+
+    it('rejects invalid dates or slot names', () => {
+      expect(() =>
+        ExtractedMealSwapSchema.parse({
+          targetMealDate: '20-10-2026',
+          targetMealSlot: 'snacks',
+          sourceMealDate: '2026-10-21',
+          sourceMealSlot: 'lunch',
+        })
+      ).toThrow();
+    });
+  });
+
+  describe('ExtractedCompositeAnnouncementSchema', () => {
+    it('validates a composite announcement with all event types present', () => {
+      const payload = {
+        mealDate: '2026-10-20',
+        location: {
+          mealDate: '2026-10-20',
+          mealSlot: 'lunch',
+          hostelBatches: ['2028', '2029'],
+          collegeBatches: ['ALL_OTHER_BATCHES'],
+        },
+        timingExtensions: [
+          {
+            mealDate: '2026-10-20',
+            mealSlot: 'lunch',
+            targetVendor: null,
+            extendedTimings: 'Extended till 15:00',
+          },
+        ],
+        mealChanges: [
+          {
+            mealDate: '2026-10-20',
+            mealSlot: 'lunch',
+            targetVendor: 'cheftalk_regular',
+            changeType: 'replacement',
+            affectedItem: 'Kadhai Paneer',
+            originalItem: 'Paneer Butter Masala',
+          },
+        ],
+        mealSwaps: [
+          {
+            targetMealDate: '2026-10-20',
+            targetMealSlot: 'dinner',
+            sourceMealDate: '2026-10-21',
+            sourceMealSlot: 'lunch',
+          },
+        ],
+      };
+      const result = ExtractedCompositeAnnouncementSchema.parse(payload);
+      expect(result.location?.hostelBatches).toEqual(['2028', '2029']);
+      expect(result.timingExtensions).toHaveLength(1);
+      expect(result.mealChanges).toHaveLength(1);
+      expect(result.mealSwaps).toHaveLength(1);
+    });
+
+    it('provides safe defaults for empty arrays and null location', () => {
+      const minimal = {
+        mealDate: '2026-10-20',
+      };
+      const result = ExtractedCompositeAnnouncementSchema.parse(minimal);
+      expect(result.mealDate).toBe('2026-10-20');
+      expect(result.location).toBeUndefined();
+      expect(result.timingExtensions).toEqual([]);
+      expect(result.mealChanges).toEqual([]);
+      expect(result.mealSwaps).toEqual([]);
+    });
+  });
 });
+

@@ -3,7 +3,7 @@ import type { PgDatabase } from 'drizzle-orm/pg-core';
 import crypto from 'node:crypto';
 import { LoggerPort } from '../../../../core/ports/LoggerPort.js';
 import { MealSlot, Vendor, MealChangeType } from '../../../../core/entities/MessMeal.js';
-import { ExtractedWeeklyMenu } from '../extraction/ExtractionSchemas.js';
+import { ExtractedWeeklyMenu, ExtractedCompositeAnnouncement } from '../extraction/ExtractionSchemas.js';
 import {
   messMeals,
   messMealLocationDetails,
@@ -11,6 +11,8 @@ import {
   messMealChanges,
   whatsappGroupFoodAnnouncementsMessages,
   type WhatsappGroupFoodAnnouncementsMessageRow,
+  type NewWhatsappGroupFoodAnnouncementsMessageRow,
+  type MessMealRow,
   type NewMessMealRow,
   type NewMessMealLocationDetailRow,
   type DbFoodAnnouncementStatus,
@@ -84,6 +86,22 @@ export type AtomicCommitOptions = CommitOperationalPayload & {
   messageId: string;
 };
 
+export interface ResolvedMealSwapInput {
+  targetMealDate: string;
+  targetMealSlot: MealSlot;
+  vendor: Vendor;
+  newItems: string[];
+  previousItems: string[];
+  sourceMealDate: string;
+  sourceMealSlot: MealSlot;
+}
+
+export interface AtomicCommitCompositeOptions {
+  messageId: string;
+  composite: ExtractedCompositeAnnouncement;
+  resolvedSwaps?: ResolvedMealSwapInput[];
+}
+
 /**
  * Outbound adapter for managing staged food announcement messages and executing
  * atomic commit, surgical undo, and development reset operations backed by PostgreSQL.
@@ -147,6 +165,33 @@ export class PostgresMessStagingRepository {
   }
 
   /**
+   * Stages an inbound food announcement message into the staging table.
+   */
+  async stageMessage(
+    message: Omit<NewWhatsappGroupFoodAnnouncementsMessageRow, 'receivedAt'> & {
+      receivedAt?: Date;
+    }
+  ): Promise<void> {
+    this.logger?.debug?.('Staging inbound message', { id: message.id });
+
+    await this.db
+      .insert(whatsappGroupFoodAnnouncementsMessages)
+      .values({
+        id: message.id,
+        senderAddress: message.senderAddress,
+        senderAddressType: message.senderAddressType,
+        messageType: message.messageType,
+        mediaMimeType: message.mediaMimeType ?? null,
+        mediaBuffer: message.mediaBuffer ?? null,
+        textBody: message.textBody ?? null,
+        status: message.status ?? 'pending',
+        receivedAt: message.receivedAt ?? new Date(),
+        processedAt: message.processedAt ?? null,
+      })
+      .onConflictDoNothing();
+  }
+
+  /**
    * Retrieves a staged message by its unique WhatsApp message ID (wamid).
    */
   async getMessageById(id: string): Promise<WhatsappGroupFoodAnnouncementsMessageRow | null> {
@@ -159,6 +204,34 @@ export class PostgresMessStagingRepository {
       .limit(1)) as WhatsappGroupFoodAnnouncementsMessageRow[];
 
     return rows[0] ?? null;
+  }
+
+  /**
+   * Retrieves operational mess meals for a given date, slot, and optional vendor.
+   * Useful for swap verification and pre-commit checks.
+   */
+  async getMealsByDateAndSlot(
+    mealDate: string,
+    mealSlot: string,
+    vendor?: string | null
+  ): Promise<MessMealRow[]> {
+    this.logger?.debug?.('Fetching mess meals by date and slot', { mealDate, mealSlot, vendor });
+
+    const conditions: SQL[] = [
+      eq(messMeals.mealDate, mealDate),
+      eq(messMeals.mealSlot, mealSlot as any),
+    ];
+
+    if (vendor) {
+      conditions.push(eq(messMeals.vendor, vendor as any));
+    }
+
+    const rows = (await this.db
+      .select()
+      .from(messMeals)
+      .where(and(...conditions))) as MessMealRow[];
+
+    return rows;
   }
 
   /**
@@ -350,6 +423,131 @@ export class PostgresMessStagingRepository {
   }
 
   /**
+   * Atomically commits a composite announcement payload (location seating, timing extensions,
+   * dish changes, and resolved meal swaps) in a single transaction, and sets the staging message
+   * status to 'processed' with processedAt timestamp.
+   */
+  async atomicCommitComposite(options: AtomicCommitCompositeOptions): Promise<void> {
+    const { messageId, composite, resolvedSwaps } = options;
+
+    this.logger?.info?.('Executing atomic composite commit for message', {
+      messageId,
+      hasLocation: Boolean(composite.location),
+      timingCount: composite.timingExtensions?.length ?? 0,
+      changeCount: composite.mealChanges?.length ?? 0,
+      swapCount: resolvedSwaps?.length ?? 0,
+    });
+
+    await this.db.transaction(async (tx) => {
+      // 1. Process and upsert mess_meal_location_details
+      if (composite.location) {
+        const slot = composite.location.mealSlot ?? 'lunch';
+        const locRow: NewMessMealLocationDetailRow = {
+          id: crypto.randomUUID(),
+          mealDate: composite.location.mealDate,
+          mealSlot: slot,
+          hostelBatches: Array.from(composite.location.hostelBatches),
+          collegeBatches: Array.from(composite.location.collegeBatches),
+          sourceMessageId: messageId,
+          ingestedAt: new Date(),
+        };
+
+        await tx
+          .insert(messMealLocationDetails)
+          .values(locRow)
+          .onConflictDoUpdate({
+            target: [messMealLocationDetails.mealDate, messMealLocationDetails.mealSlot],
+            set: {
+              hostelBatches: locRow.hostelBatches,
+              collegeBatches: locRow.collegeBatches,
+              sourceMessageId: messageId,
+              ingestedAt: new Date(),
+            },
+          });
+      }
+
+      // 2. Process and insert mess_meal_timing_extensions
+      if (composite.timingExtensions && composite.timingExtensions.length > 0) {
+        for (const timing of composite.timingExtensions) {
+          await tx.insert(messMealTimingExtensions).values({
+            id: crypto.randomUUID(),
+            mealDate: timing.mealDate,
+            mealSlot: timing.mealSlot,
+            targetVendor: timing.targetVendor ?? null,
+            extendedTimings: timing.extendedTimings,
+            sourceMessageId: messageId,
+            ingestedAt: new Date(),
+          });
+        }
+      }
+
+      // 3. Process and insert mess_meal_changes
+      if (composite.mealChanges && composite.mealChanges.length > 0) {
+        for (const change of composite.mealChanges) {
+          await tx.insert(messMealChanges).values({
+            id: crypto.randomUUID(),
+            mealDate: change.mealDate,
+            mealSlot: change.mealSlot,
+            targetVendor: change.targetVendor,
+            changeType: change.changeType,
+            affectedItem: change.affectedItem,
+            originalItem: change.originalItem ?? null,
+            sourceMessageId: messageId,
+            ingestedAt: new Date(),
+          });
+        }
+      }
+
+      // 4. Process resolvedSwaps: mutate mess_meals target rows and insert backup into mess_meal_changes
+      if (resolvedSwaps && resolvedSwaps.length > 0) {
+        for (const swap of resolvedSwaps) {
+          if (!swap.previousItems || swap.previousItems.length === 0) {
+            throw new Error(
+              `Cannot commit swap for ${swap.targetMealDate} ${swap.targetMealSlot} (${swap.vendor}): previousItems backup must not be empty.`
+            );
+          }
+
+          await tx
+            .update(messMeals)
+            .set({
+              items: Array.from(swap.newItems),
+            })
+            .where(
+              and(
+                eq(messMeals.mealDate, swap.targetMealDate),
+                eq(messMeals.mealSlot, swap.targetMealSlot),
+                eq(messMeals.vendor, swap.vendor)
+              )
+            );
+
+          await tx.insert(messMealChanges).values({
+            id: crypto.randomUUID(),
+            mealDate: swap.targetMealDate,
+            mealSlot: swap.targetMealSlot,
+            targetVendor: swap.vendor,
+            changeType: 'replacement',
+            affectedItem: `${swap.sourceMealDate} ${swap.sourceMealSlot} Menu (${swap.newItems.join(', ')})`,
+            originalItem: JSON.stringify(Array.from(swap.previousItems)),
+            sourceMessageId: messageId,
+            ingestedAt: new Date(),
+          });
+        }
+      }
+
+      // 5. Update staged message status to 'processed'
+      await tx
+        .update(whatsappGroupFoodAnnouncementsMessages)
+        .set({
+          status: 'processed',
+          processedAt: new Date(),
+        })
+        .where(eq(whatsappGroupFoodAnnouncementsMessages.id, messageId));
+    });
+
+    this.logger?.info?.('Successfully committed composite announcement', { messageId });
+  }
+
+  /**
    * Marks a staged message as 'ignored'.
    */
   async markIgnored(id: string): Promise<void> {
@@ -365,30 +563,62 @@ export class PostgresMessStagingRepository {
 
   /**
    * Surgically undos all operational writes associated with a specific message ID,
-   * deleting linked rows in all 4 operational tables, and resetting the message status
-   * to 'pending' with processedAt = null.
+   * restoring swapped meal items, deleting linked rows in operational tables,
+   * and resetting the message status to 'pending' with processedAt = null.
    */
   async atomicUndo(messageId: string): Promise<void> {
     this.logger?.info?.('Executing surgical undo for message', { messageId });
 
     await this.db.transaction(async (tx) => {
-      // 1. Delete linked rows in mess_meals
+      // 1. Restore swapped meals if any exist in mess_meal_changes
+      const changes = await tx
+        .select()
+        .from(messMealChanges)
+        .where(eq(messMealChanges.sourceMessageId, messageId));
+
+      for (const change of changes) {
+        if (change.originalItem && change.originalItem.startsWith('[')) {
+          try {
+            const previousItems = JSON.parse(change.originalItem);
+            if (Array.isArray(previousItems)) {
+              await tx
+                .update(messMeals)
+                .set({ items: previousItems })
+                .where(
+                  and(
+                    eq(messMeals.mealDate, change.mealDate),
+                    eq(messMeals.mealSlot, change.mealSlot),
+                    eq(messMeals.vendor, change.targetVendor)
+                  )
+                );
+            }
+          } catch (e) {
+            this.logger?.warn?.('Failed to parse originalItem for swap undo', {
+              changeId: change.id,
+              originalItem: change.originalItem,
+              error: e,
+            });
+          }
+        }
+      }
+
+      // 2. Delete linked rows in mess_meals
       await tx.delete(messMeals).where(eq(messMeals.sourceMessageId, messageId));
 
-      // 2. Delete linked rows in mess_meal_location_details
+      // 3. Delete linked rows in mess_meal_location_details
       await tx
         .delete(messMealLocationDetails)
         .where(eq(messMealLocationDetails.sourceMessageId, messageId));
 
-      // 3. Delete linked rows in mess_meal_timing_extensions
+      // 4. Delete linked rows in mess_meal_timing_extensions
       await tx
         .delete(messMealTimingExtensions)
         .where(eq(messMealTimingExtensions.sourceMessageId, messageId));
 
-      // 4. Delete linked rows in mess_meal_changes
+      // 5. Delete linked rows in mess_meal_changes
       await tx.delete(messMealChanges).where(eq(messMealChanges.sourceMessageId, messageId));
 
-      // 5. Restore staged message status to pending
+      // 6. Restore staged message status to pending
       await tx
         .update(whatsappGroupFoodAnnouncementsMessages)
         .set({

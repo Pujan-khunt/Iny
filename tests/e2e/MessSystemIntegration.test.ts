@@ -18,6 +18,7 @@ import { PostgresMessStagingRepository } from '../../src/adapters/outbound/mess/
 import { DisplayMessCardTool } from '../../src/tools/DisplayMessCardTool';
 import { QueryMessDetailsTool } from '../../src/tools/QueryMessDetailsTool';
 import { FoodAnnouncementsInboundAdapter } from '../../src/adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter';
+import { DeepseekTextExtractor } from '../../src/adapters/outbound/mess/extraction/DeepseekTextExtractor';
 import {
   messMeals,
   messMealLocationDetails,
@@ -104,7 +105,8 @@ describe('Mess System End-to-End Integration', () => {
           vendor vendor NOT NULL,
           items TEXT[] NOT NULL,
           source_message_id TEXT,
-          ingested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          ingested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT uq_mess_meals UNIQUE (meal_date, meal_slot, vendor)
         );
 
         CREATE TABLE mess_meal_location_details (
@@ -114,7 +116,8 @@ describe('Mess System End-to-End Integration', () => {
           hostel_batches TEXT[] NOT NULL,
           college_batches TEXT[] NOT NULL,
           source_message_id TEXT,
-          ingested_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          ingested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT uq_mess_location UNIQUE (meal_date, meal_slot)
         );
 
         CREATE TABLE mess_meal_timing_extensions (
@@ -470,6 +473,160 @@ describe('Mess System End-to-End Integration', () => {
       const fetchedById = await stagingRepository.getMessageById('WA_STAGED_MSG_999');
       expect(fetchedById?.id).toBe('WA_STAGED_MSG_999');
       expect(fetchedById?.status).toBe('pending');
+    });
+
+    it('processes complete composite food announcement lifecycle (ingestion -> extraction -> atomicCommit -> display -> atomicUndo)', async () => {
+      // 1. Inbound adapter with mock connection manager
+      let registeredHandler: ((upsert: any) => Promise<void>) | null = null;
+      const fakeConnectionManager = {
+        subscribe: vi.fn().mockImplementation((event: string, handler: any) => {
+          if (event === 'messages.upsert') {
+            registeredHandler = handler;
+          }
+        }),
+      };
+
+      const adapter = new FoodAnnouncementsInboundAdapter({
+        targetGroupJid: FOOD_GROUP_JID,
+        db,
+        connectionManager: fakeConnectionManager as any,
+        logger: mockLogger,
+      });
+
+      adapter.start();
+      expect(registeredHandler).not.toBeNull();
+
+      // 2. Inbound WhatsApp announcement containing combo message (location seating + timing extension)
+      const messageId = 'WA_COMPOSITE_MSG_E2E_001';
+      const announcementText =
+        'Lunch timings are extended till 3:30 PM today. Batches 2028 and 2029 will have lunch in Hostel Mess, all other batches in College Mess.';
+
+      const incomingWAMessage: WAMessage = {
+        key: {
+          remoteJid: FOOD_GROUP_JID,
+          fromMe: false,
+          id: messageId,
+          participant: '919876543210@s.whatsapp.net',
+        },
+        message: {
+          conversation: announcementText,
+        },
+      } as unknown as WAMessage;
+
+      await registeredHandler!({ messages: [incomingWAMessage] });
+
+      // Verify staged in whatsappGroupFoodAnnouncementsMessages
+      const staged = await stagingRepository.getMessageById(messageId);
+      expect(staged).not.toBeNull();
+      expect(staged?.id).toBe(messageId);
+      expect(staged?.status).toBe('pending');
+      expect(staged?.textBody).toBe(announcementText);
+
+      // 3. Extracted via DeepseekTextExtractor.extractAnnouncementEvents
+      const mockOpenAI = {
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({
+                      mealDate: TEST_DATE,
+                      location: {
+                        mealDate: TEST_DATE,
+                        mealSlot: 'lunch',
+                        hostelBatches: ['2028', '2029'],
+                        collegeBatches: ['ALL_OTHER_BATCHES'],
+                      },
+                      timingExtensions: [
+                        {
+                          mealDate: TEST_DATE,
+                          mealSlot: 'lunch',
+                          targetVendor: null,
+                          extendedTimings: 'Extended till 15:30',
+                        },
+                      ],
+                      mealChanges: [],
+                      mealSwaps: [],
+                    }),
+                  },
+                },
+              ],
+            }),
+          },
+        },
+      };
+
+      const extractor = new DeepseekTextExtractor(mockOpenAI as any);
+      const extractedEvents = await extractor.extractAnnouncementEvents(
+        staged!.textBody!,
+        staged!.receivedAt
+      );
+
+      expect(extractedEvents.mealDate).toBe(TEST_DATE);
+      expect(extractedEvents.location?.hostelBatches).toEqual(['2028', '2029']);
+      expect(extractedEvents.location?.collegeBatches).toEqual(['ALL_OTHER_BATCHES']);
+      expect(extractedEvents.timingExtensions).toHaveLength(1);
+      expect(extractedEvents.timingExtensions[0].extendedTimings).toBe('Extended till 15:30');
+
+      // 4. Committed via PostgresMessStagingRepository.atomicCommitComposite
+      await stagingRepository.atomicCommitComposite({
+        messageId,
+        composite: extractedEvents,
+      });
+
+      const processedMsg = await stagingRepository.getMessageById(messageId);
+      expect(processedMsg?.status).toBe('processed');
+      expect(processedMsg?.processedAt).toBeInstanceOf(Date);
+
+      // 5. Query getResolvedMeal from PostgresMessRepository and verify in DisplayMessCardTool
+      const resolved = await messRepository.getResolvedMeal({
+        mealDate: TEST_DATE,
+        mealSlot: 'lunch',
+      });
+      expect(resolved.locationDetail).not.toBeNull();
+      expect(resolved.locationDetail?.hostelBatches).toEqual(['2028', '2029']);
+      expect(resolved.locationDetail?.collegeBatches).toEqual(['ALL_OTHER_BATCHES']);
+      expect(resolved.locationDetail?.sourceMessageId).toBe(messageId);
+      expect(resolved.timingExtensions).toHaveLength(1);
+      expect(resolved.timingExtensions[0].extendedTimings).toBe('Extended till 15:30');
+      expect(resolved.timingExtensions[0].sourceMessageId).toBe(messageId);
+
+      const fixedTime = new Date(`${TEST_DATE}T07:00:00Z`); // 12:30 PM IST on TEST_DATE
+      const displayTool = new DisplayMessCardTool(messRepository, () => fixedTime);
+      const cardResult = await displayTool.execute({
+        mealDate: TEST_DATE,
+        mealSlot: 'lunch',
+      });
+
+      expect(cardResult.isTerminal).toBe(true);
+      expect(cardResult.content).toContain('🍽️ *Lunch Menu*');
+      expect(cardResult.content).toContain('⏰ *Timings:* Extended till 15:30');
+      expect(cardResult.content).toContain('📍 *Location:*');
+      expect(cardResult.content).toContain('• *Hostel:* Batches 2028, 2029');
+      expect(cardResult.content).toContain('• *College:* All other batches');
+
+      // 6. Execute atomicUndo and verify clean rollback
+      await stagingRepository.atomicUndo(messageId);
+
+      const revertedMsg = await stagingRepository.getMessageById(messageId);
+      expect(revertedMsg?.status).toBe('pending');
+      expect(revertedMsg?.processedAt).toBeNull();
+
+      const postUndoResolved = await messRepository.getResolvedMeal({
+        mealDate: TEST_DATE,
+        mealSlot: 'lunch',
+      });
+      expect(postUndoResolved.locationDetail).toBeNull();
+      expect(postUndoResolved.timingExtensions).toHaveLength(0);
+
+      const postUndoCard = await displayTool.execute({
+        mealDate: TEST_DATE,
+        mealSlot: 'lunch',
+      });
+      expect(postUndoCard.content).toContain('🍽️ *Lunch Menu*');
+      expect(postUndoCard.content).not.toContain('⏰ *Timings:*');
+      expect(postUndoCard.content).not.toContain('📍 *Location:*');
     });
   });
 });

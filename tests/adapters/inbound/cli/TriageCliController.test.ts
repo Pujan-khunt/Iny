@@ -6,7 +6,9 @@ import type {
   ExtractedLocationDetail,
   ExtractedTimingExtension,
   ExtractedMealChange,
+  ExtractedCompositeAnnouncement,
 } from '../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas.js';
+import { ExtractedCompositeAnnouncementSchema } from '../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas.js';
 
 class MockIo {
   private inputs: string[];
@@ -82,8 +84,10 @@ describe('TriageCliController', () => {
       listStagedMessages: vi.fn(),
       getMessageById: vi.fn(),
       atomicCommit: vi.fn().mockResolvedValue(undefined),
+      atomicCommitComposite: vi.fn().mockResolvedValue(undefined),
       markIgnored: vi.fn().mockResolvedValue(undefined),
       atomicUndo: vi.fn().mockResolvedValue(undefined),
+      getMealsByDateAndSlot: vi.fn().mockResolvedValue([]),
     };
 
     mockVisionExtractor = {
@@ -94,6 +98,7 @@ describe('TriageCliController', () => {
       extractLocationDetail: vi.fn(),
       extractTimingExtension: vi.fn(),
       extractMealChange: vi.fn(),
+      extractAnnouncementEvents: vi.fn(),
     };
 
     mockPdfRasterizer = {
@@ -269,36 +274,380 @@ describe('TriageCliController', () => {
     });
   });
 
-  it('executes location detail extraction, date change, vim edit, and commit', async () => {
+  it('handles pending text message mark ignored [2] -> [y]', async () => {
     const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
       ...samplePendingPdfMessage,
-      id: 'MSG_LOC_01',
+      id: 'MSG_TEXT_IGNORE_01',
       messageType: 'text',
       mediaBuffer: null,
       mediaMimeType: null,
-      textBody: 'UG1 and UG2 at hostel mess, UG3 at college mess',
+      textBody: 'Some informal text message',
+    };
+    mockStagingRepo.listStagedMessages
+      .mockResolvedValueOnce([textMsg])
+      .mockResolvedValueOnce([]);
+
+    // Select 1 -> Option 2 (Ignore Message) -> Confirm 'y' -> Exit 'q'
+    const io = new MockIo(['1', '2', 'y', 'q']);
+
+    const controller = new TriageCliController({
+      stagingRepo: mockStagingRepo,
+      visionExtractor: mockVisionExtractor,
+      textExtractor: mockTextExtractor,
+      io,
+    });
+
+    await controller.run();
+    expect(mockStagingRepo.markIgnored).toHaveBeenCalledWith('MSG_TEXT_IGNORE_01');
+  });
+
+  it('handles media message streamlined menu choices (Open in Viewer [3], Ignore [4], Process Announcement [2])', async () => {
+    const mediaMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+      ...samplePendingPdfMessage,
+      id: 'MSG_MEDIA_01',
+      textBody: 'Lunch notice with image',
+    };
+    mockStagingRepo.listStagedMessages.mockResolvedValue([mediaMsg]);
+
+    const compositePayload: ExtractedCompositeAnnouncement = {
+      mealDate: '2026-10-20',
+      location: null,
+      timingExtensions: [],
+      mealChanges: [],
+      mealSwaps: [],
+    };
+    mockTextExtractor.extractAnnouncementEvents.mockResolvedValue(compositePayload);
+
+    // 1 -> [3] Open in Viewer -> [2] Process Announcement -> [y] Confirm -> [q]
+    const io = new MockIo(['1', '3', '2', 'y', 'q']);
+
+    const controller = new TriageCliController({
+      stagingRepo: mockStagingRepo,
+      visionExtractor: mockVisionExtractor,
+      textExtractor: mockTextExtractor,
+      previewer: mockPreviewer,
+      io,
+    });
+
+    await controller.run();
+    expect(mockPreviewer.previewMedia).toHaveBeenCalled();
+    expect(mockTextExtractor.extractAnnouncementEvents).toHaveBeenCalledWith(
+      mediaMsg.textBody,
+      mediaMsg.receivedAt
+    );
+    expect(mockStagingRepo.atomicCommitComposite).toHaveBeenCalledWith({
+      messageId: 'MSG_MEDIA_01',
+      composite: compositePayload,
+      resolvedSwaps: [],
+    });
+  });
+
+  it('handles composite text announcement extraction and commit', async () => {
+    const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+      ...samplePendingPdfMessage,
+      id: 'MSG_COMPOSITE_01',
+      messageType: 'text',
+      mediaBuffer: null,
+      mediaMimeType: null,
+      textBody: '2028 and 2029 in Hostel for lunch. Dinner extended till 10:30 PM.',
+      receivedAt: new Date('2026-10-20T06:00:00Z'),
     };
     mockStagingRepo.listStagedMessages.mockResolvedValue([textMsg]);
 
-    const extractedLocation: ExtractedLocationDetail = {
-      mealDate: '2026-10-08',
-      mealSlot: 'lunch',
-      hostelBatches: ['UG1', 'UG2'],
-      collegeBatches: ['UG3'],
+    const compositePayload: ExtractedCompositeAnnouncement = {
+      mealDate: '2026-10-20',
+      location: {
+        mealDate: '2026-10-20',
+        mealSlot: 'lunch',
+        hostelBatches: ['2028', '2029'],
+        collegeBatches: ['ALL_OTHER_BATCHES'],
+      },
+      timingExtensions: [
+        {
+          mealDate: '2026-10-20',
+          mealSlot: 'dinner',
+          targetVendor: null,
+          extendedTimings: 'Dinner extended till 10:30 PM',
+        },
+      ],
+      mealChanges: [],
+      mealSwaps: [],
     };
-    mockTextExtractor.extractLocationDetail.mockResolvedValue(extractedLocation);
+    mockTextExtractor.extractAnnouncementEvents.mockResolvedValue(compositePayload);
 
-    const editedLocation: ExtractedLocationDetail = {
-      ...extractedLocation,
-      hostelBatches: ['UG1', 'UG2', 'PG1'],
+    // 1 (select message) -> 1 (Process Announcement) -> y (Confirm & Commit) -> q (exit)
+    const io = new MockIo(['1', '1', 'y', 'q']);
+
+    const controller = new TriageCliController({
+      stagingRepo: mockStagingRepo,
+      visionExtractor: mockVisionExtractor,
+      textExtractor: mockTextExtractor,
+      io,
+    });
+
+    await controller.run();
+
+    expect(mockTextExtractor.extractAnnouncementEvents).toHaveBeenCalledWith(
+      textMsg.textBody,
+      textMsg.receivedAt
+    );
+    expect(mockStagingRepo.atomicCommitComposite).toHaveBeenCalledWith({
+      messageId: 'MSG_COMPOSITE_01',
+      composite: compositePayload,
+      resolvedSwaps: [],
+    });
+  });
+
+  it('blocks commit when swap source menu is missing (Option B gate)', async () => {
+    const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+      ...samplePendingPdfMessage,
+      id: 'MSG_SWAP_MISSING_01',
+      messageType: 'text',
+      mediaBuffer: null,
+      mediaMimeType: null,
+      textBody: "Today's dinner will serve tomorrow's lunch menu",
+      receivedAt: new Date('2026-10-20T06:00:00Z'),
+    };
+    mockStagingRepo.listStagedMessages.mockResolvedValue([textMsg]);
+
+    const compositeWithSwap: ExtractedCompositeAnnouncement = {
+      mealDate: '2026-10-20',
+      location: null,
+      timingExtensions: [],
+      mealChanges: [],
+      mealSwaps: [
+        {
+          targetMealDate: '2026-10-20',
+          targetMealSlot: 'dinner',
+          sourceMealDate: '2026-10-25',
+          sourceMealSlot: 'lunch',
+          targetVendor: 'cheftalk_regular',
+        },
+      ],
+    };
+    mockTextExtractor.extractAnnouncementEvents.mockResolvedValue(compositeWithSwap);
+    mockStagingRepo.getMealsByDateAndSlot.mockResolvedValue([]); // Database check returns NO meals
+
+    // 1 (select message) -> 1 (Process Announcement) -> y (rejected) -> c (cancel) -> q (quit)
+    const io = new MockIo(['1', '1', 'y', 'c', 'q']);
+
+    const controller = new TriageCliController({
+      stagingRepo: mockStagingRepo,
+      visionExtractor: mockVisionExtractor,
+      textExtractor: mockTextExtractor,
+      io,
+    });
+
+    await controller.run();
+
+    expect(mockStagingRepo.atomicCommitComposite).not.toHaveBeenCalled();
+    expect(
+      io.outputs.some(
+        (out) =>
+          out.includes('Cannot Commit Swap') &&
+          out.includes('2026-10-25') &&
+          out.includes('not found in database')
+      )
+    ).toBe(true);
+  });
+
+  it('blocks commit when swap target menu is missing (Option B gate)', async () => {
+    const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+      ...samplePendingPdfMessage,
+      id: 'MSG_SWAP_MISSING_TARGET_01',
+      messageType: 'text',
+      mediaBuffer: null,
+      mediaMimeType: null,
+      textBody: "Today's dinner will serve tomorrow's lunch menu",
+      receivedAt: new Date('2026-10-20T06:00:00Z'),
+    };
+    mockStagingRepo.listStagedMessages.mockResolvedValue([textMsg]);
+
+    const compositeWithSwap: ExtractedCompositeAnnouncement = {
+      mealDate: '2026-10-20',
+      location: null,
+      timingExtensions: [],
+      mealChanges: [],
+      mealSwaps: [
+        {
+          targetMealDate: '2026-10-20',
+          targetMealSlot: 'dinner',
+          sourceMealDate: '2026-10-21',
+          sourceMealSlot: 'lunch',
+          targetVendor: 'cheftalk_regular',
+        },
+      ],
+    };
+    mockTextExtractor.extractAnnouncementEvents.mockResolvedValue(compositeWithSwap);
+
+    // Source exists, but Target is missing
+    mockStagingRepo.getMealsByDateAndSlot.mockImplementation(
+      async (mealDate: string, mealSlot: string) => {
+        if (mealDate === '2026-10-21' && mealSlot === 'lunch') {
+          return [
+            {
+              id: 'source-1',
+              mealDate: '2026-10-21',
+              mealSlot: 'lunch',
+              vendor: 'cheftalk_regular',
+              items: ['Rajma', 'Rice'],
+            },
+          ];
+        }
+        return []; // Target does not exist
+      }
+    );
+
+    const io = new MockIo(['1', '1', 'y', 'c', 'q']);
+
+    const controller = new TriageCliController({
+      stagingRepo: mockStagingRepo,
+      visionExtractor: mockVisionExtractor,
+      textExtractor: mockTextExtractor,
+      io,
+    });
+
+    await controller.run();
+
+    expect(mockStagingRepo.atomicCommitComposite).not.toHaveBeenCalled();
+    expect(
+      io.outputs.some(
+        (out) =>
+          out.includes('Cannot Commit Swap') &&
+          out.includes('Target menu') &&
+          out.includes('2026-10-20')
+      )
+    ).toBe(true);
+  });
+
+  it('commits meal swap successfully when source menu exists in database', async () => {
+    const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+      ...samplePendingPdfMessage,
+      id: 'MSG_SWAP_VALID_01',
+      messageType: 'text',
+      mediaBuffer: null,
+      mediaMimeType: null,
+      textBody: "Today's dinner will serve tomorrow's lunch menu",
+      receivedAt: new Date('2026-10-20T06:00:00Z'),
+    };
+    mockStagingRepo.listStagedMessages.mockResolvedValue([textMsg]);
+
+    const compositeWithSwap: ExtractedCompositeAnnouncement = {
+      mealDate: '2026-10-20',
+      location: null,
+      timingExtensions: [],
+      mealChanges: [],
+      mealSwaps: [
+        {
+          targetMealDate: '2026-10-20',
+          targetMealSlot: 'dinner',
+          sourceMealDate: '2026-10-21',
+          sourceMealSlot: 'lunch',
+          targetVendor: 'cheftalk_regular',
+        },
+      ],
+    };
+    mockTextExtractor.extractAnnouncementEvents.mockResolvedValue(compositeWithSwap);
+
+    mockStagingRepo.getMealsByDateAndSlot.mockImplementation(
+      async (mealDate: string, mealSlot: string, vendor: string) => {
+        if (mealDate === '2026-10-21' && mealSlot === 'lunch') {
+          return [
+            {
+              id: 'source-1',
+              mealDate: '2026-10-21',
+              mealSlot: 'lunch',
+              vendor: 'cheftalk_regular',
+              items: ['Rajma', 'Jeera Rice', 'Boondi Raita', 'Roti', 'Gulab Jamun'],
+            },
+          ];
+        }
+        if (mealDate === '2026-10-20' && mealSlot === 'dinner') {
+          return [
+            {
+              id: 'target-1',
+              mealDate: '2026-10-20',
+              mealSlot: 'dinner',
+              vendor: 'cheftalk_regular',
+              items: ['Original Dal', 'Original Rice'],
+            },
+          ];
+        }
+        return [];
+      }
+    );
+
+    // 1 (select) -> 1 (Process Announcement) -> y (Confirm & Commit) -> q (exit)
+    const io = new MockIo(['1', '1', 'y', 'q']);
+
+    const controller = new TriageCliController({
+      stagingRepo: mockStagingRepo,
+      visionExtractor: mockVisionExtractor,
+      textExtractor: mockTextExtractor,
+      io,
+    });
+
+    await controller.run();
+
+    expect(mockStagingRepo.atomicCommitComposite).toHaveBeenCalledWith({
+      messageId: 'MSG_SWAP_VALID_01',
+      composite: compositeWithSwap,
+      resolvedSwaps: [
+        {
+          targetMealDate: '2026-10-20',
+          targetMealSlot: 'dinner',
+          sourceMealDate: '2026-10-21',
+          sourceMealSlot: 'lunch',
+          vendor: 'cheftalk_regular',
+          newItems: ['Rajma', 'Jeera Rice', 'Boondi Raita', 'Roti', 'Gulab Jamun'],
+          previousItems: ['Original Dal', 'Original Rice'],
+        },
+      ],
+    });
+  });
+
+  it('allows Neovim editing of composite JSON before commit', async () => {
+    const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+      ...samplePendingPdfMessage,
+      id: 'MSG_EDIT_01',
+      messageType: 'text',
+      mediaBuffer: null,
+      mediaMimeType: null,
+      textBody: '2028 in Hostel for lunch',
+      receivedAt: new Date('2026-10-20T06:00:00Z'),
+    };
+    mockStagingRepo.listStagedMessages.mockResolvedValue([textMsg]);
+
+    const initialComposite: ExtractedCompositeAnnouncement = {
+      mealDate: '2026-10-20',
+      location: {
+        mealDate: '2026-10-20',
+        mealSlot: 'lunch',
+        hostelBatches: ['2028'],
+        collegeBatches: [],
+      },
+      timingExtensions: [],
+      mealChanges: [],
+      mealSwaps: [],
+    };
+    mockTextExtractor.extractAnnouncementEvents.mockResolvedValue(initialComposite);
+
+    const editedComposite: ExtractedCompositeAnnouncement = {
+      ...initialComposite,
+      location: {
+        mealDate: '2026-10-20',
+        mealSlot: 'lunch',
+        hostelBatches: ['2028', '2029'],
+        collegeBatches: ['ALL_OTHER_BATCHES'],
+      },
     };
     mockEditor.editJson.mockResolvedValue({
       success: true,
-      data: editedLocation,
+      data: editedComposite,
     });
 
-    // 1 -> Intent 2 (Location) -> 'y' -> 'd' -> '2026-10-09' -> 'e' -> 'y' (confirm) -> 'q'
-    const io = new MockIo(['1', '2', 'y', 'd', '2026-10-09', 'e', 'y', 'q']);
+    // 1 (select) -> 1 (Process Announcement) -> e (edit in vim) -> y (confirm) -> q (exit)
+    const io = new MockIo(['1', '1', 'e', 'y', 'q']);
 
     const controller = new TriageCliController({
       stagingRepo: mockStagingRepo,
@@ -309,99 +658,15 @@ describe('TriageCliController', () => {
     });
 
     await controller.run();
-    expect(mockTextExtractor.extractLocationDetail).toHaveBeenCalledWith(
-      textMsg.textBody,
-      textMsg.receivedAt
+
+    expect(mockEditor.editJson).toHaveBeenCalledWith(
+      initialComposite,
+      ExtractedCompositeAnnouncementSchema
     );
-    expect(mockStagingRepo.atomicCommit).toHaveBeenCalledWith({
-      messageId: 'MSG_LOC_01',
-      locationDetail: editedLocation,
-    });
-  });
-
-  it('executes timing extension extraction, vendor change, and commit', async () => {
-    const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
-      ...samplePendingPdfMessage,
-      id: 'MSG_TIME_01',
-      messageType: 'text',
-      mediaBuffer: null,
-      mediaMimeType: null,
-      textBody: 'Dinner extended till 10:30 PM tonight',
-    };
-    mockStagingRepo.listStagedMessages.mockResolvedValue([textMsg]);
-
-    const extractedTiming: ExtractedTimingExtension = {
-      mealDate: '2026-10-08',
-      mealSlot: 'dinner',
-      targetVendor: null,
-      extendedTimings: 'Dinner extended till 10:30 PM',
-    };
-    mockTextExtractor.extractTimingExtension.mockResolvedValue(extractedTiming);
-
-    // 1 -> Intent 3 (Timing) -> 'y' -> 'v' -> [1] (cheftalk_regular) -> 'y' (confirm) -> 'q'
-    const io = new MockIo(['1', '3', 'y', 'v', '1', 'y', 'q']);
-
-    const controller = new TriageCliController({
-      stagingRepo: mockStagingRepo,
-      visionExtractor: mockVisionExtractor,
-      textExtractor: mockTextExtractor,
-      io,
-    });
-
-    await controller.run();
-    expect(mockTextExtractor.extractTimingExtension).toHaveBeenCalledWith(
-      textMsg.textBody,
-      textMsg.receivedAt
-    );
-    expect(mockStagingRepo.atomicCommit).toHaveBeenCalledWith({
-      messageId: 'MSG_TIME_01',
-      timingExtension: expect.objectContaining({
-        targetVendor: 'cheftalk_regular',
-      }),
-    });
-  });
-
-  it('executes meal change extraction, type change, and commit', async () => {
-    const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
-      ...samplePendingPdfMessage,
-      id: 'MSG_CHANGE_01',
-      messageType: 'text',
-      mediaBuffer: null,
-      mediaMimeType: null,
-      textBody: 'Paneer Butter Masala replaced with Kadai Paneer in regular mess',
-    };
-    mockStagingRepo.listStagedMessages.mockResolvedValue([textMsg]);
-
-    const extractedChange: ExtractedMealChange = {
-      mealDate: '2026-10-08',
-      mealSlot: 'lunch',
-      targetVendor: 'cheftalk_regular',
-      changeType: 'replacement',
-      affectedItem: 'Kadai Paneer',
-      originalItem: 'Paneer Butter Masala',
-    };
-    mockTextExtractor.extractMealChange.mockResolvedValue(extractedChange);
-
-    // 1 -> Intent 4 (Meal Change) -> 'y' -> 't' -> [2] (addition) -> 'y' (confirm) -> 'q'
-    const io = new MockIo(['1', '4', 'y', 't', '2', 'y', 'q']);
-
-    const controller = new TriageCliController({
-      stagingRepo: mockStagingRepo,
-      visionExtractor: mockVisionExtractor,
-      textExtractor: mockTextExtractor,
-      io,
-    });
-
-    await controller.run();
-    expect(mockTextExtractor.extractMealChange).toHaveBeenCalledWith(
-      textMsg.textBody,
-      textMsg.receivedAt
-    );
-    expect(mockStagingRepo.atomicCommit).toHaveBeenCalledWith({
-      messageId: 'MSG_CHANGE_01',
-      mealChange: expect.objectContaining({
-        changeType: 'addition',
-      }),
+    expect(mockStagingRepo.atomicCommitComposite).toHaveBeenCalledWith({
+      messageId: 'MSG_EDIT_01',
+      composite: editedComposite,
+      resolvedSwaps: [],
     });
   });
 

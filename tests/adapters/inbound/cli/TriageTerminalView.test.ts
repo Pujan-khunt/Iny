@@ -50,6 +50,15 @@ describe('TriageTerminalView', () => {
     expect(card).toContain('Selected Action:[2] Location Detail');
   });
 
+  it('renders pure message inspection card when intent is omitted', () => {
+    const card = view.renderInspectionCard(mockMessage);
+    expect(card).toContain('MESSAGE INSPECTION');
+    expect(card).not.toContain('CONFIRMATION');
+    expect(card).toContain('3EB0A1B2C3D4E5F6');
+    expect(card).toContain('+919876543210 (pn)');
+    expect(card).not.toContain('Selected Action:');
+  });
+
   it('renders non-fatal extraction error card matching Spec 4.2', () => {
     const errorCard = view.renderExtractionErrorCard(
       new Error('Rate limit reached for deepseek-flash. Please wait 5s.'),
@@ -61,6 +70,25 @@ describe('TriageTerminalView', () => {
     expect(errorCard).toContain('Staging State: UNCHANGED');
     expect(errorCard).toContain('[r] Retry Extraction');
     expect(errorCard).toContain('[c] Cancel & Return to Message List');
+  });
+
+  it('renders validation issues and raw LLM response in error card when present', () => {
+    const errorWithDetails = {
+      name: 'LLMResponseError',
+      message: 'LLM response failed schema validation',
+      cause: {
+        issues: [
+          { path: ['location', 'mealDate'], message: 'Invalid input: expected string, received undefined' },
+        ],
+      },
+      rawResponse: '{"mealDate":"2026-10-21","location":{}}',
+    };
+
+    const errorCard = view.renderExtractionErrorCard(errorWithDetails, 'MSG_TEST_01');
+    expect(errorCard).toContain('Validation Issues:');
+    expect(errorCard).toContain('location.mealDate: Invalid input: expected string, received undefined');
+    expect(errorCard).toContain('Raw LLM Response:');
+    expect(errorCard).toContain('{"mealDate":"2026-10-21","location":{}}');
   });
 
   it('renders weekly menu extraction preview with 21 slots matching Spec 4.4', () => {
@@ -206,5 +234,150 @@ describe('TriageTerminalView', () => {
     const stripped = stripAnsi(table);
     expect(stripped).not.toContain('\x1b[');
     expect(stripped).toContain('3EB0A1B2C3D4E5F6');
+  });
+
+  it('renders composite announcement card with location, timing, and confirm action', () => {
+    const card = view.renderCompositeAnnouncementCard({
+      mealDate: '2026-10-20',
+      location: {
+        mealDate: '2026-10-20',
+        mealSlot: 'lunch',
+        hostelBatches: ['2028', '2029'],
+        collegeBatches: ['ALL_OTHER_BATCHES'],
+      },
+      timingExtensions: [
+        {
+          mealDate: '2026-10-20',
+          mealSlot: 'lunch',
+          targetVendor: null,
+          extendedTimings: 'extended till 15:00',
+        },
+      ],
+      mealChanges: [],
+      mealSwaps: [],
+    });
+
+    expect(card).toContain('Extracted Announcement Events (Date: 2026-10-20)');
+    expect(card).toContain('📍 Location: 2028, 2029 in Hostel | ALL_OTHER_BATCHES in College (Lunch)');
+    expect(card).toContain('⏰ Timing: Lunch extended till 15:00');
+    expect(card).toContain('🔄 Changes: None');
+    expect(card).toContain('🔁 Swaps: None');
+    expect(card).toContain('Actions: [y] Confirm & Commit | [e] Edit in Neovim | [c] Cancel');
+  });
+
+  it('renders composite announcement card with resolved meal swaps', () => {
+    const card = view.renderCompositeAnnouncementCard(
+      {
+        mealDate: '2026-10-20',
+        location: null,
+        timingExtensions: [],
+        mealChanges: [],
+        mealSwaps: [
+          {
+            targetMealDate: '2026-10-20',
+            targetMealSlot: 'dinner',
+            sourceMealDate: '2026-10-21',
+            sourceMealSlot: 'lunch',
+            targetVendor: 'cheftalk_regular',
+          },
+        ],
+      },
+      [
+        {
+          targetMealDate: '2026-10-20',
+          targetMealSlot: 'dinner',
+          sourceMealDate: '2026-10-21',
+          sourceMealSlot: 'lunch',
+          vendor: 'cheftalk_regular',
+          newItems: ['Rajma', 'Jeera Rice', 'Boondi Raita', 'Roti', 'Gulab Jamun'],
+          previousItems: ['Dal Fry', 'Roti'],
+        },
+      ]
+    );
+
+    expect(card).toContain('🔁 Meal Swap: 2026-10-20 Dinner <- 2026-10-21 Lunch');
+    expect(card).toContain(
+      'Resolved Items (cheftalk_regular): [Rajma, Jeera Rice, Boondi Raita, Roti, Gulab Jamun]'
+    );
+    expect(card).toContain('[y] Confirm & Commit');
+  });
+
+  it('renders multi-vendor meal swap preview with each vendor explicitly identified', () => {
+    const card = view.renderCompositeAnnouncementCard(
+      {
+        mealDate: '2026-10-20',
+        location: null,
+        timingExtensions: [],
+        mealChanges: [],
+        mealSwaps: [
+          {
+            targetMealDate: '2026-10-20',
+            targetMealSlot: 'dinner',
+            sourceMealDate: '2026-10-21',
+            sourceMealSlot: 'lunch',
+            targetVendor: null,
+          },
+        ],
+      },
+      [
+        {
+          targetMealDate: '2026-10-20',
+          targetMealSlot: 'dinner',
+          sourceMealDate: '2026-10-21',
+          sourceMealSlot: 'lunch',
+          vendor: 'cheftalk_regular',
+          newItems: ['Paneer Butter Masala', 'Roti'],
+          previousItems: ['Dal Tadka', 'Rice'],
+        },
+        {
+          targetMealDate: '2026-10-20',
+          targetMealSlot: 'dinner',
+          sourceMealDate: '2026-10-21',
+          sourceMealSlot: 'lunch',
+          vendor: 'cheftalk_jain',
+          newItems: ['Jain Paneer', 'Roti'],
+          previousItems: ['Jain Dal', 'Rice'],
+        },
+      ]
+    );
+
+    expect(card).toContain('Resolved Items (cheftalk_regular): [Paneer Butter Masala, Roti]');
+    expect(card).toContain('Resolved Items (cheftalk_jain): [Jain Paneer, Roti]');
+  });
+
+  it('renders composite announcement card with missing swaps blocking message (Option B gate)', () => {
+    const card = view.renderCompositeAnnouncementCard(
+      {
+        mealDate: '2026-10-20',
+        location: null,
+        timingExtensions: [],
+        mealChanges: [],
+        mealSwaps: [
+          {
+            targetMealDate: '2026-10-20',
+            targetMealSlot: 'dinner',
+            sourceMealDate: '2026-10-25',
+            sourceMealSlot: 'lunch',
+            targetVendor: 'cheftalk_regular',
+          },
+        ],
+      },
+      [],
+      [
+        {
+          targetMealDate: '2026-10-20',
+          targetMealSlot: 'dinner',
+          sourceMealDate: '2026-10-25',
+          sourceMealSlot: 'lunch',
+          targetVendor: 'cheftalk_regular',
+        },
+      ]
+    );
+
+    expect(card).toContain(
+      '❌ Cannot Commit Swap: Source menu for 2026-10-25 Lunch not found in database. Please ingest that date\'s weekly menu before committing this announcement.'
+    );
+    expect(card).not.toContain('[y] Confirm & Commit');
+    expect(card).toContain('Actions: [e] Edit in Neovim | [c] Cancel');
   });
 });

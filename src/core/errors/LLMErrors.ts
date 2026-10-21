@@ -1,12 +1,17 @@
 export class LLMError extends Error {
   readonly status?: number;
   readonly code?: string;
+  readonly rawResponse?: string;
 
-  constructor(message: string, options?: { status?: number; code?: string; cause?: unknown }) {
+  constructor(
+    message: string,
+    options?: { status?: number; code?: string; cause?: unknown; rawResponse?: string }
+  ) {
     super(message, { cause: options?.cause });
     this.name = this.constructor.name;
     this.status = options?.status;
     this.code = options?.code;
+    this.rawResponse = options?.rawResponse;
   }
 }
 

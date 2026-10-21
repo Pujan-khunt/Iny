@@ -1,4 +1,6 @@
 import OpenAI from 'openai';
+import { z } from 'zod';
+import { LLMError, LLMResponseError } from '../../../../core/errors/LLMErrors.js';
 import { translateAndThrowDeepseekError } from '../../llm/DeepseekErrorTranslator.js';
 
 export function cleanJsonResponse(raw: string): string {
@@ -10,8 +12,26 @@ export function cleanJsonResponse(raw: string): string {
   return trimmed;
 }
 
-export function classifyAndThrowExtractorError(error: any): never {
-  translateAndThrowDeepseekError(error);
+export function classifyAndThrowExtractorError(error: any, rawResponse?: string): never {
+  if (error instanceof LLMError) {
+    if (rawResponse && !error.rawResponse) {
+      (error as any).rawResponse = rawResponse;
+    }
+    throw error;
+  }
+  if (error instanceof z.ZodError) {
+    throw new LLMResponseError(`LLM response failed schema validation: ${error.message}`, {
+      cause: error,
+      rawResponse,
+    });
+  }
+  if (error instanceof SyntaxError) {
+    throw new LLMResponseError(`Failed to parse LLM JSON response: ${error.message}`, {
+      cause: error,
+      rawResponse,
+    });
+  }
+  translateAndThrowDeepseekError(error, rawResponse);
 }
 
 export function resolveOpenAiClient(

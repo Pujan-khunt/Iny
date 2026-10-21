@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { newDb } from 'pg-mem';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { eq, and } from 'drizzle-orm';
 import { PostgresMessStagingRepository } from '../../../../../src/adapters/outbound/mess/postgres/PostgresMessStagingRepository.js';
 import {
   messMeals,
@@ -672,6 +673,211 @@ describe('PostgresMessStagingRepository & Surgical Undo', () => {
       const staged = await db.select().from(whatsappGroupFoodAnnouncementsMessages);
       expect(staged).toHaveLength(2);
       expect(staged.every((m) => m.status === 'pending' && m.processedAt === null)).toBe(true);
+    });
+  });
+
+  describe('atomicCommitComposite & symmetric undo', () => {
+    let stagingRepo: PostgresMessStagingRepository;
+
+    beforeEach(() => {
+      stagingRepo = repository;
+    });
+
+    it('atomically commits location, timing extension, and dish changes in a single transaction', async () => {
+      // 1. Stage message
+      const messageId = 'msg-composite-1';
+      await stagingRepo.stageMessage({
+        id: messageId,
+        senderAddress: '+919999999999',
+        senderAddressType: 'pn',
+        messageType: 'text',
+        textBody: 'Combo announcement',
+      });
+
+      // 2. Commit composite
+      await stagingRepo.atomicCommitComposite({
+        messageId,
+        composite: {
+          mealDate: '2026-10-20',
+          location: {
+            mealDate: '2026-10-20',
+            mealSlot: 'lunch',
+            hostelBatches: ['2028'],
+            collegeBatches: ['ALL_OTHER_BATCHES'],
+          },
+          timingExtensions: [
+            {
+              mealDate: '2026-10-20',
+              mealSlot: 'lunch',
+              targetVendor: null,
+              extendedTimings: 'Extended till 15:00',
+            },
+          ],
+          mealChanges: [
+            {
+              mealDate: '2026-10-20',
+              mealSlot: 'lunch',
+              targetVendor: 'cheftalk_regular',
+              changeType: 'replacement',
+              affectedItem: 'Paneer Lababdar',
+              originalItem: 'Shahi Paneer',
+            },
+          ],
+          mealSwaps: [],
+        },
+      });
+
+      // Verify status is processed
+      const staged = await stagingRepo.getMessageById(messageId);
+      expect(staged?.status).toBe('processed');
+
+      // Verify operational rows exist with sourceMessageId
+      const location = await db
+        .select()
+        .from(messMealLocationDetails)
+        .where(eq(messMealLocationDetails.sourceMessageId, messageId));
+      expect(location).toHaveLength(1);
+
+      const timing = await db
+        .select()
+        .from(messMealTimingExtensions)
+        .where(eq(messMealTimingExtensions.sourceMessageId, messageId));
+      expect(timing).toHaveLength(1);
+
+      const changes = await db
+        .select()
+        .from(messMealChanges)
+        .where(eq(messMealChanges.sourceMessageId, messageId));
+      expect(changes).toHaveLength(1);
+    });
+
+    it('mutates target meal items on meal swap and restores them on atomicUndo', async () => {
+      const messageId = 'msg-swap-1';
+      await stagingRepo.stageMessage({
+        id: messageId,
+        senderAddress: '+919999999999',
+        senderAddressType: 'pn',
+        messageType: 'text',
+        textBody: 'Swap announcement',
+      });
+
+      // Seed base meals
+      await db.insert(messMeals).values([
+        {
+          id: '00000000-0000-0000-0000-000000000101',
+          mealDate: '2026-10-20',
+          mealSlot: 'dinner',
+          vendor: 'cheftalk_regular',
+          items: ['Original Dinner Dal', 'Original Dinner Rice'],
+          sourceMessageId: 'weekly-menu-1',
+        },
+        {
+          id: '00000000-0000-0000-0000-000000000102',
+          mealDate: '2026-10-21',
+          mealSlot: 'lunch',
+          vendor: 'cheftalk_regular',
+          items: ['Swapped Lunch Rajma', 'Swapped Lunch Rice'],
+          sourceMessageId: 'weekly-menu-1',
+        },
+      ]);
+
+      // Commit swap
+      await stagingRepo.atomicCommitComposite({
+        messageId,
+        composite: {
+          mealDate: '2026-10-20',
+          timingExtensions: [],
+          mealChanges: [],
+          mealSwaps: [
+            {
+              targetMealDate: '2026-10-20',
+              targetMealSlot: 'dinner',
+              sourceMealDate: '2026-10-21',
+              sourceMealSlot: 'lunch',
+              targetVendor: 'cheftalk_regular',
+            },
+          ],
+        },
+        resolvedSwaps: [
+          {
+            targetMealDate: '2026-10-20',
+            targetMealSlot: 'dinner',
+            vendor: 'cheftalk_regular',
+            newItems: ['Swapped Lunch Rajma', 'Swapped Lunch Rice'],
+            previousItems: ['Original Dinner Dal', 'Original Dinner Rice'],
+            sourceMealDate: '2026-10-21',
+            sourceMealSlot: 'lunch',
+          },
+        ],
+      });
+
+      // Verify dinner items mutated
+      const [updatedDinner] = await db
+        .select()
+        .from(messMeals)
+        .where(
+          and(
+            eq(messMeals.mealDate, '2026-10-20'),
+            eq(messMeals.mealSlot, 'dinner'),
+            eq(messMeals.vendor, 'cheftalk_regular')
+          )
+        );
+      expect(updatedDinner.items).toEqual(['Swapped Lunch Rajma', 'Swapped Lunch Rice']);
+
+      // Perform atomicUndo
+      await stagingRepo.atomicUndo(messageId);
+
+      // Verify dinner items restored to original
+      const [restoredDinner] = await db
+        .select()
+        .from(messMeals)
+        .where(
+          and(
+            eq(messMeals.mealDate, '2026-10-20'),
+            eq(messMeals.mealSlot, 'dinner'),
+            eq(messMeals.vendor, 'cheftalk_regular')
+          )
+        );
+      expect(restoredDinner.items).toEqual(['Original Dinner Dal', 'Original Dinner Rice']);
+
+      // Verify message status reset to pending
+      const resetStaged = await stagingRepo.getMessageById(messageId);
+      expect(resetStaged?.status).toBe('pending');
+    });
+
+    it('throws error and aborts transaction if resolvedSwaps contains empty previousItems', async () => {
+      const messageId = 'msg-swap-empty-prev';
+      await db.insert(whatsappGroupFoodAnnouncementsMessages).values({
+        id: messageId,
+        senderAddress: '+919999999999@s.whatsapp.net',
+        senderAddressType: 'pn',
+        messageType: 'text',
+        textBody: 'Swap announcement',
+        status: 'pending',
+      });
+
+      await expect(
+        stagingRepo.atomicCommitComposite({
+          messageId,
+          composite: {
+            mealDate: '2026-10-20',
+            timingExtensions: [],
+            mealChanges: [],
+            mealSwaps: [],
+          },
+          resolvedSwaps: [
+            {
+              targetMealDate: '2026-10-20',
+              targetMealSlot: 'dinner',
+              vendor: 'cheftalk_regular',
+              newItems: ['Swapped Rice'],
+              previousItems: [],
+              sourceMealDate: '2026-10-21',
+              sourceMealSlot: 'lunch',
+            },
+          ],
+        })
+      ).rejects.toThrow(/previousItems backup must not be empty/);
     });
   });
 });
