@@ -60,4 +60,15 @@ describe('PdfRasterizer', () => {
     expect(unlinkSpy).toHaveBeenCalled();
     unlinkSpy.mockRestore();
   });
+
+  it('throws descriptive error when pdftoppm binary is missing (ENOENT)', async () => {
+    const enoentError = Object.assign(new Error('spawn pdftoppm ENOENT'), { code: 'ENOENT' });
+    const mockRunner = vi.fn().mockRejectedValue(enoentError);
+
+    await expect(
+      PdfRasterizer.rasterizePageOneToPng(minimalValidPdf, 150, mockRunner)
+    ).rejects.toThrow(
+      'pdftoppm binary not found. Please ensure "poppler-utils" is installed on your system.'
+    );
+  });
 });

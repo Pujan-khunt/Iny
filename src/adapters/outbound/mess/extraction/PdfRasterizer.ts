@@ -7,15 +7,25 @@ import crypto from 'node:crypto';
 
 const execFileAsync = promisify(execFile);
 
+export type CommandRunner = (
+  file: string,
+  args: readonly string[]
+) => Promise<{ stdout: string | Buffer; stderr: string | Buffer }>;
+
 export class PdfRasterizer {
   /**
    * Rasterizes page 1 of a PDF buffer into a PNG buffer using native pdftoppm.
    *
    * @param pdfBuffer The raw binary buffer of the PDF file.
    * @param dpi DPI resolution for rasterization (default: 300).
+   * @param runner Optional command execution function (defaults to promisified execFile).
    * @returns A Buffer containing the raw PNG bytes.
    */
-  static async rasterizePageOneToPng(pdfBuffer: Buffer, dpi: number = 300): Promise<Buffer> {
+  static async rasterizePageOneToPng(
+    pdfBuffer: Buffer,
+    dpi: number = 300,
+    runner: CommandRunner = execFileAsync
+  ): Promise<Buffer> {
     if (!Buffer.isBuffer(pdfBuffer) || pdfBuffer.length === 0) {
       throw new Error('Invalid or empty PDF buffer provided');
     }
@@ -28,7 +38,7 @@ export class PdfRasterizer {
 
     try {
       await fs.promises.writeFile(pdfPath, pdfBuffer);
-      await execFileAsync('pdftoppm', [
+      await runner('pdftoppm', [
         '-png',
         '-r',
         String(dpi),
@@ -38,6 +48,13 @@ export class PdfRasterizer {
       ]);
       const pngBuffer = await fs.promises.readFile(pngPath);
       return pngBuffer;
+    } catch (error: any) {
+      if (error?.code === 'ENOENT') {
+        throw new Error(
+          'pdftoppm binary not found. Please ensure "poppler-utils" is installed on your system.'
+        );
+      }
+      throw error;
     } finally {
       await Promise.allSettled([
         fs.promises.unlink(pdfPath),
@@ -46,7 +63,11 @@ export class PdfRasterizer {
     }
   }
 
-  async rasterizePageOneToPng(pdfBuffer: Buffer, dpi: number = 300): Promise<Buffer> {
-    return PdfRasterizer.rasterizePageOneToPng(pdfBuffer, dpi);
+  async rasterizePageOneToPng(
+    pdfBuffer: Buffer,
+    dpi: number = 300,
+    runner: CommandRunner = execFileAsync
+  ): Promise<Buffer> {
+    return PdfRasterizer.rasterizePageOneToPng(pdfBuffer, dpi, runner);
   }
 }
