@@ -10,24 +10,33 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/core/entities/Message.ts`: Discriminated union of `UserMessage`, `AssistantMessage` (`AssistantTextMessage` | `AssistantToolCallMessage`), and `ToolResultMessage`. Exposes `MessageFactory` for strongly-typed construction.
   - `src/core/entities/ToolCallRequest.ts`: Discriminated union of `ValidToolCallRequest` and `MalformedToolCallRequest` modeling parsed LLM function invocations.
   - `src/core/entities/DialogueTurn.ts`: Encapsulates a complete, turn-atomic interaction boundary (`UserMessage`, intermediate tool calls and results, final `AssistantTextMessage`, `startedAt`, and `completedAt`). Exposes `DialogueTurnFactory`.
+  - `src/core/entities/MessMeal.ts`: Pure domain entities and interfaces modeling campus dining: `MessMeal`, `MessMealLocationDetail`, `MessMealTimingExtension`, `MessMealChange`, `ResolvedMessMeal`, and IST temporal utility functions (`getISTDateString`, `getCurrentMealSlot`, `resolveTargetMealDate`).
 - **Use Cases & Domain Services**: Application-specific business rules:
   - `src/core/use-cases/ProcessIncomingMessage.ts`: 4-phase orchestrator separating Conversation Context Retrieval, Reasoning, Delivery, and Persistence phases. Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
-  - `src/core/use-cases/AgentLoop.ts`: Pure domain service executing the ReAct (Reasoning + Acting) loop. Manages concurrent tool execution via `Promise.all`, circuit breaker forced synthesis, and malformed tool error injection.
+  - `src/core/use-cases/AgentLoop.ts`: Pure domain service executing the ReAct (Reasoning + Acting) loop. Manages concurrent tool execution via `Promise.all`, circuit breaker forced synthesis, malformed tool error injection, temporal IST grounding injection, and terminal tool early termination.
 - **Ports**: Interfaces that define how the core communicates with the outside world without knowing implementation details:
   - `src/core/ports/AccessControlPort.ts`: Core access control port (`AccessControlPort` with `authenticate`, `getUser`) and administrative user management port (`AccessControlAdminPort` with `seedUsers`, `countActiveUsers`).
-  - `src/core/ports/MessageSenderPort.ts`: Outbound messaging transport.
-  - `src/core/ports/LLMPort.ts`: Language model reasoning and tool call generation.
   - `src/core/ports/ChatRepositoryPort.ts`: Conversation history persistence.
   - `src/core/ports/ContextRetrievalPort.ts`: Outbound port for retrieving contextual conversation history for a user.
   - `src/core/ports/LoggerPort.ts`: Structured, leveled logging.
-  - `src/core/ports/ToolRegistryPort.ts`: Tool registration and execution contracts (`ToolDefinition` and `Tool`).
+  - `src/core/ports/MessageSenderPort.ts`: Outbound messaging transport.
+  - `src/core/ports/MessRepositoryPort.ts`: Read port for student meal queries (`getResolvedMeal`).
+  - `src/core/ports/MessStagingRepositoryPort.ts`: Staging and transaction rollback port (`listStagedMessages`, `getMessageById`, `atomicCommit`, `atomicCommitComposite`, `markIgnored`, `atomicUndo`, `atomicReset`).
+  - `src/core/ports/ToolRegistryPort.ts`: Tool registration and execution contracts (`ToolDefinition` and `Tool` with `isTerminal` flag).
 - **Tools**: Declarative tool extensions available to the LLM:
   - `src/tools/BaseTool.ts`: Abstract base class using the Template Method pattern, declarative Zod schemas, automatic JSON Schema generation, and self-correcting error string returns.
   - `src/tools/CalculatorTool.ts`: Safe arithmetic evaluation tool using recursive descent parsing (zero `eval`).
+  - `src/tools/DisplayMessCardTool.ts`: Terminal WhatsApp card renderer (`isTerminal: true`) that outputs clean WhatsApp formatting with single asterisks (`*bold*`) and omits location if unspecified.
+  - `src/tools/QueryMessDetailsTool.ts`: Granular multi-turn query tool for complex student queries (`isTerminal: false`).
 - **Inbound Adapters**: Entry points that trigger core use cases:
   - `src/adapters/inbound/whatsapp/WhatsAppInboundAdapter.ts`: Driving adapter listening for incoming WhatsApp messages via Baileys, coordinating eligibility filtering, access control authorization via `AccessControlPort`, JID/LID duality routing (resolving lookup addresses and companion LIDs), and dispatching valid user messages to `ProcessIncomingMessage`.
   - `src/adapters/inbound/whatsapp/BaileysMessageFilter.ts`: Evaluates incoming raw WhatsApp message eligibility (rejecting self-messages, non-text messages, groups `@g.us`, and broadcasts `@broadcast`).
   - `src/adapters/inbound/whatsapp/BaileysMessageParser.ts`: Pure translator mapping eligible raw Baileys messages into domain `UserMessage` entities with normalized epoch timestamps and canonical user ID overrides.
+  - `src/adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter.ts`: Driving adapter eavesdropping on broadcast announcements from the mess coordinator group, downloading media attachments, and staging records into `whatsapp_group_food_announcements_messages`.
+  - `src/adapters/inbound/cli/TriageCliController.ts`: Interactive admin triage CLI controller (`npm run ingest`) providing immediate message preview, streamlined intent flows, Neovim JSON editing, Option B hard gate (blocking swaps if source or target meal is missing), and non-fatal error recovery.
+  - `src/adapters/inbound/cli/TriageTerminalView.ts`: ANSI terminal UI card renderer.
+  - `src/adapters/inbound/cli/InteractiveJsonEditor.ts`: Child-process spawned Neovim/Vim JSON editor with schema re-validation.
+  - `src/adapters/inbound/cli/MediaPreviewer.ts`: Headless-safe native OS image/PDF viewer (`xdg-open` / `open`).
 - **Outbound Adapters**: Concrete implementations of our core ports:
   - `src/adapters/outbound/access-control/postgres/PostgresAccessControlAdapter.ts`: Driven adapter implementing `AccessControlPort` and `AccessControlAdminPort` backed by PostgreSQL (`users` table) with O(1) indexed lookups, status gating, background asynchronous LID caching, and idempotent seeding.
   - `src/adapters/outbound/access-control/postgres/schema.ts`: Drizzle ORM schema defining `users` table with canonical `phone_number` PK, unique `pn_jid` and partial unique `lid_jid` indexes, and PostgreSQL check constraints.
@@ -35,6 +44,16 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution via concurrent, fault-isolated subscriber dispatch (`Promise.allSettled`). Accepts `BaileysSessionManagerPort`.
   - `src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts`: Implements `BaileysSessionManagerPort` managing WhatsApp credentials and Signal Protocol keys in PostgreSQL (`whatsapp_auth` table) with in-memory caching (`makeCacheableSignalKeyStore`), `BufferJSON` buffer preservation, batch operations, and atomic purge upon logout.
   - `src/adapters/outbound/whatsapp/postgres/schema.ts`: Drizzle ORM table schema defining `whatsapp_auth` with composite primary key `(session_id, key)`.
+  - `src/adapters/outbound/mess/postgres/schema.ts`: Drizzle ORM schema for 4 operational tables (`mess_meals`, `mess_meal_location_details`, `mess_meal_timing_extensions`, `mess_meal_changes`) and staging table (`whatsapp_group_food_announcements_messages`) with `source_message_id` audit tracking and PostgreSQL check constraints.
+  - `src/adapters/outbound/mess/postgres/PostgresMessRepository.ts`: Implements `MessRepositoryPort` with dynamic view resolution, timing overrides, and dish changes.
+  - `src/adapters/outbound/mess/postgres/PostgresMessStagingRepository.ts`: Implements `MessStagingRepositoryPort` with atomic transactions (`atomicCommit`, `atomicCommitComposite`) and surgical rollback (`atomicUndo`, `atomicReset`).
+  - `src/adapters/outbound/mess/extraction/`:
+    - `ExtractionSchemas.ts`: Zod validation schemas for 21-meal weekly menus, location details, timing extensions, dish changes, and one-way meal swaps (`ExtractedCompositeAnnouncementSchema`, `ExtractedMealSwapSchema`).
+    - `DeepseekVisionExtractor.ts`: Multimodal vision extractor for weekly menu images and PDFs.
+    - `DeepseekTextExtractor.ts`: Single-pass composite announcement extractor with IST temporal grounding, batch normalization, and nested date fallbacks.
+    - `PdfRasterizer.ts`: Pure PDF-to-PNG first-page rasterizer using `pdf-to-img`.
+    - `ExtractorUtils.ts`: Strips markdown fences, normalizes client resolution, and captures `rawResponse` and Zod issues.
+  - `src/adapters/outbound/mess/formatting/MessCardRenderer.ts`: WhatsApp text formatter.
   - `src/adapters/outbound/llm/DeepseekAdapter.ts`: Lean coordinator delegating to pure collaborators:
     - `DeepseekRequestMapper.ts`: Pure message and system prompt translation to OpenAI-compatible format with DeepSeek `reasoning_content` preservation.
     - `DeepseekToolMapper.ts`: Pure translation of domain tool definitions to OpenAI function tool schemas.
@@ -60,7 +79,8 @@ src/
 │   ├── entities/
 │   │   ├── Message.ts                      # Message discriminated union
 │   │   ├── ToolCallRequest.ts              # ValidToolCallRequest and MalformedToolCallRequest union
-│   │   └── DialogueTurn.ts                 # Turn-atomic conversation unit
+│   │   ├── DialogueTurn.ts                 # Turn-atomic conversation unit
+│   │   └── MessMeal.ts                     # Mess meal, location, timing, and change entities
 │   ├── use-cases/
 │   │   ├── ProcessIncomingMessage.ts       # 4-phase orchestrator (Retrieval, Reasoning, Delivery, Persistence)
 │   │   └── AgentLoop.ts                    # Pure ReAct reasoning loop & tool concurrency
@@ -70,20 +90,30 @@ src/
 │   │   ├── LLMPort.ts                      # Language model reasoning & tool call port
 │   │   ├── LoggerPort.ts                   # Structured logging port
 │   │   ├── MessageSenderPort.ts            # Outbound messaging transport port
+│   │   ├── MessRepositoryPort.ts           # Meal querying and resolved view port
+│   │   ├── MessStagingRepositoryPort.ts    # Staged messages & surgical undo repository port
 │   │   └── ToolRegistryPort.ts             # Tool registry and execution port
 │   └── errors/
-│       └── LLMErrors.ts                    # Custom domain error hierarchy
+│       └── LLMErrors.ts                    # Custom domain error hierarchy (pure TypeScript)
 ├── tools/                                  # Concrete Domain Tools
 │   ├── BaseTool.ts                         # Declarative base tool with Zod schema reflection
-│   └── CalculatorTool.ts                   # Safe recursive descent arithmetic evaluator
+│   ├── CalculatorTool.ts                   # Safe recursive descent arithmetic evaluator
+│   ├── DisplayMessCardTool.ts              # Terminal mess card renderer (isTerminal: true)
+│   └── QueryMessDetailsTool.ts             # Granular mess querying tool (isTerminal: false)
 ├── adapters/                               # Interaction with the outside world
 │   ├── common/                             # Shared adapter utilities
 │   │   └── whatsapp/
 │   │       └── WhatsAppJid.ts              # Native Baileys JID/LID classification and normalization
 │   ├── inbound/
+│   │   ├── cli/                            # Interactive Operator Triage CLI
+│   │   │   ├── InteractiveJsonEditor.ts    # Neovim / Vim JSON editor with schema validation
+│   │   │   ├── MediaPreviewer.ts           # Native OS image/PDF viewer launcher
+│   │   │   ├── TriageCliController.ts      # Interactive admin triage CLI orchestrator
+│   │   │   └── TriageTerminalView.ts       # ANSI terminal UI card renderer
 │   │   └── whatsapp/
 │   │       ├── BaileysMessageFilter.ts     # Reception eligibility filter (reject fromMe, groups, non-text)
 │   │       ├── BaileysMessageParser.ts     # Pure domain UserMessage translator with canonical ID override
+│   │       ├── FoodAnnouncementsInboundAdapter.ts # Passive group listener staging raw announcements
 │   │       └── WhatsAppInboundAdapter.ts   # WhatsApp event driver with LID resolution & ProcessIncomingMessage
 │   └── outbound/
 │       ├── access-control/
@@ -106,6 +136,19 @@ src/
 │       │   └── DeepseekErrorTranslator.ts  # Pure HTTP and SDK error translator
 │       ├── logger/
 │       │   └── PinoLoggerAdapter.ts        # Structured logging using Pino
+│       ├── mess/
+│       │   ├── extraction/                 # DeepSeek multimodal & text announcement extractors
+│       │   │   ├── DeepseekTextExtractor.ts # Composite single-pass announcement event extractor
+│       │   │   ├── DeepseekVisionExtractor.ts # Multimodal 21-meal weekly menu extractor
+│       │   │   ├── ExtractionSchemas.ts    # Zod schemas for menus, locations, timings, changes, swaps
+│       │   │   ├── ExtractorUtils.ts       # JSON cleaning, client resolution, and error classifier
+│       │   │   └── PdfRasterizer.ts        # PDF first-page rasterizer to PNG
+│       │   ├── formatting/
+│       │   │   └── MessCardRenderer.ts     # WhatsApp card renderer with batch formatting
+│       │   └── postgres/
+│       │       ├── schema.ts               # Drizzle ORM schema for 4 operational tables + staging
+│       │       ├── PostgresMessRepository.ts # Outbound adapter implementing MessRepositoryPort
+│       │       └── PostgresMessStagingRepository.ts # Outbound adapter implementing MessStagingRepositoryPort
 │       ├── tool-registry/
 │       │   └── InMemoryToolRegistry.ts     # In-memory tool registry implementation
 │       └── whatsapp/
@@ -115,6 +158,9 @@ src/
 │           ├── BaileysMessageSenderAdapter.ts # Outbound transport implementing MessageSenderPort
 │           ├── BaileysPairingManager.ts    # First-time device pairing code coordinator
 │           └── PostgresBaileysSessionManager.ts # PostgreSQL auth credentials & Signal key manager
+├── scripts/                                # Administrative & CLI Tools
+│   ├── ingest-announcements.ts             # Composition root for npm run ingest
+│   └── reset-mess.ts                       # Dev reset script with 3 production safety guards
 ├── config.ts                               # Fail-fast configuration with pure parseConfig
 ├── index.ts                                # The Composition Root
 ├── Dockerfile                              # Multi-stage hardened build (node:22-bookworm-slim, USER node)
@@ -232,6 +278,11 @@ sequenceDiagram
 - **Stateless Container & Database-Backed Auth**: WhatsApp authentication state and Signal Protocol cryptographic keys are persisted in PostgreSQL (`whatsapp_auth` table with composite primary key `(session_id, key)`), eliminating host filesystem bindings and directory mutex races. High-frequency Signal keys are cached in memory via `makeCacheableSignalKeyStore`, and binary buffer prototypes are preserved across `jsonb` serialization using `BufferJSON`.
 - **Hardened Multi-Stage Containerization**: The runtime environment executes in an isolated Docker container based on `node:22-bookworm-slim` across both builder and runner stages, guaranteeing `glibc` runtime binary compatibility with Baileys' native modules on ARM64 (Oracle Cloud Ampere A1) and x86_64. Production images drop root privileges and run strictly as unprivileged `USER node`.
 - **Loopback-Only Database Port Exposure**: PostgreSQL port 5432 is bound strictly to `127.0.0.1:5432:5432` on the host, preventing public internet exposure while enabling secure local tool access (Drizzle Studio, GUI clients) via SSH tunnels. All application communication occurs across an isolated Docker bridge network (`iny-network`).
+- **Early Termination All-or-Nothing Rule**: When a terminal tool (`isTerminal: true`, e.g. `DisplayMessCardTool`) executes successfully in `AgentLoop` and all concurrent tools in the turn succeed, the reasoning loop terminates immediately on Turn 1 without invoking a redundant second LLM synthesis turn. Both intermediate tool messages and the final assistant response are persisted into `dialogue_turns` strictly satisfying PostgreSQL check constraint `chk_dialogue_turns_messages`.
+- **Temporal Grounding Injection**: On all reasoning turns, `AgentLoop` dynamically formats the incoming message's timestamp in Indian Standard Time (`Asia/Kolkata`) and appends it to the effective system prompt (`[Current Time (IST): ...]`), ensuring accurate calendar resolution ("today", "tomorrow", day-of-week) without model hallucinations.
+- **Transactional Audit Trail & Surgical Rollback**: Operational mess tables (`mess_meals`, `mess_meal_location_details`, `mess_meal_timing_extensions`, `mess_meal_changes`) track operational provenance via an indexed `source_message_id`. `atomicCommitComposite` executes across all operational tables inside a single PostgreSQL transaction. Meal swaps back up original dishes as JSON in `mess_meal_changes.original_item`. `atomicUndo` surgically restores swapped dishes and removes operational rows, resetting the staged message to `pending`.
+- **Option B Pre-Commit Verification Gate**: Before committing an announcement containing a meal swap, the system verifies that both the referenced source meal and the target meal exist in `mess_meals`. If either meal is missing, confirmation `[y]` is blocked until the corresponding weekly menu is ingested.
+- **Three-Layer Dev Reset Safety Guards**: `scripts/reset-mess.ts` (`npm run mess:reset`) enforces three independent safety checks (`NODE_ENV !== 'production'`, target host display, and exact database name confirmation challenge) before executing `atomicReset`.
 
 ## 6. "How Do I..." Recipe Guide
 

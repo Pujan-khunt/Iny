@@ -45,6 +45,10 @@ export const envSchema = z.object({
       (url) => url.startsWith('postgres://') || url.startsWith('postgresql://'),
       'DATABASE_URL must be a valid PostgreSQL connection URI (postgres:// or postgresql://)'
     ),
+  FOOD_ANNOUNCEMENTS_GROUP_JID: z
+    .string()
+    .trim()
+    .regex(/^.+@g\.us$/, 'Must be a valid WhatsApp group JID ending in @g.us'),
   DB_MAX_CONNECTIONS: emptyToUndefined(z.coerce.number().int().positive().default(10)),
   DEEPSEEK_BASE_URL: emptyToUndefined(z.url().default('https://api.deepseek.com')),
   DEEPSEEK_MODEL: emptyToUndefined(z.string().min(1).default('deepseek-flash')),

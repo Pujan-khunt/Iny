@@ -4,9 +4,13 @@ import {
   MessageFactory,
   ToolResultMessage,
 } from '../entities/Message';
-import { ToolCallRequest } from '../entities/ToolCallRequest';
+import {
+  ToolCallRequest,
+  ValidToolCallRequest,
+  MalformedToolCallRequest,
+} from '../entities/ToolCallRequest';
 import { LLMPort } from '../ports/LLMPort';
-import { ToolRegistryPort, ToolDefinition } from '../ports/ToolRegistryPort';
+import { ToolRegistryPort, ToolDefinition, ToolResult } from '../ports/ToolRegistryPort';
 import { LoggerPort } from '../ports/LoggerPort';
 
 /**
@@ -23,18 +27,88 @@ export interface AgentLoopConfig {
  * Encapsulates the outcome of an AgentLoop execution cycle.
  */
 export interface AgentLoopResult {
-  /** The final natural language response synthesized by the model. */
+  /** The final natural language response synthesized by the model or terminal tool. */
   finalText: string;
   /** All chain-of-thought reasoning scratchpads emitted across all iterations of this turn. */
   reasoning: string[];
-  /** All intermediate messages generated during this turn (assistant tool calls, tool results, final text). */
+  /** All messages generated during this turn (user message, assistant tool calls, tool results, final text). */
   sessionMessages: Message[];
+}
+
+/**
+ * Internal execution outcome for a single tool call request.
+ */
+export interface ToolExecutionOutcome {
+  /** The formatted ToolResultMessage entity for conversational history. */
+  readonly message: ToolResultMessage;
+  /** The raw ToolResult returned by the tool implementation. */
+  readonly toolResult: ToolResult;
+  /** Whether the tool execution resulted in an error (runtime exception or argument malformation). */
+  readonly isError: boolean;
+}
+
+/** Separator used to concatenate multiple terminal tool outputs into a single message. */
+export const TERMINAL_OUTPUT_SEPARATOR = '\n\n---\n\n';
+
+/**
+ * Formats a message timestamp into a standardized Indian Standard Time (IST) string.
+ *
+ * @param timestamp Date object, timestamp number, or ISO string.
+ * @returns Human-readable IST timestamp formatted for system prompt grounding.
+ */
+export function formatMessageTimeIST(timestamp?: Date | number | string): string {
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp ?? Date.now());
+  return date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    dateStyle: 'full',
+    timeStyle: 'medium',
+  });
+}
+
+/**
+ * Injects temporal grounding context into the base system prompt.
+ *
+ * @param baseSystemPrompt Base system instructions.
+ * @param timestamp Message timestamp to format in IST.
+ * @returns System prompt appended with temporal grounding metadata.
+ */
+export function buildTemporallyGroundedSystemPrompt(
+  baseSystemPrompt: string,
+  timestamp?: Date | number | string
+): string {
+  const istString = formatMessageTimeIST(timestamp);
+  return `${baseSystemPrompt}\n\n[Current Time (IST): ${istString}]`;
+}
+
+/**
+ * Evaluates the All-or-Nothing Early Termination condition:
+ * Early termination applies if and only if at least one tool call was executed,
+ * every executed tool succeeded without errors, and every executed tool is terminal.
+ *
+ * @param outcomes Execution outcomes of all tool calls in the current iteration batch.
+ * @returns True if early termination conditions are satisfied, false otherwise.
+ */
+export function shouldTerminateEarly(outcomes: readonly ToolExecutionOutcome[]): boolean {
+  return (
+    outcomes.length > 0 &&
+    outcomes.every((outcome) => !outcome.isError && outcome.toolResult.isTerminal === true)
+  );
+}
+
+/**
+ * Formats all terminal tool execution outputs into a combined response string.
+ *
+ * @param outcomes Execution outcomes of terminal tools.
+ * @returns Concatenated terminal tool contents separated by the canonical separator.
+ */
+export function formatTerminalToolOutputs(outcomes: readonly ToolExecutionOutcome[]): string {
+  return outcomes.map((outcome) => outcome.toolResult.content).join(TERMINAL_OUTPUT_SEPARATOR);
 }
 
 /**
  * Pure domain service executing the ReAct (Reasoning + Acting) loop.
  * Coordinates multi-turn LLM reasoning, concurrent tool execution via Promise.all,
- * malformed argument reflection, and circuit-breaker forced synthesis.
+ * malformed argument reflection, all-or-nothing early termination, and circuit-breaker forced synthesis.
  */
 export class AgentLoop {
   private readonly maxToolIterations: number;
@@ -48,8 +122,8 @@ export class AgentLoop {
    * @param config Agent loop operational parameters (system prompt, iteration limit).
    */
   constructor(
-    private llm: LLMPort,
-    private registry: ToolRegistryPort,
+    private readonly llm: LLMPort,
+    private readonly registry: ToolRegistryPort,
     config: AgentLoopConfig
   ) {
     this.systemPrompt = config.systemPrompt;
@@ -57,7 +131,8 @@ export class AgentLoop {
   }
 
   /**
-   * Runs the ReAct reasoning loop until the model produces a text response or reaches max iterations.
+   * Runs the ReAct reasoning loop until a terminal tool triggers early termination,
+   * the model produces a text response, or the loop reaches max iterations.
    *
    * @param userMessage Inbound user message triggering this dialogue exchange.
    * @param history Prior dialogue turns loaded from conversation history.
@@ -71,6 +146,11 @@ export class AgentLoop {
     tools: ToolDefinition[],
     log: LoggerPort
   ): Promise<AgentLoopResult> {
+    const effectiveSystemPrompt = buildTemporallyGroundedSystemPrompt(
+      this.systemPrompt,
+      userMessage.timestamp
+    );
+
     const sessionMessages: Message[] = [userMessage];
     const reasoning: string[] = [];
     let iteration = 0;
@@ -78,7 +158,7 @@ export class AgentLoop {
     while (iteration < this.maxToolIterations) {
       const workingMessages = [...history, ...sessionMessages];
       const response = await this.llm.generateResponse(
-        this.systemPrompt,
+        effectiveSystemPrompt,
         workingMessages,
         tools
       );
@@ -111,64 +191,137 @@ export class AgentLoop {
       });
       sessionMessages.push(toolCallMessage);
 
-      const toolResults = await this.executeToolsConcurrently(
+      const toolExecutionResults = await this.executeToolsConcurrently(
         userMessage.userId,
         response.toolCalls,
         log
       );
-      sessionMessages.push(...toolResults);
+      sessionMessages.push(...toolExecutionResults.map((r) => r.message));
+
+      // All-or-Nothing Early Termination Check
+      if (shouldTerminateEarly(toolExecutionResults)) {
+        const finalContent = formatTerminalToolOutputs(toolExecutionResults);
+
+        const assistantMessage = MessageFactory.createAssistantText({
+          userId: userMessage.userId,
+          content: finalContent,
+        });
+        sessionMessages.push(assistantMessage);
+
+        return {
+          finalText: finalContent,
+          reasoning,
+          sessionMessages,
+        };
+      }
+
       iteration++;
     }
 
     // Circuit breaker forced synthesis
-    return this.handleCircuitBreaker(userMessage.userId, history, sessionMessages, tools, log, reasoning);
+    return this.handleCircuitBreaker(
+      userMessage.userId,
+      history,
+      sessionMessages,
+      tools,
+      log,
+      reasoning,
+      effectiveSystemPrompt
+    );
   }
 
   /**
    * Concurrently executes multiple tool calls requested by the model.
-   * Isolates failures and returns structured ToolResultMessage entities for model feedback.
+   * Isolates failures and returns structured ToolExecutionOutcome results.
    */
   private async executeToolsConcurrently(
     userId: string,
     toolCalls: ToolCallRequest[],
     log: LoggerPort
-  ): Promise<ToolResultMessage[]> {
+  ): Promise<ToolExecutionOutcome[]> {
     return Promise.all(
-      toolCalls.map(async (tc): Promise<ToolResultMessage> => {
-        if (tc.type === 'malformed') {
-          log.warn('Tool call arguments were malformed', undefined, {
-            toolName: tc.name,
-            parseError: tc.parseError,
-          });
-          return MessageFactory.createToolResult({
-            userId,
-            toolCallId: tc.id,
-            name: tc.name,
-            content: `Error executing tool '${tc.name}': Failed to parse tool arguments: ${tc.parseError}`,
-          });
-        }
-
-        try {
-          log.info('Executing tool call', { toolName: tc.name });
-          const result = await this.registry.executeTool(tc.name, tc.arguments);
-          return MessageFactory.createToolResult({
-            userId,
-            toolCallId: tc.id,
-            name: tc.name,
-            content: result,
-          });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          log.warn('Tool execution failed', error, { toolName: tc.name });
-          return MessageFactory.createToolResult({
-            userId,
-            toolCallId: tc.id,
-            name: tc.name,
-            content: `Error executing tool '${tc.name}': ${errorMessage}`,
-          });
-        }
-      })
+      toolCalls.map((toolCall) => this.executeSingleToolCall(userId, toolCall, log))
     );
+  }
+
+  /**
+   * Dispatches a single tool call depending on whether it is malformed or valid.
+   */
+  private async executeSingleToolCall(
+    userId: string,
+    toolCall: ToolCallRequest,
+    log: LoggerPort
+  ): Promise<ToolExecutionOutcome> {
+    if (toolCall.type === 'malformed') {
+      return this.handleMalformedToolCall(userId, toolCall, log);
+    }
+    return this.executeValidToolCall(userId, toolCall, log);
+  }
+
+  /**
+   * Handles a malformed tool call where JSON arguments failed schema parsing.
+   */
+  private handleMalformedToolCall(
+    userId: string,
+    toolCall: MalformedToolCallRequest,
+    log: LoggerPort
+  ): ToolExecutionOutcome {
+    log.warn('Tool call arguments were malformed', undefined, {
+      toolName: toolCall.name,
+      parseError: toolCall.parseError,
+    });
+    const content = `Error executing tool '${toolCall.name}': Failed to parse tool arguments: ${toolCall.parseError}`;
+    const message = MessageFactory.createToolResult({
+      userId,
+      toolCallId: toolCall.id,
+      name: toolCall.name,
+      content,
+    });
+    return {
+      message,
+      toolResult: { content, isTerminal: false },
+      isError: true,
+    };
+  }
+
+  /**
+   * Executes a valid tool call through the tool registry, catching runtime errors gracefully.
+   */
+  private async executeValidToolCall(
+    userId: string,
+    toolCall: ValidToolCallRequest,
+    log: LoggerPort
+  ): Promise<ToolExecutionOutcome> {
+    try {
+      log.info('Executing tool call', { toolName: toolCall.name });
+      const toolResult = await this.registry.executeTool(toolCall.name, toolCall.arguments);
+      const message = MessageFactory.createToolResult({
+        userId,
+        toolCallId: toolCall.id,
+        name: toolCall.name,
+        content: toolResult.content,
+      });
+      return {
+        message,
+        toolResult,
+        isError: false,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      log.warn('Tool execution failed', error, { toolName: toolCall.name });
+      const content = `Error executing tool '${toolCall.name}': ${errorMessage}`;
+      const message = MessageFactory.createToolResult({
+        userId,
+        toolCallId: toolCall.id,
+        name: toolCall.name,
+        content,
+      });
+      return {
+        message,
+        toolResult: { content, isTerminal: false },
+        isError: true,
+      };
+    }
   }
 
   /**
@@ -181,7 +334,8 @@ export class AgentLoop {
     sessionMessages: Message[],
     tools: ToolDefinition[],
     log: LoggerPort,
-    reasoning: string[]
+    reasoning: string[],
+    effectiveSystemPrompt: string
   ): Promise<AgentLoopResult> {
     log.warn('Max tool iterations reached, forcing synthesis', undefined, {
       maxIterations: this.maxToolIterations,
@@ -189,7 +343,7 @@ export class AgentLoop {
 
     const workingMessages = [...history, ...sessionMessages];
     const forcedResponse = await this.llm.generateResponse(
-      this.systemPrompt,
+      effectiveSystemPrompt,
       workingMessages,
       tools,
       { forcedSynthesis: true }

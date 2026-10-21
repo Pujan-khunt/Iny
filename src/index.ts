@@ -5,12 +5,16 @@ import { AgentLoop } from './core/use-cases/AgentLoop';
 import { loadConfig } from './config';
 import { DeepseekAdapter } from './adapters/outbound/llm/DeepseekAdapter';
 import { InMemoryToolRegistry } from './adapters/outbound/tool-registry/InMemoryToolRegistry';
-import { CalculatorTool } from './tools/CalculatorTool';
 import { PinoLoggerAdapter } from './adapters/outbound/logger/PinoLoggerAdapter';
 import * as chatSchema from './adapters/outbound/chat-repository/postgres/schema';
 import * as whatsappSchema from './adapters/outbound/whatsapp/postgres/schema';
 import * as accessControlSchema from './adapters/outbound/access-control/postgres/schema';
+import * as messSchema from './adapters/outbound/mess/postgres/schema';
 import { PostgresChatRepository } from './adapters/outbound/chat-repository/postgres/PostgresChatRepository';
+import { PostgresMessRepository } from './adapters/outbound/mess/postgres/PostgresMessRepository';
+import { PostgresMessStagingRepository } from './adapters/outbound/mess/postgres/PostgresMessStagingRepository';
+import { DisplayMessCardTool } from './tools/DisplayMessCardTool';
+import { QueryMessDetailsTool } from './tools/QueryMessDetailsTool';
 import { runDatabaseMigrations } from './adapters/outbound/chat-repository/postgres/migrator';
 import { PostgresAccessControlAdapter } from './adapters/outbound/access-control/postgres/PostgresAccessControlAdapter';
 import { PostgresBaileysSessionManager } from './adapters/outbound/whatsapp/PostgresBaileysSessionManager';
@@ -20,6 +24,7 @@ import { BaileysMessageSenderAdapter } from './adapters/outbound/whatsapp/Bailey
 import { BaileysMessageFilter } from './adapters/inbound/whatsapp/BaileysMessageFilter';
 import { BaileysMessageParser } from './adapters/inbound/whatsapp/BaileysMessageParser';
 import { WhatsAppInboundAdapter } from './adapters/inbound/whatsapp/WhatsAppInboundAdapter';
+import { FoodAnnouncementsInboundAdapter } from './adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter';
 import { ChatRepositoryContextRetrievalAdapter } from './adapters/outbound/context-retrieval/ChatRepositoryContextRetrievalAdapter';
 
 // Load & validate application configuration from environment
@@ -30,7 +35,6 @@ const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
 
 // 2. Outbound tool registry & tools
 const registry = new InMemoryToolRegistry(logger);
-registry.register(new CalculatorTool());
 
 // 3. PostgreSQL Connection Pool & Drizzle ORM
 const sqlClient = postgres(config.DATABASE_URL, {
@@ -39,11 +43,23 @@ const sqlClient = postgres(config.DATABASE_URL, {
   connect_timeout: 10,
 });
 const db = drizzle(sqlClient, {
-  schema: { ...chatSchema, ...whatsappSchema, ...accessControlSchema },
+  schema: { ...chatSchema, ...whatsappSchema, ...accessControlSchema, ...messSchema },
 });
 
-
 const chatRepository = new PostgresChatRepository(db, logger);
+
+// Mess subsystem repositories & tools
+const messRepository = new PostgresMessRepository(db, logger.child({ module: 'mess-repository' }));
+const messStagingRepository = new PostgresMessStagingRepository(
+  db,
+  logger.child({ module: 'mess-staging-repository' })
+);
+
+const displayMessCardTool = new DisplayMessCardTool(messRepository);
+const queryMessDetailsTool = new QueryMessDetailsTool(messRepository);
+
+registry.register(displayMessCardTool);
+registry.register(queryMessDetailsTool);
 
 // 4. Access control
 const accessControl = new PostgresAccessControlAdapter(db, logger.child({ module: 'access-control' }));
@@ -92,6 +108,14 @@ const inboundAdapter = new WhatsAppInboundAdapter(
   parser,
   logger
 );
+
+// 10. Inbound Food Announcements Driving Adapter
+const foodAnnouncementsAdapter = new FoodAnnouncementsInboundAdapter({
+  targetGroupJid: config.FOOD_ANNOUNCEMENTS_GROUP_JID,
+  db,
+  connectionManager,
+  logger: logger.child({ module: 'food-announcements' }),
+});
 
 // Graceful Shutdown
 let isShuttingDown = false;
@@ -155,6 +179,7 @@ async function start() {
   }
   logger.info('Access control initialized', { activeUsers: activeUserCount });
 
+  foodAnnouncementsAdapter.start();
   inboundAdapter.start();
 
   logger.info('Starting Iny WhatsApp connection...');

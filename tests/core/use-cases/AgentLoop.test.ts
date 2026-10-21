@@ -8,7 +8,10 @@ import { ValidToolCallRequest, MalformedToolCallRequest } from '../../../src/cor
 
 describe('AgentLoop', () => {
   let mockLLM: LLMPort;
-  let mockRegistry: ToolRegistryPort;
+  let mockRegistry: ToolRegistryPort & {
+    getToolDefinitions: ReturnType<typeof vi.fn>;
+    executeTool: ReturnType<typeof vi.fn>;
+  };
   let mockLogger: LoggerPort;
 
   const defaultSystemPrompt = 'You are a helpful assistant.';
@@ -50,7 +53,7 @@ describe('AgentLoop', () => {
     };
     mockRegistry = {
       getToolDefinitions: vi.fn().mockReturnValue(defaultTools),
-      executeTool: vi.fn(),
+      executeTool: vi.fn().mockResolvedValue({ content: '', isTerminal: false }),
     };
     mockLogger = createMockLogger();
   });
@@ -113,7 +116,7 @@ describe('AgentLoop', () => {
         content: 'Result is 4.',
       });
 
-    vi.mocked(mockRegistry.executeTool).mockResolvedValueOnce('4');
+    vi.mocked(mockRegistry.executeTool).mockResolvedValueOnce({ content: '4', isTerminal: false });
 
     const loop = createAgentLoop();
     const result = await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
@@ -178,8 +181,8 @@ describe('AgentLoop', () => {
       });
 
     vi.mocked(mockRegistry.executeTool)
-      .mockResolvedValueOnce('4')
-      .mockResolvedValueOnce('8');
+      .mockResolvedValueOnce({ content: '4', isTerminal: false })
+      .mockResolvedValueOnce({ content: '8', isTerminal: false });
 
     const loop = createAgentLoop();
     const result = await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
@@ -223,7 +226,7 @@ describe('AgentLoop', () => {
       callOrder.push(`start:${args.expr}`);
       await new Promise((resolve) => setTimeout(resolve, 10));
       callOrder.push(`end:${args.expr}`);
-      return `result:${args.expr}`;
+      return { content: `result:${args.expr}`, isTerminal: false };
     });
 
     vi.mocked(mockLLM.generateResponse)
@@ -344,7 +347,7 @@ describe('AgentLoop', () => {
       arguments: {},
     };
 
-    vi.mocked(mockRegistry.executeTool).mockResolvedValue('ok');
+    vi.mocked(mockRegistry.executeTool).mockResolvedValue({ content: 'ok', isTerminal: false });
 
     vi.mocked(mockLLM.generateResponse)
       .mockResolvedValueOnce({
@@ -383,7 +386,7 @@ describe('AgentLoop', () => {
       arguments: {},
     };
 
-    vi.mocked(mockRegistry.executeTool).mockResolvedValue('ok');
+    vi.mocked(mockRegistry.executeTool).mockResolvedValue({ content: 'ok', isTerminal: false });
 
     vi.mocked(mockLLM.generateResponse)
       .mockResolvedValueOnce({
@@ -402,4 +405,220 @@ describe('AgentLoop', () => {
       "I've reached the maximum number of tool iterations and was unable to complete your request."
     );
   });
+
+  describe('Early Termination (All-or-Nothing)', () => {
+    it('should terminate immediately when single terminal tool succeeds', async () => {
+      const validCall: ValidToolCallRequest = {
+        type: 'valid',
+        id: 'call-term-1',
+        name: 'display_mess_card',
+        arguments: {},
+      };
+
+      vi.mocked(mockLLM.generateResponse).mockResolvedValueOnce({
+        type: 'tool_calls',
+        toolCalls: [validCall],
+      });
+
+      vi.mocked(mockRegistry.executeTool).mockResolvedValueOnce({
+        content: '*LUNCH MENU*',
+        isTerminal: true,
+      });
+
+      const loop = createAgentLoop();
+      const result = await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
+
+      expect(mockLLM.generateResponse).toHaveBeenCalledTimes(1);
+      expect(result.finalText).toBe('*LUNCH MENU*');
+      expect(result.sessionMessages).toHaveLength(4);
+      expect(result.sessionMessages[3]).toMatchObject({
+        role: 'assistant',
+        content: '*LUNCH MENU*',
+      });
+    });
+
+    it('should terminate immediately and join outputs when multiple terminal tools succeed', async () => {
+      const call1: ValidToolCallRequest = {
+        type: 'valid',
+        id: 'call-1',
+        name: 'card_1',
+        arguments: {},
+      };
+      const call2: ValidToolCallRequest = {
+        type: 'valid',
+        id: 'call-2',
+        name: 'card_2',
+        arguments: {},
+      };
+
+      vi.mocked(mockLLM.generateResponse).mockResolvedValueOnce({
+        type: 'tool_calls',
+        toolCalls: [call1, call2],
+      });
+
+      vi.mocked(mockRegistry.executeTool)
+        .mockResolvedValueOnce({ content: 'Card A', isTerminal: true })
+        .mockResolvedValueOnce({ content: 'Card B', isTerminal: true });
+
+      const loop = createAgentLoop();
+      const result = await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
+
+      expect(mockLLM.generateResponse).toHaveBeenCalledTimes(1);
+      expect(result.finalText).toBe('Card A\n\n---\n\nCard B');
+    });
+
+    it('should suppress short-circuit and proceed to turn 2 on mixed terminal and non-terminal tools', async () => {
+      const termCall: ValidToolCallRequest = {
+        type: 'valid',
+        id: 'call-term',
+        name: 'card_tool',
+        arguments: {},
+      };
+      const nonTermCall: ValidToolCallRequest = {
+        type: 'valid',
+        id: 'call-non-term',
+        name: 'query_tool',
+        arguments: {},
+      };
+
+      vi.mocked(mockLLM.generateResponse)
+        .mockResolvedValueOnce({
+          type: 'tool_calls',
+          toolCalls: [termCall, nonTermCall],
+        })
+        .mockResolvedValueOnce({
+          type: 'text',
+          content: 'Synthesized multi-tool answer.',
+        });
+
+      vi.mocked(mockRegistry.executeTool)
+        .mockResolvedValueOnce({ content: 'Card A', isTerminal: true })
+        .mockResolvedValueOnce({ content: '{"fact": 123}', isTerminal: false });
+
+      const loop = createAgentLoop();
+      const result = await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
+
+      expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
+      expect(result.finalText).toBe('Synthesized multi-tool answer.');
+    });
+
+    it('should suppress short-circuit when a terminal tool succeeds but another tool has malformed arguments', async () => {
+      const termCall: ValidToolCallRequest = {
+        type: 'valid',
+        id: 'call-term',
+        name: 'card_tool',
+        arguments: {},
+      };
+      const malformedCall: MalformedToolCallRequest = {
+        type: 'malformed',
+        id: 'call-malformed',
+        name: 'query_tool',
+        rawArguments: '{bad json',
+        parseError: 'Unexpected end of JSON',
+      };
+
+      vi.mocked(mockLLM.generateResponse)
+        .mockResolvedValueOnce({
+          type: 'tool_calls',
+          toolCalls: [termCall, malformedCall],
+        })
+        .mockResolvedValueOnce({
+          type: 'text',
+          content: 'Handled malformed error with terminal tool.',
+        });
+
+      vi.mocked(mockRegistry.executeTool).mockResolvedValueOnce({
+        content: 'Card A',
+        isTerminal: true,
+      });
+
+      const loop = createAgentLoop();
+      const result = await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
+
+      expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
+      expect(result.finalText).toBe('Handled malformed error with terminal tool.');
+    });
+  });
+
+  describe('Temporal Grounding Injection', () => {
+    it('should inject user message timestamp formatted in IST into system prompt for generateResponse', async () => {
+      const customTimestamp = new Date('2026-10-09T14:30:00Z');
+      const testUserMessage: UserMessage = {
+        id: 'msg-time-1',
+        userId: 'user-time',
+        role: 'user',
+        content: 'What meal is next?',
+        timestamp: customTimestamp,
+      };
+
+      const expectedISTString = customTimestamp.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        dateStyle: 'full',
+        timeStyle: 'medium',
+      });
+
+      vi.mocked(mockLLM.generateResponse).mockResolvedValueOnce({
+        type: 'text',
+        content: 'Lunch is next.',
+      });
+
+      const loop = createAgentLoop({ systemPrompt: 'System instructions.' });
+      await loop.run(testUserMessage, [], defaultTools, mockLogger);
+
+      expect(mockLLM.generateResponse).toHaveBeenCalledTimes(1);
+      const passedSystemPrompt = vi.mocked(mockLLM.generateResponse).mock.calls[0][0];
+      expect(passedSystemPrompt).toContain(`[Current Time (IST): ${expectedISTString}]`);
+      expect(passedSystemPrompt).toBe(
+        `System instructions.\n\n[Current Time (IST): ${expectedISTString}]`
+      );
+    });
+
+    it('should pass formatted IST temporal grounding during circuit breaker forced synthesis', async () => {
+      const customTimestamp = new Date('2026-10-09T14:30:00Z');
+      const testUserMessage: UserMessage = {
+        id: 'msg-cb-1',
+        userId: 'user-cb',
+        role: 'user',
+        content: 'Infinite loop prompt',
+        timestamp: customTimestamp,
+      };
+
+      const expectedISTString = customTimestamp.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        dateStyle: 'full',
+        timeStyle: 'medium',
+      });
+
+      const loopCall: ValidToolCallRequest = {
+        type: 'valid',
+        id: 'call-loop',
+        name: 'calculator',
+        arguments: {},
+      };
+
+      vi.mocked(mockRegistry.executeTool).mockResolvedValue({ content: 'ok', isTerminal: false });
+
+      vi.mocked(mockLLM.generateResponse)
+        .mockResolvedValueOnce({
+          type: 'tool_calls',
+          toolCalls: [loopCall],
+        })
+        .mockResolvedValueOnce({
+          type: 'text',
+          content: 'Forced synthesis answer.',
+        });
+
+      const loop = createAgentLoop({ systemPrompt: 'Base prompt.', maxToolIterations: 1 });
+      await loop.run(testUserMessage, [], defaultTools, mockLogger);
+
+      expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(mockLLM.generateResponse).mock.calls[0][0]).toBe(
+        `Base prompt.\n\n[Current Time (IST): ${expectedISTString}]`
+      );
+      expect(vi.mocked(mockLLM.generateResponse).mock.calls[1][0]).toBe(
+        `Base prompt.\n\n[Current Time (IST): ${expectedISTString}]`
+      );
+    });
+  });
 });
+

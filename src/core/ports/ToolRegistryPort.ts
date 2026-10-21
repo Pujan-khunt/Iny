@@ -1,14 +1,24 @@
 /**
+ * Result returned by a tool execution.
+ * When isTerminal is true and all batch tools succeeded, the AgentLoop
+ * terminates early without further LLM synthesis.
+ */
+export interface ToolResult {
+  readonly content: string;
+  readonly isTerminal: boolean;
+}
+
+/**
  * Read-only metadata describing a tool for LLM prompt construction.
  * Separates schema declaration from tool execution.
  */
 export interface ToolDefinition {
   /** The unique name of the tool matching the model function declaration. */
-  name: string;
+  readonly name: string;
   /** Human-readable description explaining when and how to use the tool. */
-  description: string;
+  readonly description: string;
   /** JSON Schema specification describing tool parameters and types. */
-  schema: Record<string, unknown>;
+  readonly schema: Record<string, unknown>;
 }
 
 /**
@@ -20,9 +30,9 @@ export interface Tool extends ToolDefinition {
    * Executes the tool logic with validated arguments.
    *
    * @param args Dictionary of arguments supplied by the caller.
-   * @returns Stringified result or message representing execution output.
+   * @returns Structured tool execution result.
    */
-  execute(args: Record<string, unknown>): Promise<string>;
+  execute(args: Record<string, unknown>): Promise<ToolResult>;
 }
 
 /**
@@ -42,7 +52,7 @@ export interface ToolRegistryPort {
    *
    * @param name Unique name of the tool to execute.
    * @param args Dictionary of arguments passed to the tool.
-   * @returns Stringified result of the tool execution.
+   * @returns Structured result of the tool execution.
    */
-  executeTool(name: string, args: Record<string, unknown>): Promise<string>;
+  executeTool(name: string, args: Record<string, unknown>): Promise<ToolResult>;
 }
