@@ -114,7 +114,25 @@ more, nothing less) and is well-built (clean, tested, maintainable)
 
     ## Part 2: Code Quality
 
-    **Code quality:**
+    **Constitution Compliance (`.agents/constitution.md`):**
+    Evaluate the diff against the 10 LLD Constitution invariants using strict 3-tier severity classification:
+    - **P0 (Blocking - Hard Failure)**:
+      - Architectural boundary breach (Constitution Rules 1, 2, 3: missing port in `src/core/ports/`, direct DB in inbound, tool importing outbound adapter).
+      - File exceeding 150 lines or function exceeding 40 lines.
+      - Export lacking a production consumer.
+      - Dead code or unconsumed factory classes.
+      - Action: Immediate implementation fix required. Cannot approve task.
+    - **P1 (Important - Blocking unless explicitly overridden by human partner)**:
+      - Inconsistent import conventions (`.js` extensions).
+      - Missing JSDoc on public interfaces/methods.
+      - Overly defensive coding (`?.` chaining on injected dependencies, dummy fallback stubs).
+      - Nesting depth violations (> 3 levels).
+      - Action: Must be addressed before approval unless explicitly overridden by human partner.
+    - **P2 (Minor / Informational)**:
+      - Local variable naming improvements, micro-optimizations, style preferences.
+      - Action: Advisory feedback; does not block task approval.
+
+    **General Code Quality:**
     - Clean separation of concerns?
     - Proper error handling?
     - DRY without premature abstraction?
@@ -130,7 +148,7 @@ more, nothing less) and is well-built (clean, tested, maintainable)
     - Is the implementation following the file structure from the plan?
     - Did this change create new files that are already large, or
       significantly grow existing files? (Don't flag pre-existing file
-      sizes — focus on what this change contributed.)
+      sizes: focus on what this change contributed.)
 
     Your report should point at evidence: file:line references for every
     finding and for any check you would otherwise answer with a bare
@@ -139,23 +157,26 @@ more, nothing less) and is well-built (clean, tested, maintainable)
 
     Your final message is the report itself: begin directly with the
     spec-compliance verdict. Every line is a verdict, a finding with
-    file:line, or a check you ran — no preamble, no process narration,
+    file:line, or a check you ran: no preamble, no process narration,
     no closing summary.
 
     ## Calibration
 
-    Categorize issues by actual severity. Not everything is Critical.
-    Important means this task cannot be trusted until it is fixed: incorrect
-    or fragile behavior, a missed requirement, or maintainability damage you
-    would block a merge over — verbatim duplication of a logic block,
-    swallowed errors, tests that assert nothing. "Coverage could be broader"
-    and polish suggestions are Minor.
+    Categorize issues by actual severity using the Constitution P0/P1/P2 tiers:
+    - **P0 (Critical / Blocking)**: Boundary breaches, line/function budget violations,
+      unconsumed exports, dead code, or critical bugs. This is a hard failure; task
+      cannot be approved until fixed.
+    - **P1 (Important)**: Import convention drift (`.js` extensions), missing JSDoc,
+      defensive chaining, nesting depth > 3, fragile logic, or test gaps. Cannot be
+      approved unless explicitly overridden by the human partner.
+    - **P2 (Minor)**: Naming improvements, micro-optimizations, and polish suggestions.
+
     If the plan or brief explicitly mandates something this rubric calls a
     defect (a test that asserts nothing, verbatim duplication of a logic
-    block), that IS a finding — report it as Important, labeled
+    block), that IS a finding: report it as Important, labeled
     plan-mandated. The plan's authorship does not grade its own work; the
     human decides.
-    Acknowledge what was done well before listing issues — accurate praise
+    Acknowledge what was done well before listing issues: accurate praise
     helps the implementer trust the rest of the feedback.
 
     ## Output Format
@@ -173,9 +194,9 @@ more, nothing less) and is well-built (clean, tested, maintainable)
 
     ### Issues
 
-    #### Critical (Must Fix)
-    #### Important (Should Fix)
-    #### Minor (Nice to Have)
+    #### P0 (Blocking - Hard Failure)
+    #### P1 (Important - Blocking unless explicitly overridden)
+    #### P2 (Minor / Informational)
 
     For each issue: file:line, what's wrong, why it matters, how to fix
     (if not obvious).
@@ -201,7 +222,6 @@ more, nothing less) and is well-built (clean, tested, maintainable)
 - `[HEAD_SHA]` — current commit
 - `[DIFF_FILE]` — REQUIRED: the path the controller wrote the review
   package to (`scripts/review-package PLAN_FILE BASE HEAD` prints the unique
-  path it wrote; the package never enters the controller's context)
+  package path it wrote; the package never enters the controller's context)
 
-**Reviewer returns:** Spec Compliance verdict (✅/❌/⚠️), Strengths, Issues
-(Critical/Important/Minor), Task quality verdict
+**Reviewer returns:** Spec Compliance verdict (✅/❌/⚠️), Strengths, Issues (P0 / P1 / P2), Task quality verdict

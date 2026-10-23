@@ -94,10 +94,40 @@ Use this template when dispatching a code reviewer subagent.
     - Documentation complete?
     - No obvious bugs?
 
+    **Constitution compliance (`.agents/constitution.md`):**
+    - Boundary isolation: Do inbound adapters bypass core use cases or import DB / outbound adapters directly? Do tools import outbound adapters?
+    - Port contracts: Are all outbound capabilities backed by interfaces in `src/core/ports/`? Do adapters declare explicit `implements Port`?
+    - File and function budgets: Does any production file exceed 150 lines, or any function exceed 40 lines?
+    - Nesting depth: Does any block exceed 3 levels of control flow nesting?
+    - Exports and dead code: Are there unconsumed exports or speculative boilerplate (e.g., uncalled factories, dummy wrappers)?
+    - Conventions: Are imports extensionless? Are dependencies constructor-injected without defensive chaining (`?.`) or stubs? Is JSDoc present without em dashes?
+
+    ## Constitution Compliance & Severity Classification
+
+    Every code review must evaluate the diff against `.agents/constitution.md`. Issues are classified into three strict tiers:
+
+    ### P0 (Blocking - Hard Failure)
+    - Architectural boundary breach (Constitution Rules 1, 2, 3: missing port, direct DB in inbound, tool importing outbound adapter).
+    - File exceeding 150 lines or function exceeding 40 lines.
+    - Export lacking a production consumer.
+    - Dead code or unconsumed factory classes.
+    - Action: Immediate implementation fix required. Cannot merge.
+
+    ### P1 (Important - Blocking unless explicitly overridden by human partner)
+    - Inconsistent import conventions (`.js` extensions).
+    - Missing JSDoc on public interfaces/methods.
+    - Overly defensive coding (`?.` chaining on injected dependencies, dummy fallback stubs).
+    - Nesting depth violations (> 3 levels).
+    - Action: Must be addressed before merge unless explicitly overridden by human partner.
+
+    ### P2 (Minor / Informational)
+    - Local variable naming improvements, micro-optimizations, style preferences.
+    - Action: Advisory feedback; does not block merge.
+
     ## Calibration
 
-    Categorize issues by actual severity. Not everything is Critical.
-    Acknowledge what was done well before listing issues — accurate praise
+    Categorize issues by actual severity using the P0, P1, and P2 tiers above. Not everything is P0.
+    Acknowledge what was done well before listing issues: accurate praise
     helps the implementer trust the rest of the feedback.
 
     If you find significant deviations from the plan, flag them specifically
@@ -112,14 +142,14 @@ Use this template when dispatching a code reviewer subagent.
 
     ### Issues
 
-    #### Critical (Must Fix)
-    [Bugs, security issues, data loss risks, broken functionality]
+    #### P0 (Blocking - Hard Failure)
+    [Architectural boundary breaches, line/function budget violations, unconsumed exports, dead code, bugs, security issues]
 
-    #### Important (Should Fix)
-    [Architecture problems, missing features, poor error handling, test gaps]
+    #### P1 (Important - Blocking unless explicitly overridden)
+    [Import extensions, missing JSDoc, defensive chaining, nesting depth violations, test gaps]
 
-    #### Minor (Nice to Have)
-    [Code style, optimization opportunities, documentation polish]
+    #### P2 (Minor / Informational)
+    [Local variable naming improvements, micro-optimizations, style preferences]
 
     For each issue:
     - File:line reference
@@ -159,7 +189,7 @@ Use this template when dispatching a code reviewer subagent.
 - `[BASE_SHA]` — starting commit
 - `[HEAD_SHA]` — ending commit
 
-**Reviewer returns:** Strengths, Issues (Critical / Important / Minor), Recommendations, Assessment
+**Reviewer returns:** Strengths, Issues (P0 / P1 / P2), Recommendations, Assessment
 
 ## Example Output
 
@@ -171,10 +201,10 @@ Use this template when dispatching a code reviewer subagent.
 
 ### Issues
 
-#### Important
+#### P1 (Important - Blocking unless explicitly overridden)
 1. **Missing help text in CLI wrapper**
    - File: index-conversations:1-31
-   - Issue: No --help flag, users won't discover --concurrency
+   - Issue: No --help flag, users will not discover --concurrency
    - Fix: Add --help case with usage examples
 
 2. **Date validation missing**
@@ -182,11 +212,11 @@ Use this template when dispatching a code reviewer subagent.
    - Issue: Invalid dates silently return no results
    - Fix: Validate ISO format, throw error with example
 
-#### Minor
+#### P2 (Minor / Informational)
 1. **Progress indicators**
    - File: indexer.ts:130
    - Issue: No "X of Y" counter for long operations
-   - Impact: Users don't know how long to wait
+   - Impact: Users will not know how long to wait
 
 ### Recommendations
 - Add progress reporting for user experience
