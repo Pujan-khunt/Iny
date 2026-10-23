@@ -227,8 +227,7 @@ export class TriageCliController {
 					continue;
 				} else {
 					// Streamlined Media Announcement Menu: Spec 5.1
-					let exitMediaMenu = false;
-					while (!exitMediaMenu) {
+					while (true) {
 						this.io.print("\nSelect action:");
 						this.io.print("  [1] Extract Weekly Menu");
 						this.io.print("  [2] Process Announcement (Auto-Extract All Events)");

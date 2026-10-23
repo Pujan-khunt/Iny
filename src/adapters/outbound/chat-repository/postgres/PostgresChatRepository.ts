@@ -19,6 +19,7 @@ export class PostgresChatRepository implements ChatRepositoryPort {
 	 * @param logger Leveled structured logger port.
 	 */
 	constructor(
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		private db: PgDatabase<any, any, any>,
 		private logger: LoggerPort,
 	) {}

@@ -3,9 +3,6 @@ import { TriageCliController } from "../../../../src/adapters/inbound/cli/Triage
 import type { StagedAnnouncementMessage } from "../../../../src/core/ports/MessStagingRepositoryPort";
 import type {
 	ExtractedWeeklyMenu,
-	ExtractedLocationDetail,
-	ExtractedTimingExtension,
-	ExtractedMealChange,
 	ExtractedCompositeAnnouncement,
 } from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
 import { ExtractedCompositeAnnouncementSchema } from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
@@ -550,7 +547,7 @@ describe("TriageCliController", () => {
 		mockTextExtractor.extractAnnouncementEvents.mockResolvedValue(compositeWithSwap);
 
 		mockStagingRepo.getMealsByDateAndSlot.mockImplementation(
-			async (mealDate: string, mealSlot: string, vendor: string) => {
+			async (mealDate: string, mealSlot: string, _vendor?: string) => {
 				if (mealDate === "2026-10-21" && mealSlot === "lunch") {
 					return [
 						{

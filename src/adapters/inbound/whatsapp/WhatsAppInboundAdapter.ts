@@ -42,67 +42,67 @@ export class WhatsAppInboundAdapter {
 	 */
 	async handleMessages(messages: WAMessage[]): Promise<void> {
 		for (const raw of messages) {
-			// Stage 1: Eligibility check (reject fromMe, groups, broadcasts, non-text)
-			const evaluation = this.filter.evaluate(raw);
-			if (!evaluation.eligible) {
-				this.logger.debug("Ignored ineligible message", {
-					messageId: raw?.key?.id,
-					remoteJid: raw?.key?.remoteJid,
-					reason: evaluation.reason,
-				});
-				continue;
-			}
+			await this.processSingleMessage(raw);
+		}
+	}
 
-			const eligible = evaluation.message;
+	private async authenticateSender(eligible: EligibleWebMessageInfo): Promise<UserRecord | null> {
+		const { lookupAddress, companionLidJid } = this.resolveSenderRouting(eligible);
+		this.logger.debug("Resolved sender routing", {
+			remoteJid: eligible.key.remoteJid,
+			remoteJidAlt: eligible.key.remoteJidAlt,
+			lookupAddress,
+			companionLidJid,
+		});
 
-			// Extract lookup address and companion LIDJID for access control routing
-			const { lookupAddress, companionLidJid } = this.resolveSenderRouting(eligible);
-			this.logger.debug("Resolved sender routing", {
+		try {
+			return await this.accessControl.authenticate(lookupAddress, companionLidJid);
+		} catch (authError) {
+			this.logger.error("Failed to authenticate sender", authError, {
+				lookupAddress,
 				remoteJid: eligible.key.remoteJid,
 				remoteJidAlt: eligible.key.remoteJidAlt,
-				lookupAddress,
-				companionLidJid,
 			});
+			return null;
+		}
+	}
 
-			// Stage 2: Access control authorization & identity retrieval
-			let user: UserRecord | null;
-			try {
-				user = await this.accessControl.authenticate(lookupAddress, companionLidJid);
-			} catch (authError) {
-				this.logger.error("Failed to authenticate sender", authError, {
-					lookupAddress,
-					remoteJid: eligible.key.remoteJid,
-					remoteJidAlt: eligible.key.remoteJidAlt,
-				});
-				continue;
-			}
+	private async processSingleMessage(raw: WAMessage): Promise<void> {
+		const evaluation = this.filter.evaluate(raw);
+		if (!evaluation.eligible) {
+			this.logger.debug("Ignored ineligible message", {
+				messageId: raw?.key?.id,
+				remoteJid: raw?.key?.remoteJid,
+				reason: evaluation.reason,
+			});
+			return;
+		}
 
-			if (!user) {
-				this.logger.debug("Ignored message from unauthorized sender", {
-					remoteJid: eligible.key.remoteJid,
-					remoteJidAlt: eligible.key.remoteJidAlt,
-				});
-				continue;
-			}
+		const eligible = evaluation.message;
+		const user = await this.authenticateSender(eligible);
+		if (!user) {
+			this.logger.debug("Ignored message from unauthorized sender", {
+				remoteJid: eligible.key.remoteJid,
+				remoteJidAlt: eligible.key.remoteJidAlt,
+			});
+			return;
+		}
 
-			// Stage 3: Pure transformation (user.pnJid is verified canonical phone identity)
-			let userMessage: UserMessage;
-			try {
-				userMessage = this.parser.parse(eligible, user.pnJid);
-			} catch (parseError) {
-				this.logger.error("Failed to parse eligible WhatsApp message", parseError);
-				continue;
-			}
+		let userMessage: UserMessage;
+		try {
+			userMessage = this.parser.parse(eligible, user.pnJid);
+		} catch (parseError) {
+			this.logger.error("Failed to parse eligible WhatsApp message", parseError);
+			return;
+		}
 
-			// Stage 4: Core use-case execution
-			try {
-				await this.processIncomingMessage.execute(userMessage);
-			} catch (err) {
-				this.logger.error("Unhandled error processing incoming message", err, {
-					messageId: userMessage.id,
-					userId: userMessage.userId,
-				});
-			}
+		try {
+			await this.processIncomingMessage.execute(userMessage);
+		} catch (err) {
+			this.logger.error("Unhandled error processing incoming message", err, {
+				messageId: userMessage.id,
+				userId: userMessage.userId,
+			});
 		}
 	}
 

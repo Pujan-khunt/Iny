@@ -8,6 +8,47 @@ type DeepseekChatCompletionMessage = OpenAI.Chat.ChatCompletionMessage & {
 	reasoning_content?: string | null;
 };
 
+function createToolCallsResponse(
+	responseMessage: DeepseekChatCompletionMessage,
+	functionCalls: FunctionToolCall[],
+	reasoning?: string,
+	logger?: LoggerPort,
+): LLMResponse {
+	const content = responseMessage.content || undefined;
+	const toolCalls = parseToolCalls(functionCalls);
+
+	logger?.debug("Received response from Deepseek LLM", {
+		hasToolCall: true,
+		toolCallCount: toolCalls.length,
+		hasReasoning: Boolean(reasoning),
+		hasContent: Boolean(content),
+	});
+
+	return LLMResponseFactory.createToolCalls({
+		toolCalls,
+		content,
+		reasoning,
+	});
+}
+
+function createTextResponse(
+	responseMessage: DeepseekChatCompletionMessage,
+	reasoning?: string,
+	logger?: LoggerPort,
+): LLMResponse {
+	const content = responseMessage.content ?? "";
+
+	logger?.debug("Received response from Deepseek LLM", {
+		hasToolCall: false,
+		hasReasoning: Boolean(reasoning),
+	});
+
+	return LLMResponseFactory.createText({
+		content,
+		reasoning,
+	});
+}
+
 /**
  * Parses an OpenAI ChatCompletion payload into a domain LLMResponse.
  *
@@ -33,32 +74,8 @@ export function parseOpenAIResponse(
 		[];
 
 	if (functionCalls.length > 0) {
-		const content = responseMessage.content || undefined;
-		const toolCalls = parseToolCalls(functionCalls);
-
-		logger?.debug("Received response from Deepseek LLM", {
-			hasToolCall: true,
-			toolCallCount: toolCalls.length,
-			hasReasoning: Boolean(reasoning),
-			hasContent: Boolean(content),
-		});
-
-		return LLMResponseFactory.createToolCalls({
-			toolCalls,
-			content,
-			reasoning,
-		});
+		return createToolCallsResponse(responseMessage, functionCalls, reasoning, logger);
 	}
 
-	const content = responseMessage.content ?? "";
-
-	logger?.debug("Received response from Deepseek LLM", {
-		hasToolCall: false,
-		hasReasoning: Boolean(reasoning),
-	});
-
-	return LLMResponseFactory.createText({
-		content,
-		reasoning,
-	});
+	return createTextResponse(responseMessage, reasoning, logger);
 }

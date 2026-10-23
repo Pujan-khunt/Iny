@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Boom } from "@hapi/boom";
-import makeWASocket, { DisconnectReason, proto } from "@whiskeysockets/baileys";
+import makeWASocket, { DisconnectReason } from "@whiskeysockets/baileys";
 import { BaileysConnectionManager } from "../../../../src/adapters/outbound/whatsapp/BaileysConnectionManager";
 import { BaileysPairingManager } from "../../../../src/adapters/outbound/whatsapp/BaileysPairingManager";
 import { BaileysSessionManagerPort } from "../../../../src/adapters/outbound/whatsapp/PostgresBaileysSessionManager";

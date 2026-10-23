@@ -11,6 +11,7 @@ import {
 import { WhatsAppJid } from "../../../common/whatsapp/WhatsAppJid";
 import { LoggerPort } from "../../../../core/ports/LoggerPort";
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PgDb = NodePgDatabase<any> | PostgresJsDatabase<any>;
 
 export class PostgresAccessControlAdapter implements AccessControlPort, AccessControlAdminPort {

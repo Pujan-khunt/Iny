@@ -10,17 +10,11 @@ import type {
 	ExtractedMealSwap,
 	ExtractedCompositeAnnouncement,
 } from "../../outbound/mess/extraction/ExtractionSchemas";
-import {
-	stripAnsi,
-	formatIst,
-	formatIstAmPm,
-	getDayOfWeekName,
-	getDayOfWeekShort,
-} from "./TriageAnsi";
+import { stripAnsi } from "./TriageAnsi";
 import { TriageMenuRenderer } from "./TriageMenuRenderer";
 import { TriagePreviewRenderer } from "./TriagePreviewRenderer";
 
-export { stripAnsi, formatIst, formatIstAmPm, getDayOfWeekName, getDayOfWeekShort };
+export { stripAnsi };
 
 export interface TriageTerminalViewOptions {
 	enableAnsi?: boolean;

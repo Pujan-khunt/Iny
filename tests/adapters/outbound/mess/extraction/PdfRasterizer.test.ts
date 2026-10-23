@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import { PdfRasterizer } from "../../../../../src/adapters/outbound/mess/extraction/PdfRasterizer";
 
 const minimalValidPdf = Buffer.from(`%PDF-1.4

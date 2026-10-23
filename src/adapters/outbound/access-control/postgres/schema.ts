@@ -33,4 +33,4 @@ export type UserRow = typeof users.$inferSelect;
 export type NewUserRow = typeof users.$inferInsert;
 
 // Compile-time static assertion ensuring the Drizzle schema strictly satisfies the core UserRecord port interface
-type _AssertRowMatchesPort = UserRow extends UserRecord ? true : never;
+export type _AssertRowMatchesPort = UserRow extends UserRecord ? true : never;

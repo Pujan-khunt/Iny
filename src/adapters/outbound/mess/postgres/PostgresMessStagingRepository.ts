@@ -4,36 +4,16 @@ import { MealSlot, Vendor } from "../../../../core/entities/MessMeal";
 import {
 	AtomicCommitCompositeOptions,
 	AtomicCommitOptions,
-	CommitLocationDetailInput,
-	CommitMealChangeInput,
-	CommitMealsInput,
 	CommitOperationalPayload,
-	CommitTimingExtensionInput,
 	ListStagedMessagesOptions,
 	MessStagingRepositoryPort,
 	NewStagedAnnouncementMessage,
-	ResolvedMealSwapInput,
 	StagedAnnouncementMessage,
 	StagedMealLookupRecord,
 } from "../../../../core/ports/MessStagingRepositoryPort";
 import { PostgresMealCommitter } from "./PostgresMealCommitter";
 import { PostgresMealRollback } from "./PostgresMealRollback";
 import { PostgresStagingQueue } from "./PostgresStagingQueue";
-
-export type {
-	AtomicCommitCompositeOptions,
-	AtomicCommitOptions,
-	CommitLocationDetailInput,
-	CommitMealChangeInput,
-	CommitMealsInput,
-	CommitOperationalPayload,
-	CommitTimingExtensionInput,
-	ListStagedMessagesOptions,
-	NewStagedAnnouncementMessage,
-	ResolvedMealSwapInput,
-	StagedAnnouncementMessage,
-	StagedMealLookupRecord,
-};
 
 /**
  * Lean coordinator implementing MessStagingRepositoryPort backed by PostgreSQL.

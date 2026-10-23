@@ -8,6 +8,36 @@ import {
 	LLMServerOverloadedError,
 } from "../../../core/errors/LLMErrors";
 
+function buildErrorForStatus(
+	status: number | undefined,
+	message: string,
+	opts: { status?: number; code?: string; cause?: unknown; rawResponse?: string },
+): LLMError {
+	switch (status) {
+		case 400:
+		case 422:
+			return new LLMInvalidRequestError(message, opts);
+		case 401:
+			return new LLMAuthenticationError(message, opts);
+		case 402:
+			return new LLMInsufficientBalanceError(message, opts);
+		case 429:
+			return new LLMRateLimitError(message, opts);
+		case 500:
+			return new LLMServerError(message, opts);
+		case 503:
+			return new LLMServerOverloadedError(message, opts);
+		default:
+			return new LLMError(message, opts);
+	}
+}
+
+interface ErrorWithHttpMetadata {
+	status?: number;
+	code?: string;
+	message?: string;
+}
+
 /**
  * Translates low-level provider or network errors into domain-specific LLM error subclasses.
  * Always throws and never returns.
@@ -15,34 +45,20 @@ import {
  * @param error The raw error encountered during API communication.
  * @throws LLMError or a specific subclass corresponding to the HTTP status.
  */
-export function translateAndThrowDeepseekError(error: any, rawResponse?: string): never {
+export function translateAndThrowDeepseekError(error: unknown, rawResponse?: string): never {
 	if (error instanceof LLMError) {
 		if (rawResponse && !error.rawResponse) {
-			(error as any).rawResponse = rawResponse;
+			(error as LLMError & { rawResponse?: string }).rawResponse = rawResponse;
 		}
 		throw error;
 	}
 
-	const status = error?.status;
-	const code = error?.code;
-	const message = error?.message || "Error occurred while communicating with LLM provider";
+	const errObj =
+		typeof error === "object" && error !== null ? (error as ErrorWithHttpMetadata) : undefined;
+	const status = errObj?.status;
+	const code = errObj?.code;
+	const message = errObj?.message || "Error occurred while communicating with LLM provider";
 	const opts = { status, code, cause: error, rawResponse };
 
-	switch (status) {
-		case 400:
-		case 422:
-			throw new LLMInvalidRequestError(message, opts);
-		case 401:
-			throw new LLMAuthenticationError(message, opts);
-		case 402:
-			throw new LLMInsufficientBalanceError(message, opts);
-		case 429:
-			throw new LLMRateLimitError(message, opts);
-		case 500:
-			throw new LLMServerError(message, opts);
-		case 503:
-			throw new LLMServerOverloadedError(message, opts);
-		default:
-			throw new LLMError(message, opts);
-	}
+	throw buildErrorForStatus(status, message, opts);
 }

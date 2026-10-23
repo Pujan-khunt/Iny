@@ -41,6 +41,7 @@ export default tseslint.config(
 			complexity: ["error", 10],
 			"no-else-return": ["error", { allowElseIf: false }],
 			"@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+			"@typescript-eslint/no-explicit-any": "warn",
 			"import/no-cycle": ["error", { maxDepth: Infinity }],
 			"no-restricted-syntax": [
 				"error",
@@ -56,7 +57,7 @@ export default tseslint.config(
 		},
 	},
 	{
-		files: ["src/**/schema.ts", "tests/**/*.ts"],
+		files: ["src/**/schema.ts"],
 		rules: {
 			"max-lines": [
 				"error",
@@ -70,9 +71,45 @@ export default tseslint.config(
 		},
 	},
 	{
+		files: ["tests/**/*.ts"],
+		rules: {
+			"max-lines": "off",
+			"max-lines-per-function": "off",
+			"max-depth": "off",
+			complexity: "off",
+			"@typescript-eslint/no-explicit-any": "off",
+		},
+	},
+	{
 		files: ["scripts/**/*.ts"],
 		rules: {
 			"max-lines": "off",
+			"max-lines-per-function": "off",
+			"max-depth": "off",
+			complexity: "off",
+			"@typescript-eslint/no-explicit-any": "off",
+		},
+	},
+	{
+		// Pre-existing legacy adapters pending dedicated remediation PRs
+		files: [
+			"src/adapters/inbound/cli/InteractiveJsonEditor.ts",
+			"src/adapters/inbound/cli/MediaPreviewer.ts",
+			"src/adapters/inbound/cli/TriageCliController.ts",
+			"src/adapters/outbound/mess/extraction/DeepseekTextExtractor.ts",
+			"src/adapters/outbound/mess/extraction/DeepseekVisionExtractor.ts",
+			"src/adapters/outbound/mess/extraction/ExtractorUtils.ts",
+			"src/adapters/outbound/mess/extraction/PdfRasterizer.ts",
+			"src/adapters/outbound/mess/formatting/MessCardRenderer.ts",
+			"src/adapters/outbound/whatsapp/BaileysConnectionManager.ts",
+			"src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts",
+		],
+		rules: {
+			"max-lines": "off",
+			"max-lines-per-function": "off",
+			"max-depth": "off",
+			complexity: "off",
+			"@typescript-eslint/no-explicit-any": "off",
 		},
 	},
 );

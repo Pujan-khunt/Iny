@@ -19,15 +19,17 @@ export function extractTurnMetadata(turn: DialogueTurn): TurnMetadata {
 	const reasoning: string[] = [];
 
 	for (const msg of turn.messages) {
-		if (msg.role === "assistant") {
-			if (msg.toolCalls) {
-				for (const call of msg.toolCalls) {
-					toolNamesSet.add(call.name);
-				}
+		if (msg.role !== "assistant") {
+			continue;
+		}
+
+		if (msg.toolCalls) {
+			for (const call of msg.toolCalls) {
+				toolNamesSet.add(call.name);
 			}
-			if (typeof msg.reasoning === "string" && msg.reasoning.trim() !== "") {
-				reasoning.push(msg.reasoning);
-			}
+		}
+		if (typeof msg.reasoning === "string" && msg.reasoning.trim() !== "") {
+			reasoning.push(msg.reasoning);
 		}
 	}
 

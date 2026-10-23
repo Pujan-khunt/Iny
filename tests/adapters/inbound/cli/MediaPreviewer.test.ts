@@ -12,11 +12,7 @@ describe("MediaPreviewer", () => {
 	});
 
 	it("determines extension from filename or mimeType and launches viewer", async () => {
-		let capturedCmd = "";
-		let capturedArgs: string[] = [];
-		const customSpawn = vi.fn((cmd: string, args: string[]) => {
-			capturedCmd = cmd;
-			capturedArgs = args;
+		const customSpawn = vi.fn((_cmd: string, _args: string[]) => {
 			return {
 				on: vi.fn(),
 				unref: vi.fn(),
