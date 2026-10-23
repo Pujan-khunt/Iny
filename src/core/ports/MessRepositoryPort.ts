@@ -1,4 +1,4 @@
-import { MealSlot, Vendor, ResolvedMealInfo } from "../entities/MessMeal.js";
+import { MealSlot, Vendor, ResolvedMealInfo } from "../entities/MessMeal";
 
 export interface GetMealQuery {
 	readonly mealDate: string;

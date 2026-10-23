@@ -3,10 +3,7 @@ import {
 	MessMealFactory,
 	isMealEnded,
 	determineNextUpcomingSlot,
-	type MealSlot,
-	type Vendor,
-	type MealChangeType,
-} from "../../../src/core/entities/MessMeal.js";
+} from "../../../src/core/entities/MessMeal";
 
 describe("MessMeal Domain & Time Helpers", () => {
 	describe("MessMealFactory", () => {

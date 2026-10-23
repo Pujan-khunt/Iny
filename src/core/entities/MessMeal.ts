@@ -3,6 +3,10 @@
  * Strictly adheres to Hexagonal purity invariant with zero external runtime dependencies.
  */
 
+import { getISTDateString, getISTMinutes } from "../utils/Temporal";
+
+export { getISTDateString };
+
 export type MealSlot = "breakfast" | "lunch" | "dinner";
 export type Vendor = "cheftalk_regular" | "cheftalk_jain" | "tcb";
 export type MealChangeType = "replacement" | "addition" | "cancellation";
@@ -91,41 +95,6 @@ export class MessMealFactory {
 }
 
 /**
- * Fixed IST (India Standard Time, UTC+05:30) offset in milliseconds.
- * India does not observe Daylight Saving Time (DST).
- */
-const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
-
-export function getISTDateParts(date: Date): {
-	year: number;
-	month: number;
-	day: number;
-	hours: number;
-	minutes: number;
-} {
-	const istDate = new Date(date.getTime() + IST_OFFSET_MS);
-	return {
-		year: istDate.getUTCFullYear(),
-		month: istDate.getUTCMonth() + 1,
-		day: istDate.getUTCDate(),
-		hours: istDate.getUTCHours(),
-		minutes: istDate.getUTCMinutes(),
-	};
-}
-
-export function getISTDateString(date: Date): string {
-	const { year, month, day } = getISTDateParts(date);
-	const mm = String(month).padStart(2, "0");
-	const dd = String(day).padStart(2, "0");
-	return `${year}-${mm}-${dd}`;
-}
-
-export function getISTMinutes(date: Date): number {
-	const { hours, minutes } = getISTDateParts(date);
-	return hours * 60 + minutes;
-}
-
-/**
  * Evaluates whether a requested meal slot has already concluded relative to now (IST).
  * Cutoffs: Breakfast 09:30 AM (570m), Lunch 02:30 PM (870m), Dinner 09:30 PM (1290m).
  */
@@ -158,13 +127,14 @@ export function determineNextUpcomingSlot(now: Date): {
 
 	if (currentMinutes <= 570) {
 		return { mealDate: todayIST, mealSlot: "breakfast" };
-	} else if (currentMinutes <= 870) {
-		return { mealDate: todayIST, mealSlot: "lunch" };
-	} else if (currentMinutes <= 1290) {
-		return { mealDate: todayIST, mealSlot: "dinner" };
-	} else {
-		// Post 21:30 IST rolls over to tomorrow breakfast
-		const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-		return { mealDate: getISTDateString(tomorrow), mealSlot: "breakfast" };
 	}
+	if (currentMinutes <= 870) {
+		return { mealDate: todayIST, mealSlot: "lunch" };
+	}
+	if (currentMinutes <= 1290) {
+		return { mealDate: todayIST, mealSlot: "dinner" };
+	}
+	// Post 21:30 IST rolls over to tomorrow breakfast
+	const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+	return { mealDate: getISTDateString(tomorrow), mealSlot: "breakfast" };
 }
