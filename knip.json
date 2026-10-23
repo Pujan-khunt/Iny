@@ -1,0 +1,6 @@
+{
+	"$schema": "https://unpkg.com/knip@5/schema.json",
+	"entry": ["src/index.ts", "scripts/**/*.ts", "drizzle.config.ts", "vitest.config.js"],
+	"project": ["src/**/*.ts"],
+	"ignoreExportsUsedInFile": true
+}
