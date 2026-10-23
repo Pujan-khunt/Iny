@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { DisplayMessCardTool } from "../../src/tools/DisplayMessCardTool.js";
-import { MessRepositoryPort } from "../../src/core/ports/MessRepositoryPort.js";
-import { ResolvedMealInfo, MessMeal } from "../../src/core/entities/MessMeal.js";
+import { DisplayMessCardTool } from "../../src/tools/DisplayMessCardTool";
+import { MessRepositoryPort } from "../../src/core/ports/MessRepositoryPort";
+import { ResolvedMealInfo, MessMeal } from "../../src/core/entities/MessMeal";
+import { defaultMessCardPresenter } from "../../src/adapters/outbound/mess/formatting/MessCardRenderer";
 
 describe("DisplayMessCardTool", () => {
 	let mockMessRepo: MessRepositoryPort;
@@ -56,7 +57,7 @@ describe("DisplayMessCardTool", () => {
 	});
 
 	it("exposes definition with correct name and schema", () => {
-		const tool = new DisplayMessCardTool(mockMessRepo);
+		const tool = new DisplayMessCardTool(mockMessRepo, defaultMessCardPresenter);
 		expect(tool.name).toBe("display_mess_card");
 		expect(tool.description).toContain("Serves 95% of standard meal and location lookups");
 		expect(tool.definition.name).toBe("display_mess_card");
@@ -66,7 +67,7 @@ describe("DisplayMessCardTool", () => {
 		it("executes Q1 when mealSlot is provided and vendor is omitted", async () => {
 			// 12:00 PM IST on 2026-10-08
 			const noonIST = new Date("2026-10-08T06:30:00Z");
-			const tool = new DisplayMessCardTool(mockMessRepo, () => noonIST);
+			const tool = new DisplayMessCardTool(mockMessRepo, defaultMessCardPresenter, () => noonIST);
 
 			const result = await tool.execute({
 				mealDate: "2026-10-08",
@@ -87,7 +88,11 @@ describe("DisplayMessCardTool", () => {
 		it("marks meal as (Ended) when queried after cutoff", async () => {
 			// 03:00 PM IST on 2026-10-08 (lunch ended at 02:30 PM)
 			const postLunchIST = new Date("2026-10-08T09:30:00Z");
-			const tool = new DisplayMessCardTool(mockMessRepo, () => postLunchIST);
+			const tool = new DisplayMessCardTool(
+				mockMessRepo,
+				defaultMessCardPresenter,
+				() => postLunchIST,
+			);
 
 			const result = await tool.execute({
 				mealDate: "2026-10-08",
@@ -102,7 +107,7 @@ describe("DisplayMessCardTool", () => {
 	describe("Quadrant 2: Single-Vendor Slot Detail", () => {
 		it("executes Q2 when both mealSlot and vendor are provided", async () => {
 			const noonIST = new Date("2026-10-08T06:30:00Z");
-			const tool = new DisplayMessCardTool(mockMessRepo, () => noonIST);
+			const tool = new DisplayMessCardTool(mockMessRepo, defaultMessCardPresenter, () => noonIST);
 
 			const result = await tool.execute({
 				mealDate: "2026-10-08",
@@ -125,7 +130,7 @@ describe("DisplayMessCardTool", () => {
 		it("resolves active slot to lunch when queried at 10:00 AM IST", async () => {
 			// 10:00 AM IST on 2026-10-08 (breakfast closed at 09:30, resolves to lunch)
 			const tenAmIST = new Date("2026-10-08T04:30:00Z");
-			const tool = new DisplayMessCardTool(mockMessRepo, () => tenAmIST);
+			const tool = new DisplayMessCardTool(mockMessRepo, defaultMessCardPresenter, () => tenAmIST);
 
 			const result = await tool.execute({});
 
@@ -140,7 +145,7 @@ describe("DisplayMessCardTool", () => {
 		it("rolls over to next day breakfast when queried at 10:00 PM IST", async () => {
 			// 10:00 PM IST on 2026-10-08 (dinner closed at 09:30 PM, rolls over to tomorrow breakfast)
 			const tenPmIST = new Date("2026-10-08T16:30:00Z");
-			const tool = new DisplayMessCardTool(mockMessRepo, () => tenPmIST);
+			const tool = new DisplayMessCardTool(mockMessRepo, defaultMessCardPresenter, () => tenPmIST);
 
 			await tool.execute({});
 
@@ -188,9 +193,13 @@ describe("DisplayMessCardTool", () => {
 				timingExtensions: [],
 				mealChanges: [],
 			};
-			(mockMessRepo.getResolvedMeal as any).mockResolvedValue(fullDayResolved);
+			vi.mocked(mockMessRepo.getResolvedMeal).mockResolvedValue(fullDayResolved);
 
-			const tool = new DisplayMessCardTool(mockMessRepo, () => morningIST);
+			const tool = new DisplayMessCardTool(
+				mockMessRepo,
+				defaultMessCardPresenter,
+				() => morningIST,
+			);
 			const result = await tool.execute({
 				vendor: "tcb",
 			});
@@ -210,7 +219,7 @@ describe("DisplayMessCardTool", () => {
 
 	describe("Fallback and Error Handling", () => {
 		it("returns non-terminal message when no meals are scheduled", async () => {
-			(mockMessRepo.getResolvedMeal as any).mockResolvedValue({
+			vi.mocked(mockMessRepo.getResolvedMeal).mockResolvedValue({
 				mealDate: "2026-10-08",
 				mealSlot: "lunch",
 				meals: [],
@@ -220,7 +229,7 @@ describe("DisplayMessCardTool", () => {
 			});
 
 			const noonIST = new Date("2026-10-08T06:30:00Z");
-			const tool = new DisplayMessCardTool(mockMessRepo, () => noonIST);
+			const tool = new DisplayMessCardTool(mockMessRepo, defaultMessCardPresenter, () => noonIST);
 
 			const result = await tool.execute({
 				mealDate: "2026-10-08",
@@ -232,7 +241,7 @@ describe("DisplayMessCardTool", () => {
 		});
 
 		it("returns error when invalid mealDate format is provided", async () => {
-			const tool = new DisplayMessCardTool(mockMessRepo);
+			const tool = new DisplayMessCardTool(mockMessRepo, defaultMessCardPresenter);
 			const result = await tool.execute({
 				mealDate: "08-10-2026",
 			});

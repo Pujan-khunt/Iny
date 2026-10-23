@@ -15,6 +15,7 @@ import { InMemoryToolRegistry } from "../../src/adapters/outbound/tool-registry/
 import { PostgresChatRepository } from "../../src/adapters/outbound/chat-repository/postgres/PostgresChatRepository";
 import { PostgresMessRepository } from "../../src/adapters/outbound/mess/postgres/PostgresMessRepository";
 import { PostgresMessStagingRepository } from "../../src/adapters/outbound/mess/postgres/PostgresMessStagingRepository";
+import { defaultMessCardPresenter } from "../../src/adapters/outbound/mess/formatting/MessCardRenderer";
 import { DisplayMessCardTool } from "../../src/tools/DisplayMessCardTool";
 import { QueryMessDetailsTool } from "../../src/tools/QueryMessDetailsTool";
 import { FoodAnnouncementsInboundAdapter } from "../../src/adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter";
@@ -239,7 +240,11 @@ describe("Mess System End-to-End Integration", () => {
 			// Register tools
 			registry = new InMemoryToolRegistry(mockLogger);
 			const fixedTime = new Date("2026-10-09T07:00:00Z"); // 12:30 PM IST
-			const displayTool = new DisplayMessCardTool(messRepository, () => fixedTime);
+			const displayTool = new DisplayMessCardTool(
+				messRepository,
+				defaultMessCardPresenter,
+				() => fixedTime,
+			);
 			const queryTool = new QueryMessDetailsTool(messRepository, () => fixedTime);
 			registry.register(displayTool);
 			registry.register(queryTool);
@@ -600,7 +605,11 @@ describe("Mess System End-to-End Integration", () => {
 			expect(resolved.timingExtensions[0].sourceMessageId).toBe(messageId);
 
 			const fixedTime = new Date(`${TEST_DATE}T07:00:00Z`); // 12:30 PM IST on TEST_DATE
-			const displayTool = new DisplayMessCardTool(messRepository, () => fixedTime);
+			const displayTool = new DisplayMessCardTool(
+				messRepository,
+				defaultMessCardPresenter,
+				() => fixedTime,
+			);
 			const cardResult = await displayTool.execute({
 				mealDate: TEST_DATE,
 				mealSlot: "lunch",

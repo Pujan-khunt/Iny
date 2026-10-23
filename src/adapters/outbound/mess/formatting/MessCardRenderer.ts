@@ -6,7 +6,8 @@ import {
 	MessMealLocationDetail,
 	ResolvedMealInfo,
 	isMealEnded,
-} from "../../../../core/entities/MessMeal.js";
+} from "../../../../core/entities/MessMeal";
+import { MessCardPresenterPort } from "../../../../core/ports/MessCardPresenterPort";
 
 export const VENDOR_DISPLAY_NAMES: Record<Vendor, string> = {
 	cheftalk_regular: "Cheftalk Regular",
@@ -353,3 +354,9 @@ export function renderSingleVendorFullDayDigest(
 
 	return sections.join("\n\n");
 }
+
+export const defaultMessCardPresenter: MessCardPresenterPort = {
+	renderMultiVendorSlotDigest,
+	renderSingleVendorSlotDetail,
+	renderSingleVendorFullDayDigest,
+};

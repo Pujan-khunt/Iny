@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { BaseTool } from "./BaseTool.js";
-import { ToolResult } from "../core/ports/ToolRegistryPort.js";
-import { MessRepositoryPort } from "../core/ports/MessRepositoryPort.js";
-import { getISTDateString } from "../core/entities/MessMeal.js";
+import { BaseTool } from "./BaseTool";
+import { ToolResult } from "../core/ports/ToolRegistryPort";
+import { MessRepositoryPort } from "../core/ports/MessRepositoryPort";
+import { getISTDateString } from "../core/entities/MessMeal";
 
-export const queryMessDetailsSchema = z.object({
+const queryMessDetailsSchema = z.object({
 	mealDate: z
 		.string()
 		.regex(/^\d{4}-\d{2}-\d{2}$/, "Must be ISO YYYY-MM-DD")
@@ -22,9 +22,10 @@ export const queryMessDetailsSchema = z.object({
 		.describe("Optional vendor caterer: cheftalk_regular, cheftalk_jain, or tcb."),
 });
 
+type QueryMessDetailsInput = z.infer<typeof queryMessDetailsSchema>;
+
 /**
- * Conversational tool serving analytical or specific dietary questions
- * (e.g. "does lunch have paneer?", "who is serving ice cream?").
+ * Conversational tool serving analytical or specific dietary questions.
  * Returns raw structured JSON of ResolvedMealInfo with isTerminal: false.
  */
 export class QueryMessDetailsTool extends BaseTool<typeof queryMessDetailsSchema> {
@@ -41,7 +42,7 @@ export class QueryMessDetailsTool extends BaseTool<typeof queryMessDetailsSchema
 		super();
 	}
 
-	protected async run(args: z.infer<typeof queryMessDetailsSchema>): Promise<ToolResult> {
+	protected async run(args: QueryMessDetailsInput): Promise<ToolResult> {
 		const now = this.getCurrentTime();
 		const targetDate = args.mealDate ?? getISTDateString(now);
 

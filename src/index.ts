@@ -13,6 +13,7 @@ import * as messSchema from "./adapters/outbound/mess/postgres/schema";
 import { PostgresChatRepository } from "./adapters/outbound/chat-repository/postgres/PostgresChatRepository";
 import { PostgresMessRepository } from "./adapters/outbound/mess/postgres/PostgresMessRepository";
 import { PostgresMessStagingRepository } from "./adapters/outbound/mess/postgres/PostgresMessStagingRepository";
+import { defaultMessCardPresenter } from "./adapters/outbound/mess/formatting/MessCardRenderer";
 import { DisplayMessCardTool } from "./tools/DisplayMessCardTool";
 import { QueryMessDetailsTool } from "./tools/QueryMessDetailsTool";
 import { runDatabaseMigrations } from "./adapters/outbound/chat-repository/postgres/migrator";
@@ -55,7 +56,7 @@ const messStagingRepository = new PostgresMessStagingRepository(
 	logger.child({ module: "mess-staging-repository" }),
 );
 
-const displayMessCardTool = new DisplayMessCardTool(messRepository);
+const displayMessCardTool = new DisplayMessCardTool(messRepository, defaultMessCardPresenter);
 const queryMessDetailsTool = new QueryMessDetailsTool(messRepository);
 
 registry.register(displayMessCardTool);

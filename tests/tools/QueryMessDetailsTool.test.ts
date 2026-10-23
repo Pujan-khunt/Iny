@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { QueryMessDetailsTool } from "../../src/tools/QueryMessDetailsTool.js";
-import { MessRepositoryPort } from "../../src/core/ports/MessRepositoryPort.js";
-import { ResolvedMealInfo } from "../../src/core/entities/MessMeal.js";
+import { QueryMessDetailsTool } from "../../src/tools/QueryMessDetailsTool";
+import { MessRepositoryPort } from "../../src/core/ports/MessRepositoryPort";
+import { ResolvedMealInfo } from "../../src/core/entities/MessMeal";
 
 describe("QueryMessDetailsTool", () => {
 	let mockMessRepo: MessRepositoryPort;

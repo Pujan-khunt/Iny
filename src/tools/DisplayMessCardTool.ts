@@ -1,20 +1,17 @@
 import { z } from "zod";
-import { BaseTool } from "./BaseTool.js";
-import { ToolResult } from "../core/ports/ToolRegistryPort.js";
-import { MessRepositoryPort } from "../core/ports/MessRepositoryPort.js";
+import { BaseTool } from "./BaseTool";
+import { ToolResult } from "../core/ports/ToolRegistryPort";
+import { MessRepositoryPort } from "../core/ports/MessRepositoryPort";
+import { MessCardPresenterPort } from "../core/ports/MessCardPresenterPort";
 import {
 	MealSlot,
+	Vendor,
 	determineNextUpcomingSlot,
 	getISTDateString,
 	isMealEnded,
-} from "../core/entities/MessMeal.js";
-import {
-	renderMultiVendorSlotDigest,
-	renderSingleVendorSlotDetail,
-	renderSingleVendorFullDayDigest,
-} from "../adapters/outbound/mess/formatting/MessCardRenderer.js";
+} from "../core/entities/MessMeal";
 
-export const displayMessCardSchema = z.object({
+const displayMessCardSchema = z.object({
 	mealDate: z
 		.string()
 		.regex(/^\d{4}-\d{2}-\d{2}$/, "Must be ISO YYYY-MM-DD")
@@ -40,6 +37,8 @@ export const displayMessCardSchema = z.object({
 		),
 });
 
+type DisplayMessCardInput = z.infer<typeof displayMessCardSchema>;
+
 /**
  * Terminal presentation tool serving 95% of standard meal and location lookups.
  * Routes dynamically across 4 presentation quadrants:
@@ -55,57 +54,30 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 
 	constructor(
 		private readonly messRepository: MessRepositoryPort,
+		private readonly presenter: MessCardPresenterPort,
 		private readonly getCurrentTime: () => Date = () => new Date(),
 	) {
 		super();
 	}
 
-	protected async run(args: z.infer<typeof displayMessCardSchema>): Promise<ToolResult> {
+	protected async run(args: DisplayMessCardInput): Promise<ToolResult> {
 		const now = this.getCurrentTime();
-		const { mealDate, mealSlot, vendor } = args;
-
-		// Quadrant 4: Single-Vendor Full-Day Digest (Slot Omitted, Vendor Provided)
-		if (!mealSlot && vendor) {
-			const targetDate = mealDate ?? getISTDateString(now);
-			const resolved = await this.messRepository.getResolvedMeal({
-				mealDate: targetDate,
-				vendor,
-				mealSlot: undefined,
-			});
-
-			if (resolved.meals.length === 0) {
-				return {
-					content: "No menu scheduled for the requested meal.",
-					isTerminal: false,
-				};
-			}
-
-			const rendered = renderSingleVendorFullDayDigest(resolved, vendor, now);
-			return {
-				content: rendered,
-				isTerminal: true,
-			};
+		if (!args.mealSlot && args.vendor) {
+			return this.handleFullDayDigest(args.mealDate, args.vendor, now);
 		}
+		return this.handleSlotQuery(args, now);
+	}
 
-		// Quadrants 1, 2, 3: Single Slot Queries
-		let targetDate: string;
-		let targetSlot: MealSlot;
-
-		if (!mealSlot) {
-			// Quadrant 3: Next upcoming meal rollover
-			const upcoming = determineNextUpcomingSlot(now);
-			targetDate = mealDate ?? upcoming.mealDate;
-			targetSlot = upcoming.mealSlot;
-		} else {
-			// Quadrants 1 & 2: Slot explicitly specified
-			targetDate = mealDate ?? getISTDateString(now);
-			targetSlot = mealSlot;
-		}
-
+	private async handleFullDayDigest(
+		mealDate: string | undefined,
+		vendor: Vendor,
+		now: Date,
+	): Promise<ToolResult> {
+		const targetDate = mealDate ?? getISTDateString(now);
 		const resolved = await this.messRepository.getResolvedMeal({
 			mealDate: targetDate,
-			mealSlot: targetSlot,
 			vendor,
+			mealSlot: undefined,
 		});
 
 		if (resolved.meals.length === 0) {
@@ -115,7 +87,24 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 			};
 		}
 
-		if (vendor && !resolved.meals.some((m) => m.vendor === vendor)) {
+		return {
+			content: this.presenter.renderSingleVendorFullDayDigest(resolved, vendor, now),
+			isTerminal: true,
+		};
+	}
+
+	private async handleSlotQuery(args: DisplayMessCardInput, now: Date): Promise<ToolResult> {
+		const { targetDate, targetSlot } = this.resolveSlotTarget(args, now);
+		const resolved = await this.messRepository.getResolvedMeal({
+			mealDate: targetDate,
+			mealSlot: targetSlot,
+			vendor: args.vendor,
+		});
+
+		if (
+			resolved.meals.length === 0 ||
+			(args.vendor && !resolved.meals.some((m) => m.vendor === args.vendor))
+		) {
 			return {
 				content: "No menu scheduled for the requested meal.",
 				isTerminal: false,
@@ -123,19 +112,30 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 		}
 
 		const ended = isMealEnded(targetDate, targetSlot, now);
-
-		let rendered: string;
-		if (vendor) {
-			// Quadrant 2: Single-Vendor Slot Detail
-			rendered = renderSingleVendorSlotDetail(resolved, vendor, ended);
-		} else {
-			// Quadrant 1 & 3: Multi-Vendor Slot Digest
-			rendered = renderMultiVendorSlotDigest(resolved, ended);
-		}
+		const content = args.vendor
+			? this.presenter.renderSingleVendorSlotDetail(resolved, args.vendor, ended)
+			: this.presenter.renderMultiVendorSlotDigest(resolved, ended);
 
 		return {
-			content: rendered,
+			content,
 			isTerminal: true,
+		};
+	}
+
+	private resolveSlotTarget(
+		args: DisplayMessCardInput,
+		now: Date,
+	): { targetDate: string; targetSlot: MealSlot } {
+		if (!args.mealSlot) {
+			const upcoming = determineNextUpcomingSlot(now);
+			return {
+				targetDate: args.mealDate ?? upcoming.mealDate,
+				targetSlot: upcoming.mealSlot,
+			};
+		}
+		return {
+			targetDate: args.mealDate ?? getISTDateString(now),
+			targetSlot: args.mealSlot,
 		};
 	}
 }
