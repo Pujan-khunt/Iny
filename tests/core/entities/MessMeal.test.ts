@@ -1,75 +1,7 @@
 import { describe, it, expect } from "vitest";
-import {
-	MessMealFactory,
-	isMealEnded,
-	determineNextUpcomingSlot,
-} from "../../../src/core/entities/MessMeal";
+import { isMealEnded, determineNextUpcomingSlot } from "../../../src/core/entities/MessMeal";
 
 describe("MessMeal Domain & Time Helpers", () => {
-	describe("MessMealFactory", () => {
-		it("validates ISO date format in MessMealFactory", () => {
-			expect(() =>
-				MessMealFactory.create({
-					mealDate: "08-10-2026",
-					mealSlot: "lunch",
-					vendor: "cheftalk_regular",
-					items: ["Rice"],
-				}),
-			).toThrow(/Invalid mealDate format/);
-
-			expect(() =>
-				MessMealFactory.create({
-					mealDate: "invalid-date",
-					mealSlot: "lunch",
-					vendor: "cheftalk_regular",
-					items: ["Rice"],
-				}),
-			).toThrow(/Invalid mealDate format/);
-
-			expect(() =>
-				MessMealFactory.create({
-					mealDate: "2026/10/08",
-					mealSlot: "lunch",
-					vendor: "cheftalk_regular",
-					items: ["Rice"],
-				}),
-			).toThrow(/Invalid mealDate format/);
-
-			const meal = MessMealFactory.create({
-				mealDate: "2026-10-08",
-				mealSlot: "lunch",
-				vendor: "cheftalk_regular",
-				items: ["Rice", "Dal"],
-			});
-			expect(meal.mealDate).toBe("2026-10-08");
-			expect(meal.mealSlot).toBe("lunch");
-			expect(meal.vendor).toBe("cheftalk_regular");
-			expect(meal.items).toEqual(["Rice", "Dal"]);
-			expect(meal.id).toBeDefined();
-			expect(typeof meal.id).toBe("string");
-			expect(meal.ingestedAt).toBeInstanceOf(Date);
-			expect(meal.sourceMessageId).toBeNull();
-		});
-
-		it("preserves provided id, sourceMessageId, and ingestedAt", () => {
-			const fixedDate = new Date("2026-10-08T12:00:00Z");
-			const meal = MessMealFactory.create({
-				id: "custom-uuid",
-				mealDate: "2026-10-08",
-				mealSlot: "dinner",
-				vendor: "tcb",
-				items: ["Biryani"],
-				sourceMessageId: "msg-wamid-123",
-				ingestedAt: fixedDate,
-			});
-
-			expect(meal.id).toBe("custom-uuid");
-			expect(meal.sourceMessageId).toBe("msg-wamid-123");
-			expect(meal.ingestedAt).toBe(fixedDate);
-			expect(Object.isFrozen(meal.items)).toBe(true);
-		});
-	});
-
 	describe("isMealEnded", () => {
 		it("determines isMealEnded correctly based on IST cutoffs", () => {
 			// 2026-10-08 14:31:00 IST -> Lunch ended

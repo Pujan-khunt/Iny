@@ -8,8 +8,8 @@ import {
 	renderActiveUpdatesBanner,
 	renderTimingExtensionsSection,
 	renderLocationSection,
-} from "../../../../../src/adapters/outbound/mess/formatting/MessCardRenderer.js";
-import { ResolvedMealInfo, MessMeal } from "../../../../../src/core/entities/MessMeal.js";
+} from "../../../../../src/adapters/outbound/mess/formatting/MessCardRenderer";
+import { ResolvedMealInfo, MessMeal } from "../../../../../src/core/entities/MessMeal";
 
 describe("MessCardRenderer & WhatsApp Formatting", () => {
 	describe("sanitizeWhatsAppText", () => {

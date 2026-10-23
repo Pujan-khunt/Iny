@@ -1,10 +1,10 @@
 import readline from "node:readline/promises";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { loadConfig } from "../src/config.js";
-import { PinoLoggerAdapter } from "../src/adapters/outbound/logger/PinoLoggerAdapter.js";
-import { PostgresMessStagingRepository } from "../src/adapters/outbound/mess/postgres/PostgresMessStagingRepository.js";
-import * as messSchema from "../src/adapters/outbound/mess/postgres/schema.js";
+import { loadConfig } from "../src/config";
+import { PinoLoggerAdapter } from "../src/adapters/outbound/logger/PinoLoggerAdapter";
+import { PostgresMessStagingRepository } from "../src/adapters/outbound/mess/postgres/PostgresMessStagingRepository";
+import * as messSchema from "../src/adapters/outbound/mess/postgres/schema";
 
 export interface ResetMessIo {
 	print?: (message: string) => void;

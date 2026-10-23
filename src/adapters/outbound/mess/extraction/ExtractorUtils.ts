@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
-import { LLMError, LLMResponseError } from "../../../../core/errors/LLMErrors.js";
-import { translateAndThrowDeepseekError } from "../../llm/DeepseekErrorTranslator.js";
+import { LLMError, LLMResponseError } from "../../../../core/errors/LLMErrors";
+import { translateAndThrowDeepseekError } from "../../llm/DeepseekErrorTranslator";
 
 export function cleanJsonResponse(raw: string): string {
 	const trimmed = raw.trim();

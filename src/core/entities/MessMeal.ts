@@ -67,33 +67,6 @@ export interface ResolvedMealInfo {
 	readonly mealChanges: readonly MessMealChange[];
 }
 
-export class MessMealFactory {
-	private constructor() {}
-
-	static create(params: {
-		id?: string;
-		mealDate: string;
-		mealSlot: MealSlot;
-		vendor: Vendor;
-		items: readonly string[];
-		sourceMessageId?: string | null;
-		ingestedAt?: Date;
-	}): MessMeal {
-		if (!/^\d{4}-\d{2}-\d{2}$/.test(params.mealDate)) {
-			throw new Error(`Invalid mealDate format: ${params.mealDate}. Expected YYYY-MM-DD.`);
-		}
-		return {
-			id: params.id ?? crypto.randomUUID(),
-			mealDate: params.mealDate,
-			mealSlot: params.mealSlot,
-			vendor: params.vendor,
-			items: Object.freeze([...params.items]),
-			sourceMessageId: params.sourceMessageId ?? null,
-			ingestedAt: params.ingestedAt ?? new Date(),
-		};
-	}
-}
-
 /**
  * Evaluates whether a requested meal slot has already concluded relative to now (IST).
  * Cutoffs: Breakfast 09:30 AM (570m), Lunch 02:30 PM (870m), Dinner 09:30 PM (1290m).

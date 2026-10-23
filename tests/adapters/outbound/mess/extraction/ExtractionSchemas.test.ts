@@ -6,7 +6,7 @@ import {
 	ExtractedMealChangeSchema,
 	ExtractedMealSwapSchema,
 	ExtractedCompositeAnnouncementSchema,
-} from "../../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas.js";
+} from "../../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
 
 describe("Extraction Schemas", () => {
 	describe("ExtractedWeeklyMenuSchema", () => {

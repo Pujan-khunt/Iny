@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import OpenAI from "openai";
-import { DeepseekVisionExtractor } from "../../../../../src/adapters/outbound/mess/extraction/DeepseekVisionExtractor.js";
-import { DeepseekTextExtractor } from "../../../../../src/adapters/outbound/mess/extraction/DeepseekTextExtractor.js";
+import { DeepseekVisionExtractor } from "../../../../../src/adapters/outbound/mess/extraction/DeepseekVisionExtractor";
+import { DeepseekTextExtractor } from "../../../../../src/adapters/outbound/mess/extraction/DeepseekTextExtractor";
 import {
 	LLMError,
 	LLMRateLimitError,
 	LLMResponseError,
 	LLMServerOverloadedError,
-} from "../../../../../src/core/errors/LLMErrors.js";
+} from "../../../../../src/core/errors/LLMErrors";
 
 function createMockOpenAI(createResponseFn: (...args: any[]) => any): OpenAI {
 	return {

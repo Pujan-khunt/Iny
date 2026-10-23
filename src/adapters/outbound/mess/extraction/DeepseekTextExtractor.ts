@@ -8,13 +8,13 @@ import {
 	ExtractedMealChangeSchema,
 	ExtractedCompositeAnnouncement,
 	ExtractedCompositeAnnouncementSchema,
-} from "./ExtractionSchemas.js";
+} from "./ExtractionSchemas";
 import {
 	cleanJsonResponse,
 	classifyAndThrowExtractorError,
 	resolveOpenAiClient,
-} from "./ExtractorUtils.js";
-import { getISTDateString } from "../../../../core/entities/MessMeal.js";
+} from "./ExtractorUtils";
+import { getISTDateString } from "../../../../core/entities/MessMeal";
 
 export interface DeepseekTextExtractorOptions {
 	client?: OpenAI;

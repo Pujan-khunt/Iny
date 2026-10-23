@@ -1,10 +1,10 @@
 import OpenAI from "openai";
-import { ExtractedWeeklyMenu, ExtractedWeeklyMenuSchema } from "./ExtractionSchemas.js";
+import { ExtractedWeeklyMenu, ExtractedWeeklyMenuSchema } from "./ExtractionSchemas";
 import {
 	cleanJsonResponse,
 	classifyAndThrowExtractorError,
 	resolveOpenAiClient,
-} from "./ExtractorUtils.js";
+} from "./ExtractorUtils";
 
 export interface DeepseekVisionExtractorOptions {
 	client?: OpenAI;

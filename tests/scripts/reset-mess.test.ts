@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { executeResetWithGuards } from "../../scripts/reset-mess.js";
+import { executeResetWithGuards } from "../../scripts/reset-mess";
 
 describe("Development Reset Utility Guards", () => {
 	const originalEnv = process.env.NODE_ENV;

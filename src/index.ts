@@ -28,16 +28,9 @@ import { WhatsAppInboundAdapter } from "./adapters/inbound/whatsapp/WhatsAppInbo
 import { FoodAnnouncementsInboundAdapter } from "./adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter";
 import { ChatRepositoryContextRetrievalAdapter } from "./adapters/outbound/context-retrieval/ChatRepositoryContextRetrievalAdapter";
 
-// Load & validate application configuration from environment
 const config = loadConfig();
-
-// 1. Logger
 const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
-
-// 2. Outbound tool registry & tools
 const registry = new InMemoryToolRegistry(logger);
-
-// 3. PostgreSQL Connection Pool & Drizzle ORM
 const sqlClient = postgres(config.DATABASE_URL, {
 	max: config.DB_MAX_CONNECTIONS,
 	idle_timeout: 20,
@@ -46,52 +39,38 @@ const sqlClient = postgres(config.DATABASE_URL, {
 const db = drizzle(sqlClient, {
 	schema: { ...chatSchema, ...whatsappSchema, ...accessControlSchema, ...messSchema },
 });
-
 const chatRepository = new PostgresChatRepository(db, logger);
-
-// Mess subsystem repositories & tools
 const messRepository = new PostgresMessRepository(db, logger.child({ module: "mess-repository" }));
 const messStagingRepository = new PostgresMessStagingRepository(
 	db,
 	logger.child({ module: "mess-staging-repository" }),
 );
-
 const displayMessCardTool = new DisplayMessCardTool(messRepository, defaultMessCardPresenter);
 const queryMessDetailsTool = new QueryMessDetailsTool(messRepository);
-
 registry.register(displayMessCardTool);
 registry.register(queryMessDetailsTool);
 
-// 4. Access control
 const accessControl = new PostgresAccessControlAdapter(
 	db,
 	logger.child({ module: "access-control" }),
 );
-
-// 5. LLM Adapter
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
 	baseURL: config.DEEPSEEK_BASE_URL,
 	model: config.DEEPSEEK_MODEL,
 	logger,
 });
-
-// 6. WhatsApp Infrastructure & Message Sender
 const sessionManager = new PostgresBaileysSessionManager(db, logger, "default");
 const pairingManager = new BaileysPairingManager(logger);
 const connectionManager = new BaileysConnectionManager(logger, pairingManager, sessionManager);
 const messageSender = new BaileysMessageSenderAdapter(connectionManager, logger);
 
-// 7. Autonomous AgentLoop
 const agentLoop = new AgentLoop(deepseekAdapter, registry, {
 	maxToolIterations: config.MAX_TOOL_ITERATIONS,
 	systemPrompt: config.SYSTEM_PROMPT,
 });
-
-// 8. Context Retrieval & Orchestrating ProcessIncomingMessage use case
 const contextRetrieval = new ChatRepositoryContextRetrievalAdapter(chatRepository, logger, {
 	maxTurns: config.MAX_HISTORY_TURNS,
 });
-
 const useCase = new ProcessIncomingMessage(
 	messageSender,
 	chatRepository,
@@ -100,20 +79,14 @@ const useCase = new ProcessIncomingMessage(
 	registry,
 	logger,
 );
-
-// 9. Inbound WhatsApp Driving Adapter
-const filter = new BaileysMessageFilter();
-const parser = new BaileysMessageParser();
 const inboundAdapter = new WhatsAppInboundAdapter(
 	useCase,
 	connectionManager,
 	accessControl,
-	filter,
-	parser,
+	new BaileysMessageFilter(),
+	new BaileysMessageParser(),
 	logger,
 );
-
-// 10. Inbound Food Announcements Driving Adapter
 const foodAnnouncementsAdapter = new FoodAnnouncementsInboundAdapter({
 	targetGroupJid: config.FOOD_ANNOUNCEMENTS_GROUP_JID,
 	stagingRepository: messStagingRepository,
@@ -121,77 +94,53 @@ const foodAnnouncementsAdapter = new FoodAnnouncementsInboundAdapter({
 	logger: logger.child({ module: "food-announcements" }),
 });
 
-// Graceful Shutdown
 let isShuttingDown = false;
-
 async function shutdown(signal: string, exitCode = 0) {
-	if (isShuttingDown) {
-		return;
-	}
+	if (isShuttingDown) return;
 	isShuttingDown = true;
-
 	logger.info(`Received ${signal}. Closing connections gracefully...`);
-	try {
-		connectionManager.disconnect();
-	} catch (err) {
-		logger.error("Error closing WhatsApp connection during shutdown", err);
-	}
-	try {
-		await sqlClient.end({ timeout: 5 });
-		logger.info("Database connection pool closed");
-	} catch (err) {
-		logger.error("Error closing database connection pool", err);
-	}
+	const safe = (p: () => unknown, msg: string) =>
+		Promise.resolve()
+			.then(p)
+			.catch((e) => logger.error(msg, e));
+	await Promise.all([
+		safe(() => connectionManager.disconnect(), "Error closing WhatsApp connection"),
+		safe(() => sqlClient.end({ timeout: 5 }), "Error closing database connection pool"),
+	]);
 	process.exit(exitCode);
 }
 
+const handleFatal = (name: string) => (err: unknown) => {
+	logger.fatal(name, err instanceof Error ? err : new Error(String(err)));
+	shutdown(name, 1);
+};
 process.on("SIGINT", () => shutdown("SIGINT", 0));
 process.on("SIGTERM", () => shutdown("SIGTERM", 0));
+process.on("uncaughtException", handleFatal("Uncaught exception"));
+process.on("unhandledRejection", handleFatal("Unhandled promise rejection"));
 
-process.on("uncaughtException", (err) => {
-	logger.fatal("Uncaught exception", err);
-	shutdown("uncaughtException", 1);
-});
-
-process.on("unhandledRejection", (reason) => {
-	const error = reason instanceof Error ? reason : new Error(String(reason));
-	logger.fatal("Unhandled promise rejection", error);
-	shutdown("unhandledRejection", 1);
-});
-
-// Startup Sequence
 async function start() {
 	await runDatabaseMigrations(db, logger);
-
-	// Seed initial admin users from configuration if provided
 	if (config.ALLOWED_USERS.length > 0) {
-		const seedEntries = config.ALLOWED_USERS.map((phoneNumber, index) => ({
-			phoneNumber,
-			name: config.ALLOWED_USER_NAMES[index] || null,
-		}));
-		await accessControl.seedUsers(seedEntries);
-	}
-
-	// Fail-fast safety check: ensure at least one active user exists
-	const activeUserCount = await accessControl.countActiveUsers();
-	if (activeUserCount === 0) {
-		logger.fatal(
-			"No active authorized users found in PostgreSQL and no ALLOWED_USERS provided in .env. Iny cannot start.",
+		await accessControl.seedUsers(
+			config.ALLOWED_USERS.map((phoneNumber, index) => ({
+				phoneNumber,
+				name: config.ALLOWED_USER_NAMES[index] || null,
+			})),
 		);
+	}
+	const count = await accessControl.countActiveUsers();
+	if (count === 0) {
+		logger.fatal("No active authorized users found. Iny cannot start.");
 		await sqlClient.end({ timeout: 5 });
 		process.exit(1);
 	}
-	logger.info("Access control initialized", { activeUsers: activeUserCount });
-
+	logger.info("Access control initialized", { activeUsers: count });
 	foodAnnouncementsAdapter.start();
 	inboundAdapter.start();
-
 	logger.info("Starting Iny WhatsApp connection...");
 	const session = await sessionManager.initSession();
-	await connectionManager.start({
-		session,
-		botPhoneNumber: config.BOT_PHONE_NUMBER,
-	});
+	await connectionManager.start({ session, botPhoneNumber: config.BOT_PHONE_NUMBER });
 }
 
 start().catch((err) => {

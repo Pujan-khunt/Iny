@@ -1,12 +1,12 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { loadConfig } from "../src/config.js";
-import { PinoLoggerAdapter } from "../src/adapters/outbound/logger/PinoLoggerAdapter.js";
-import { PostgresBaileysSessionManager } from "../src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.js";
-import { BaileysPairingManager } from "../src/adapters/outbound/whatsapp/BaileysPairingManager.js";
-import { BaileysConnectionManager } from "../src/adapters/outbound/whatsapp/BaileysConnectionManager.js";
-import * as whatsappSchema from "../src/adapters/outbound/whatsapp/postgres/schema.js";
-import { LoggerPort } from "../src/core/ports/LoggerPort.js";
+import { loadConfig } from "../src/config";
+import { PinoLoggerAdapter } from "../src/adapters/outbound/logger/PinoLoggerAdapter";
+import { PostgresBaileysSessionManager } from "../src/adapters/outbound/whatsapp/PostgresBaileysSessionManager";
+import { BaileysPairingManager } from "../src/adapters/outbound/whatsapp/BaileysPairingManager";
+import { BaileysConnectionManager } from "../src/adapters/outbound/whatsapp/BaileysConnectionManager";
+import * as whatsappSchema from "../src/adapters/outbound/whatsapp/postgres/schema";
+import { LoggerPort } from "../src/core/ports/LoggerPort";
 
 // ============================================================================
 // 1. CONFIGURATION: You can either hardcode the invite link/code here or
