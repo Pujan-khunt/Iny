@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { newDb } from "pg-mem";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { PostgresMessRepository } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessRepository.js";
-import { LoggerPort } from "../../../../../src/core/ports/LoggerPort.js";
+import { PostgresMessRepository } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessRepository";
+import { LoggerPort } from "../../../../../src/core/ports/LoggerPort";
 
 describe("PostgresMessRepository", () => {
 	let db: NodePgDatabase;

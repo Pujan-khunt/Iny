@@ -2,15 +2,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { newDb } from "pg-mem";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq, and } from "drizzle-orm";
-import { PostgresMessStagingRepository } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessStagingRepository.js";
+import { PostgresMessStagingRepository } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessStagingRepository";
 import {
 	messMeals,
 	messMealLocationDetails,
 	messMealTimingExtensions,
 	messMealChanges,
 	whatsappGroupFoodAnnouncementsMessages,
-} from "../../../../../src/adapters/outbound/mess/postgres/schema.js";
-import { LoggerPort } from "../../../../../src/core/ports/LoggerPort.js";
+} from "../../../../../src/adapters/outbound/mess/postgres/schema";
+import { LoggerPort } from "../../../../../src/core/ports/LoggerPort";
 
 describe("PostgresMessStagingRepository & Surgical Undo", () => {
 	let db: NodePgDatabase;

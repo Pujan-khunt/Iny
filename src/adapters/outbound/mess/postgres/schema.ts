@@ -164,6 +164,6 @@ export type NewWhatsappGroupFoodAnnouncementsMessageRow =
 	typeof whatsappGroupFoodAnnouncementsMessages.$inferInsert;
 
 // Compile-time static assertions ensuring Drizzle schemas match core domain entity types
-type _AssertMealSlot = MealSlot extends DbMealSlot ? true : never;
-type _AssertVendor = Vendor extends DbVendor ? true : never;
-type _AssertChangeType = MealChangeType extends DbMealChangeType ? true : never;
+export type _AssertMealSlot = MealSlot extends DbMealSlot ? true : never;
+export type _AssertVendor = Vendor extends DbVendor ? true : never;
+export type _AssertChangeType = MealChangeType extends DbMealChangeType ? true : never;
