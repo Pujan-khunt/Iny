@@ -14,19 +14,10 @@ export interface FoodAnnouncementsInboundAdapterOptions {
 	targetGroupJid: string;
 	stagingRepository: MessStagingRepositoryPort;
 	connectionManager: BaileysConnectionManager;
-	logger?: LoggerPort;
+	logger: LoggerPort;
 	downloadMedia?: typeof downloadMediaMessage;
 	payloadParser?: FoodAnnouncementPayloadParser;
 }
-
-const noopLogger: LoggerPort = {
-	debug: () => {},
-	info: () => {},
-	warn: () => {},
-	error: () => {},
-	fatal: () => {},
-	child: () => noopLogger,
-};
 
 /**
  * Inbound adapter that listens for broadcast messages from the official Food Announcements
@@ -47,7 +38,7 @@ export class FoodAnnouncementsInboundAdapter {
 		this.targetGroupJid = options.targetGroupJid;
 		this.stagingRepository = options.stagingRepository;
 		this.connectionManager = options.connectionManager;
-		this.logger = options.logger ?? noopLogger;
+		this.logger = options.logger;
 		this.downloadMedia = options.downloadMedia ?? downloadMediaMessage;
 		this.payloadParser = options.payloadParser ?? new FoodAnnouncementPayloadParser(this.logger);
 	}

@@ -435,11 +435,12 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 		expect(mockStagingRepo.stageMessage).toHaveBeenCalledTimes(2);
 	});
 
-	it("works with default logger and default downloadMedia without throwing", async () => {
+	it("works with default downloadMedia without throwing", async () => {
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
 			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
+			logger: mockLogger,
 		});
 
 		adapter.start();
