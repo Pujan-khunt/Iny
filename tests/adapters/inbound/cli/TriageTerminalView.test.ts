@@ -100,27 +100,6 @@ describe("TriageTerminalView", () => {
 	});
 
 	it("renders weekly menu extraction preview with 21 slots matching Spec 4.4", () => {
-		const weeklyMenu: ExtractedWeeklyMenu = {
-			vendor: "cheftalk_regular",
-			meals: [
-				{
-					mealDate: "2026-10-04",
-					mealSlot: "breakfast",
-					items: ["Aloo Paratha", "Curd"],
-				},
-				{
-					mealDate: "2026-10-04",
-					mealSlot: "lunch",
-					items: ["Paneer Butter Masala", "Rice"],
-				},
-				{
-					mealDate: "2026-10-04",
-					mealSlot: "dinner",
-					items: ["Dal Fry", "Roti"],
-				},
-			] as any,
-		};
-		// Pad to 21 slots for testing
 		const slots = ["breakfast", "lunch", "dinner"] as const;
 		const days = [
 			"2026-10-04",
@@ -131,16 +110,36 @@ describe("TriageTerminalView", () => {
 			"2026-10-09",
 			"2026-10-10",
 		];
-		weeklyMenu.meals = [];
+		const meals: ExtractedWeeklyMenu["meals"] = [];
 		for (const d of days) {
 			for (const s of slots) {
-				weeklyMenu.meals.push({
+				meals.push({
 					mealDate: d,
 					mealSlot: s,
 					items: ["Item 1", "Item 2"],
 				});
 			}
 		}
+		meals[0] = {
+			mealDate: "2026-10-04",
+			mealSlot: "breakfast",
+			items: ["Aloo Paratha", "Curd"],
+		};
+		meals[1] = {
+			mealDate: "2026-10-04",
+			mealSlot: "lunch",
+			items: ["Paneer Butter Masala", "Rice"],
+		};
+		meals[2] = {
+			mealDate: "2026-10-04",
+			mealSlot: "dinner",
+			items: ["Dal Fry", "Roti"],
+		};
+
+		const weeklyMenu: ExtractedWeeklyMenu = {
+			vendor: "cheftalk_regular",
+			meals,
+		};
 
 		const preview = view.renderWeeklyMenuPreview(weeklyMenu);
 		expect(preview).toContain("WEEKLY MENU EXTRACTION PREVIEW");
