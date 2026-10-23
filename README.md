@@ -22,12 +22,14 @@ Iny is a modular AI assistant engine. Instead of juggling multiple disconnected 
 ### Installation
 
 1. Clone the repository:
+
    ```bash
    git clone git@github.com:Pujan-khunt/Iny.git
    cd Iny
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```

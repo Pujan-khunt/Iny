@@ -188,7 +188,7 @@ sequenceDiagram
 
     WA->>Conn: messages.upsert
     Conn->>Inbound: dispatch('messages.upsert', { messages })
-    
+
     loop For each message in batch
         Inbound->>Filter: evaluate(rawMessage)
         alt Ineligible (fromMe / non-text / group / broadcast)
@@ -287,23 +287,27 @@ sequenceDiagram
 ## 6. "How Do I..." Recipe Guide
 
 ### Recipe 1: Add Inbound Adapter
+
 1. Create a new directory in `src/adapters/inbound/` (e.g., `telegram/`).
 2. Write an adapter class that takes use cases (e.g., `ProcessIncomingMessage`) as dependencies.
 3. Listen to external events (like a webhook or socket message) and invoke the use case.
 4. Wire it up in `src/index.ts`.
 
 ### Recipe 2: Add Outbound Port & Adapter
+
 1. Define the port interface in `src/core/ports/` (e.g., `DatabasePort.ts`).
 2. Create the adapter in `src/adapters/outbound/` (e.g., `postgres/PostgresAdapter.ts`) implementing the port.
 3. Inject it into the necessary use cases via `src/index.ts`.
 
 ### Recipe 3: Create a Tool
+
 1. Create a new tool file in `src/tools/` (e.g., `WeatherTool.ts`).
 2. Define a declarative Zod schema for its input parameters.
 3. Extend `BaseTool<typeof schema>` and implement `protected async run(args: z.infer<typeof schema>): Promise<string>`.
 4. Register the tool with `InMemoryToolRegistry` in `src/index.ts`.
 
 ### Recipe 4: Deploy or Inspect with Docker Compose
+
 1. Ensure `.env` is configured with required secrets (`DEEPSEEK_API_KEY`, `BOT_PHONE_NUMBER`, `ALLOWED_USERS`, `POSTGRES_PASSWORD`).
 2. Start services in the background: `docker compose up -d`.
 3. Follow application logs: `docker compose logs -f app`.
@@ -312,6 +316,7 @@ sequenceDiagram
    - Run Drizzle Studio locally: `npx drizzle-kit studio` (connecting to `localhost:5432`).
 
 ### Recipe 5: Pre-Merge Review & Archival Ritual
+
 1. Perform an in-depth review of all PR changes (architecture, correctness, test coverage, and code hygiene).
 2. Review and update `docs/ARCHITECTURE.md` to ensure architectural documentation accurately reflects all boundaries and flows.
 3. Move the completed feature specification from `docs/specs/` to `docs/specs/archive/` within the same feature branch.

@@ -1,5 +1,5 @@
-import OpenAI from 'openai';
-import { ToolDefinition } from '../../../core/ports/ToolRegistryPort';
+import OpenAI from "openai";
+import { ToolDefinition } from "../../../core/ports/ToolRegistryPort";
 
 /**
  * Pure mapper translating domain ToolDefinition entities into OpenAI ChatCompletion tool definitions.
@@ -9,18 +9,18 @@ import { ToolDefinition } from '../../../core/ports/ToolRegistryPort';
  * @returns Array of OpenAI tools or undefined if empty or suppressed.
  */
 export function mapToolDefinitionsToOpenAI(
-  tools: ToolDefinition[],
-  forcedSynthesis?: boolean
+	tools: ToolDefinition[],
+	forcedSynthesis?: boolean,
 ): OpenAI.Chat.ChatCompletionTool[] | undefined {
-  if (forcedSynthesis || tools.length === 0) {
-    return undefined;
-  }
-  return tools.map((tool) => ({
-    type: 'function' as const,
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.schema,
-    },
-  }));
+	if (forcedSynthesis || tools.length === 0) {
+		return undefined;
+	}
+	return tools.map((tool) => ({
+		type: "function" as const,
+		function: {
+			name: tool.name,
+			description: tool.description,
+			parameters: tool.schema,
+		},
+	}));
 }

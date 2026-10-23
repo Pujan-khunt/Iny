@@ -11,6 +11,7 @@
 Iny is transitioning from a terminal CLI proof-of-concept into a live WhatsApp assistant. This specification establishes the foundational integration of [`@whiskeysockets/baileys`](https://github.com/WhiskeySockets/Baileys) to enable real-world message reception and delivery.
 
 ### Goals
+
 1. Connect Iny to WhatsApp Web via Baileys WebSocket protocol using an 8-digit **Pairing Code** (compatible with structured JSON logging).
 2. Persist session credentials locally in a gitignored `.baileys_auth/` directory to allow automatic reconnections without re-authenticating.
 3. Establish a strict, config-driven **Allowlist** (`ALLOWED_USERS`) to prevent unsolicited messaging, group spam, and unauthorized LLM token consumption.
@@ -20,6 +21,7 @@ Iny is transitioning from a terminal CLI proof-of-concept into a live WhatsApp a
 5. Remove the deprecated CLI adapter from production runtime to keep the codebase lean and free of dead code.
 
 ### Non-Goals (Future PRs)
+
 - Media attachments, voice notes, stickers, reactions, and documents.
 - Group chat support (`@g.us`) and broadcast channels (`status@broadcast`).
 - Database-backed allowlist or multi-tenant user access management.
@@ -140,7 +142,7 @@ sequenceDiagram
     participant Conn as BaileysConnectionManager
 
     WA->>Inbound: messages.upsert (messages)
-    
+
     loop For each message in batch
         Inbound->>Filter: isAllowed(remoteJid)
         alt Not Allowed
@@ -155,11 +157,11 @@ sequenceDiagram
             else Valid UserMessage
                 Parser-->>Inbound: userMessage
                 Inbound->>UC: execute(userMessage)
-                
+
                 rect rgb(240, 248, 255)
                     Note over UC: Phase 1: Reasoning (LLM + Tools)
                 end
-                
+
                 rect rgb(240, 255, 240)
                     Note over UC,Sender: Phase 2: Delivery
                     UC->>Sender: sendMessage(userId, responseText)
@@ -168,7 +170,7 @@ sequenceDiagram
                     Conn-->>Sender: activeSocket
                     Sender->>WA: sock.sendMessage(userId, { text })
                 end
-                
+
                 rect rgb(255, 250, 240)
                     Note over UC: Phase 3: Persistence (Turn memory)
                 end
@@ -183,15 +185,16 @@ sequenceDiagram
 
 When `connection.update` reports `{ connection: 'close', lastDisconnect }`, the HTTP status code is resolved via `(lastDisconnect?.error as Boom)?.output?.statusCode`:
 
-| Disconnect Code | Cause | Automated Action |
-| :--- | :--- | :--- |
-| **`DisconnectReason.restartRequired` (515)** | Normal WhatsApp server protocol restart. | Re-invoke socket factory immediately with existing credentials. |
-| **`connectionClosed` (428)** | Socket closed unexpectedly. | Auto-reconnect with linear/exponential backoff. |
-| **`connectionLost` (408) / `timedOut` (408)** | Transient network timeout. | Auto-reconnect with linear/exponential backoff. |
-| **`DisconnectReason.loggedOut` (401)** | WhatsApp session unlinked by user. | Log fatal error, purge `.baileys_auth/` directory, abort reconnection to prevent infinite 401 loop. |
-| **`DisconnectReason.badSession` (500)** | Session corruption. | Log fatal error requiring manual restart. |
+| Disconnect Code                               | Cause                                    | Automated Action                                                                                    |
+| :-------------------------------------------- | :--------------------------------------- | :-------------------------------------------------------------------------------------------------- |
+| **`DisconnectReason.restartRequired` (515)**  | Normal WhatsApp server protocol restart. | Re-invoke socket factory immediately with existing credentials.                                     |
+| **`connectionClosed` (428)**                  | Socket closed unexpectedly.              | Auto-reconnect with linear/exponential backoff.                                                     |
+| **`connectionLost` (408) / `timedOut` (408)** | Transient network timeout.               | Auto-reconnect with linear/exponential backoff.                                                     |
+| **`DisconnectReason.loggedOut` (401)**        | WhatsApp session unlinked by user.       | Log fatal error, purge `.baileys_auth/` directory, abort reconnection to prevent infinite 401 loop. |
+| **`DisconnectReason.badSession` (500)**       | Session corruption.                      | Log fatal error requiring manual restart.                                                           |
 
 ### Transport Failure Invariant
+
 If `sock.sendMessage()` fails during network interruption, `BaileysMessageSenderAdapter` throws an error. [`ProcessIncomingMessage`](../../src/core/use-cases/ProcessIncomingMessage.ts) catches this error in Phase 2 (Delivery Phase) and aborts before Phase 3 (Persistence Phase), guaranteeing that failed turns are never saved to history.
 
 ---
@@ -217,6 +220,7 @@ ALLOWED_USERS: z
 ```
 
 Example `.env`:
+
 ```env
 BOT_PHONE_NUMBER=15551234567
 ALLOWED_USERS=15559876543,15550001111@s.whatsapp.net

@@ -1,31 +1,31 @@
-import { ToolDefinition } from './ToolRegistryPort';
-import { Message } from '../entities/Message';
-import { ToolCallRequest } from '../entities/ToolCallRequest';
+import { ToolDefinition } from "./ToolRegistryPort";
+import { Message } from "../entities/Message";
+import { ToolCallRequest } from "../entities/ToolCallRequest";
 
 /**
  * Base interface for LLM decisions containing optional chain-of-thought reasoning.
  */
 export interface BaseLLMDecision {
-  /** Optional reasoning scratchpad or chain-of-thought emitted by the model. */
-  reasoning?: string;
+	/** Optional reasoning scratchpad or chain-of-thought emitted by the model. */
+	reasoning?: string;
 }
 
 /**
  * A decision from the LLM requesting one or more tool calls.
  */
 export interface ToolCallDecision extends BaseLLMDecision {
-  type: 'tool_calls';
-  toolCalls: ToolCallRequest[];
-  /** Optional natural text emitted alongside the tool calls. */
-  content?: string;
+	type: "tool_calls";
+	toolCalls: ToolCallRequest[];
+	/** Optional natural text emitted alongside the tool calls. */
+	content?: string;
 }
 
 /**
  * A decision from the LLM providing a final natural language text response.
  */
 export interface TextResponseDecision extends BaseLLMDecision {
-  type: 'text';
-  content: string;
+	type: "text";
+	content: string;
 }
 
 /**
@@ -35,65 +35,65 @@ export interface TextResponseDecision extends BaseLLMDecision {
 export type LLMResponse = ToolCallDecision | TextResponseDecision;
 
 export interface CreateToolCallDecisionParams {
-  toolCalls: ToolCallRequest[];
-  content?: string;
-  reasoning?: string;
+	toolCalls: ToolCallRequest[];
+	content?: string;
+	reasoning?: string;
 }
 
 export interface CreateTextResponseDecisionParams {
-  content: string;
-  reasoning?: string;
+	content: string;
+	reasoning?: string;
 }
 
 /**
  * Factory for creating strongly-typed LLMResponse decisions.
  */
 export class LLMResponseFactory {
-  private constructor() {}
+	private constructor() {}
 
-  static createToolCalls(params: CreateToolCallDecisionParams): ToolCallDecision {
-    return {
-      type: 'tool_calls',
-      toolCalls: params.toolCalls,
-      content: params.content,
-      reasoning: params.reasoning,
-    };
-  }
+	static createToolCalls(params: CreateToolCallDecisionParams): ToolCallDecision {
+		return {
+			type: "tool_calls",
+			toolCalls: params.toolCalls,
+			content: params.content,
+			reasoning: params.reasoning,
+		};
+	}
 
-  static createText(params: CreateTextResponseDecisionParams): TextResponseDecision {
-    return {
-      type: 'text',
-      content: params.content,
-      reasoning: params.reasoning,
-    };
-  }
+	static createText(params: CreateTextResponseDecisionParams): TextResponseDecision {
+		return {
+			type: "text",
+			content: params.content,
+			reasoning: params.reasoning,
+		};
+	}
 }
 
 /**
  * Optional execution flags for response generation.
  */
 export interface GenerateResponseOptions {
-  /** When true, forces the model to synthesize text instead of invoking tools. */
-  forcedSynthesis?: boolean;
+	/** When true, forces the model to synthesize text instead of invoking tools. */
+	forcedSynthesis?: boolean;
 }
 
 /**
  * Outbound port for language model reasoning and tool call generation.
  */
 export interface LLMPort {
-  /**
-   * Generates a reasoning decision or response given system prompt, conversation history, and tool definitions.
-   *
-   * @param systemPrompt System instructions for the language model.
-   * @param messages Chronological sequence of messages in the dialogue.
-   * @param tools Read-only metadata for tools available to the model.
-   * @param options Optional configuration flags such as forced synthesis.
-   * @returns Model decision: either a tool call request or a natural language text response.
-   */
-  generateResponse(
-    systemPrompt: string,
-    messages: Message[],
-    tools: ToolDefinition[],
-    options?: GenerateResponseOptions
-  ): Promise<LLMResponse>;
+	/**
+	 * Generates a reasoning decision or response given system prompt, conversation history, and tool definitions.
+	 *
+	 * @param systemPrompt System instructions for the language model.
+	 * @param messages Chronological sequence of messages in the dialogue.
+	 * @param tools Read-only metadata for tools available to the model.
+	 * @param options Optional configuration flags such as forced synthesis.
+	 * @returns Model decision: either a tool call request or a natural language text response.
+	 */
+	generateResponse(
+		systemPrompt: string,
+		messages: Message[],
+		tools: ToolDefinition[],
+		options?: GenerateResponseOptions,
+	): Promise<LLMResponse>;
 }

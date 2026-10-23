@@ -22,7 +22,7 @@ Decide per-question, not per-session. The test: **would the user understand this
 - **Technical decisions** — API design, data modeling, architectural approach selection
 - **Clarifying questions** — anything where the answer is words, not a visual preference
 
-A question *about* a UI topic is not automatically a visual question. "What kind of wizard do you want?" is conceptual — use the terminal. "Which of these wizard layouts feels right?" is visual — use the browser.
+A question _about_ a UI topic is not automatically a visual question. "What kind of wizard do you want?" is conceptual — use the terminal. "Which of these wizard layouts feels right?" is visual — use the browser.
 
 ## How It Works
 
@@ -60,6 +60,7 @@ without repeating it.
 **Launching the server by platform:**
 
 **Claude Code:**
+
 ```bash
 # Default mode works — the script backgrounds the server itself.
 scripts/start-server.sh --project-dir /path/to/project --open
@@ -68,6 +69,7 @@ scripts/start-server.sh --project-dir /path/to/project --open
 On Windows, the script auto-detects and switches to foreground mode (which blocks the tool call). Use `run_in_background: true` on the Bash tool call so the server survives across conversation turns, then read `$STATE_DIR/server-info` on the next turn to get the URL and port.
 
 **Codex:**
+
 ```bash
 # Codex reaps background processes. The script auto-detects CODEX_CI and
 # switches to foreground mode. Run it normally — no extra flags needed.
@@ -75,6 +77,7 @@ scripts/start-server.sh --project-dir /path/to/project --open
 ```
 
 **Gemini CLI:**
+
 ```bash
 # Use --foreground and set is_background: true on your shell tool call
 # so the process survives across turns
@@ -82,6 +85,7 @@ scripts/start-server.sh --project-dir /path/to/project --open --foreground
 ```
 
 **Copilot CLI:**
+
 ```bash
 # Start it with Copilot CLI's non-blocking/background shell mechanism so the
 # server survives across turns. Keep --foreground so the harness, not the
@@ -129,7 +133,7 @@ Use `--url-host` to control what hostname is printed in the returned URL JSON.
    ```html
    <!-- filename: waiting.html (or waiting-2.html, etc.) -->
    <div style="display:flex;align-items:center;justify-content:center;min-height:60vh">
-     <p class="subtitle">Continuing in terminal...</p>
+   	<p class="subtitle">Continuing in terminal...</p>
    </div>
    ```
 
@@ -148,20 +152,20 @@ Write just the content that goes inside the page. The server wraps it in the fra
 <p class="subtitle">Consider readability and visual hierarchy</p>
 
 <div class="options">
-  <div class="option" data-choice="a" onclick="toggleSelect(this)">
-    <div class="letter">A</div>
-    <div class="content">
-      <h3>Single Column</h3>
-      <p>Clean, focused reading experience</p>
-    </div>
-  </div>
-  <div class="option" data-choice="b" onclick="toggleSelect(this)">
-    <div class="letter">B</div>
-    <div class="content">
-      <h3>Two Column</h3>
-      <p>Sidebar navigation with main content</p>
-    </div>
-  </div>
+	<div class="option" data-choice="a" onclick="toggleSelect(this)">
+		<div class="letter">A</div>
+		<div class="content">
+			<h3>Single Column</h3>
+			<p>Clean, focused reading experience</p>
+		</div>
+	</div>
+	<div class="option" data-choice="b" onclick="toggleSelect(this)">
+		<div class="letter">B</div>
+		<div class="content">
+			<h3>Two Column</h3>
+			<p>Sidebar navigation with main content</p>
+		</div>
+	</div>
 </div>
 ```
 
@@ -175,13 +179,13 @@ The frame template provides these CSS classes for your content:
 
 ```html
 <div class="options">
-  <div class="option" data-choice="a" onclick="toggleSelect(this)">
-    <div class="letter">A</div>
-    <div class="content">
-      <h3>Title</h3>
-      <p>Description</p>
-    </div>
-  </div>
+	<div class="option" data-choice="a" onclick="toggleSelect(this)">
+		<div class="letter">A</div>
+		<div class="content">
+			<h3>Title</h3>
+			<p>Description</p>
+		</div>
+	</div>
 </div>
 ```
 
@@ -189,7 +193,7 @@ The frame template provides these CSS classes for your content:
 
 ```html
 <div class="options" data-multiselect>
-  <!-- same option markup — users can select/deselect multiple -->
+	<!-- same option markup — users can select/deselect multiple -->
 </div>
 ```
 
@@ -197,13 +201,13 @@ The frame template provides these CSS classes for your content:
 
 ```html
 <div class="cards">
-  <div class="card" data-choice="design1" onclick="toggleSelect(this)">
-    <div class="card-image"><!-- mockup content --></div>
-    <div class="card-body">
-      <h3>Name</h3>
-      <p>Description</p>
-    </div>
-  </div>
+	<div class="card" data-choice="design1" onclick="toggleSelect(this)">
+		<div class="card-image"><!-- mockup content --></div>
+		<div class="card-body">
+			<h3>Name</h3>
+			<p>Description</p>
+		</div>
+	</div>
 </div>
 ```
 
@@ -211,8 +215,8 @@ The frame template provides these CSS classes for your content:
 
 ```html
 <div class="mockup">
-  <div class="mockup-header">Preview: Dashboard Layout</div>
-  <div class="mockup-body"><!-- your mockup HTML --></div>
+	<div class="mockup-header">Preview: Dashboard Layout</div>
+	<div class="mockup-body"><!-- your mockup HTML --></div>
 </div>
 ```
 
@@ -220,8 +224,8 @@ The frame template provides these CSS classes for your content:
 
 ```html
 <div class="split">
-  <div class="mockup"><!-- left --></div>
-  <div class="mockup"><!-- right --></div>
+	<div class="mockup"><!-- left --></div>
+	<div class="mockup"><!-- right --></div>
 </div>
 ```
 
@@ -229,8 +233,18 @@ The frame template provides these CSS classes for your content:
 
 ```html
 <div class="pros-cons">
-  <div class="pros"><h4>Pros</h4><ul><li>Benefit</li></ul></div>
-  <div class="cons"><h4>Cons</h4><ul><li>Drawback</li></ul></div>
+	<div class="pros">
+		<h4>Pros</h4>
+		<ul>
+			<li>Benefit</li>
+		</ul>
+	</div>
+	<div class="cons">
+		<h4>Cons</h4>
+		<ul>
+			<li>Drawback</li>
+		</ul>
+	</div>
 </div>
 ```
 
@@ -239,11 +253,11 @@ The frame template provides these CSS classes for your content:
 ```html
 <div class="mock-nav">Logo | Home | About | Contact</div>
 <div style="display: flex;">
-  <div class="mock-sidebar">Navigation</div>
-  <div class="mock-content">Main content area</div>
+	<div class="mock-sidebar">Navigation</div>
+	<div class="mock-content">Main content area</div>
 </div>
 <button class="mock-button">Action Button</button>
-<input class="mock-input" placeholder="Input field">
+<input class="mock-input" placeholder="Input field" />
 <div class="placeholder">Placeholder area</div>
 ```
 

@@ -1,67 +1,64 @@
-import OpenAI from 'openai';
+import OpenAI from "openai";
+import { ExtractedWeeklyMenu, ExtractedWeeklyMenuSchema } from "./ExtractionSchemas.js";
 import {
-  ExtractedWeeklyMenu,
-  ExtractedWeeklyMenuSchema,
-} from './ExtractionSchemas.js';
-import {
-  cleanJsonResponse,
-  classifyAndThrowExtractorError,
-  resolveOpenAiClient,
-} from './ExtractorUtils.js';
+	cleanJsonResponse,
+	classifyAndThrowExtractorError,
+	resolveOpenAiClient,
+} from "./ExtractorUtils.js";
 
 export interface DeepseekVisionExtractorOptions {
-  client?: OpenAI;
-  apiKey?: string;
-  baseURL?: string;
-  model?: string;
+	client?: OpenAI;
+	apiKey?: string;
+	baseURL?: string;
+	model?: string;
 }
 
 export interface ExtractWeeklyMenuOptions {
-  mimeType?: string;
-  textContext?: string;
+	mimeType?: string;
+	textContext?: string;
 }
 
 export class DeepseekVisionExtractor {
-  private readonly client: OpenAI;
-  private readonly model: string;
+	private readonly client: OpenAI;
+	private readonly model: string;
 
-  constructor(
-    clientOrApiKeyOrOptions: OpenAI | string | DeepseekVisionExtractorOptions,
-    options?: { baseURL?: string; model?: string }
-  ) {
-    const resolved = resolveOpenAiClient(clientOrApiKeyOrOptions, options);
-    this.client = resolved.client;
-    this.model = resolved.model;
-  }
+	constructor(
+		clientOrApiKeyOrOptions: OpenAI | string | DeepseekVisionExtractorOptions,
+		options?: { baseURL?: string; model?: string },
+	) {
+		const resolved = resolveOpenAiClient(clientOrApiKeyOrOptions, options);
+		this.client = resolved.client;
+		this.model = resolved.model;
+	}
 
-  /**
-   * Multimodal extraction of 7-day weekly menu (21 slots total) from an image buffer.
-   *
-   * @param input Raw image Buffer or object containing imageBuffer, mimeType, and optional textContext.
-   * @param options Additional options such as mimeType and textContext.
-   */
-  async extractWeeklyMenu(
-    input: Buffer | { imageBuffer: Buffer; mimeType?: string; textContext?: string },
-    options?: ExtractWeeklyMenuOptions
-  ): Promise<ExtractedWeeklyMenu> {
-    let imageBuffer: Buffer;
-    let mimeType: string;
-    let textContext: string | undefined;
+	/**
+	 * Multimodal extraction of 7-day weekly menu (21 slots total) from an image buffer.
+	 *
+	 * @param input Raw image Buffer or object containing imageBuffer, mimeType, and optional textContext.
+	 * @param options Additional options such as mimeType and textContext.
+	 */
+	async extractWeeklyMenu(
+		input: Buffer | { imageBuffer: Buffer; mimeType?: string; textContext?: string },
+		options?: ExtractWeeklyMenuOptions,
+	): Promise<ExtractedWeeklyMenu> {
+		let imageBuffer: Buffer;
+		let mimeType: string;
+		let textContext: string | undefined;
 
-    if (Buffer.isBuffer(input)) {
-      imageBuffer = input;
-      mimeType = options?.mimeType ?? 'image/png';
-      textContext = options?.textContext;
-    } else {
-      imageBuffer = input.imageBuffer;
-      mimeType = input.mimeType ?? options?.mimeType ?? 'image/png';
-      textContext = input.textContext ?? options?.textContext;
-    }
+		if (Buffer.isBuffer(input)) {
+			imageBuffer = input;
+			mimeType = options?.mimeType ?? "image/png";
+			textContext = options?.textContext;
+		} else {
+			imageBuffer = input.imageBuffer;
+			mimeType = input.mimeType ?? options?.mimeType ?? "image/png";
+			textContext = input.textContext ?? options?.textContext;
+		}
 
-    const base64Image = imageBuffer.toString('base64');
-    const dataUrl = `data:${mimeType};base64,${base64Image}`;
+		const base64Image = imageBuffer.toString("base64");
+		const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
-    const systemPrompt = `You are an expert OCR and menu parsing assistant for campus mess menus.
+		const systemPrompt = `You are an expert OCR and menu parsing assistant for campus mess menus.
 Analyze the provided mess menu image and extract the full weekly menu.
 
 Requirements:
@@ -85,50 +82,50 @@ Requirements:
   ]
 }`;
 
-    let userPrompt =
-      'Extract the complete 7-day weekly menu (strictly 21 slots: breakfast, lunch, dinner for each day) from this image.';
-    if (textContext) {
-      userPrompt += `\n\nEmbedded document text context:\n${textContext}`;
-    }
+		let userPrompt =
+			"Extract the complete 7-day weekly menu (strictly 21 slots: breakfast, lunch, dinner for each day) from this image.";
+		if (textContext) {
+			userPrompt += `\n\nEmbedded document text context:\n${textContext}`;
+		}
 
-    let content: string | undefined;
-    try {
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: systemPrompt,
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: userPrompt,
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: dataUrl,
-                },
-              },
-            ],
-          },
-        ],
-        response_format: { type: 'json_object' },
-      });
+		let content: string | undefined;
+		try {
+			const completion = await this.client.chat.completions.create({
+				model: this.model,
+				messages: [
+					{
+						role: "system",
+						content: systemPrompt,
+					},
+					{
+						role: "user",
+						content: [
+							{
+								type: "text",
+								text: userPrompt,
+							},
+							{
+								type: "image_url",
+								image_url: {
+									url: dataUrl,
+								},
+							},
+						],
+					},
+				],
+				response_format: { type: "json_object" },
+			});
 
-      content = completion.choices[0]?.message?.content ?? undefined;
-      if (!content) {
-        throw new Error('LLM returned empty response during menu extraction');
-      }
+			content = completion.choices[0]?.message?.content ?? undefined;
+			if (!content) {
+				throw new Error("LLM returned empty response during menu extraction");
+			}
 
-      const cleaned = cleanJsonResponse(content);
-      const parsedJson = JSON.parse(cleaned);
-      return ExtractedWeeklyMenuSchema.parse(parsedJson);
-    } catch (error) {
-      classifyAndThrowExtractorError(error, content);
-    }
-  }
+			const cleaned = cleanJsonResponse(content);
+			const parsedJson = JSON.parse(cleaned);
+			return ExtractedWeeklyMenuSchema.parse(parsedJson);
+		} catch (error) {
+			classifyAndThrowExtractorError(error, content);
+		}
+	}
 }

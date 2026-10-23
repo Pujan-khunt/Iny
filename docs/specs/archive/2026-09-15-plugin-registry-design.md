@@ -1,9 +1,11 @@
 # Plugin Registry & Calculator Plugin Design
 
 ## 1. Overview
+
 This document specifies the design for the **Plugin Registry** and an initial **Calculator Plugin** in Iny. The Plugin Registry serves as the driven adapter implementing `PluginRegistryPort`. It manages active tool plugins, exposes their schemas to the core use case for LLM tool selection, and dispatches tool execution calls to the appropriate plugin.
 
 ## 2. Architecture & File Structure
+
 Following Hexagonal Architecture, the registry is a driven adapter living outside the core domain, while individual plugins are standalone action modules.
 
 ```text
@@ -21,24 +23,27 @@ src/
 ```
 
 ## 3. Interfaces & Contracts
+
 From `src/core/ports/PluginRegistryPort.ts`:
+
 ```typescript
 export interface Plugin {
-  name: string;
-  description: string;
-  schema: Record<string, any>;
-  execute(args: any): Promise<string>;
+	name: string;
+	description: string;
+	schema: Record<string, any>;
+	execute(args: any): Promise<string>;
 }
 
 export interface PluginRegistryPort {
-  getAvailablePlugins(): Plugin[];
-  executePlugin(name: string, args: any): Promise<string>;
+	getAvailablePlugins(): Plugin[];
+	executePlugin(name: string, args: any): Promise<string>;
 }
 ```
 
 ## 4. Component Details
 
 ### 4.1. `InMemoryPluginRegistry`
+
 - **File:** `src/adapters/driven/plugin-registry/InMemoryPluginRegistry.ts`
 - **Responsibilities:**
   - Implements `PluginRegistryPort`.
@@ -56,6 +61,7 @@ export interface PluginRegistryPort {
     - If execution throws, logs the error via `console.error` and returns `'Error executing ${name}: ${error.message}'`.
 
 ### 4.2. `CalculatorPlugin`
+
 - **File:** `src/plugins/CalculatorPlugin.ts`
 - **Responsibilities:**
   - Implements `Plugin`.
@@ -66,14 +72,14 @@ export interface PluginRegistryPort {
   - `schema`:
     ```json
     {
-      "type": "object",
-      "properties": {
-        "expression": {
-          "type": "string",
-          "description": "The math expression to calculate"
-        }
-      },
-      "required": ["expression"]
+    	"type": "object",
+    	"properties": {
+    		"expression": {
+    			"type": "string",
+    			"description": "The math expression to calculate"
+    		}
+    	},
+    	"required": ["expression"]
     }
     ```
 - **Execution & Safety:**
@@ -85,7 +91,9 @@ export interface PluginRegistryPort {
   - Returns the computed result as a string (e.g. `'42'`).
 
 ## 5. Application Wiring (`src/index.ts`)
+
 In `src/index.ts`:
+
 1. Instantiate `InMemoryPluginRegistry`.
 2. Instantiate and register `CalculatorPlugin`:
    ```typescript
@@ -97,6 +105,7 @@ In `src/index.ts`:
 ## 6. Testing Strategy
 
 ### 6.1. Unit Tests for `InMemoryPluginRegistry`
+
 - **File:** `tests/adapters/driven/plugin-registry/InMemoryPluginRegistry.test.ts`
 - **Test cases:**
   - Registers plugins and returns them in `getAvailablePlugins()`.
@@ -106,6 +115,7 @@ In `src/index.ts`:
   - Returns defensive error string when a plugin's `.execute()` throws an error.
 
 ### 6.2. Unit Tests for `CalculatorPlugin`
+
 - **File:** `tests/plugins/CalculatorPlugin.test.ts`
 - **Test cases:**
   - Correctly defines `name`, `description`, and `schema`.

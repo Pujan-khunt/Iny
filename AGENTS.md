@@ -1,17 +1,22 @@
 # Agent Guidelines & Zero-Trust Operating Contract
 
 ## 1. Zero-Trust Principle
+
 No agent working in this repository may rely on tribal knowledge, make assumptions about unstated requirements, or invent architectural conventions. Every structural decision, dependency choice, and interface boundary must follow the documented architecture.
 
 ## 2. Documentation Hierarchy
+
 Before proposing or implementing any changes, agents must consult the documentation in this order:
+
 1. **System Architecture (`docs/ARCHITECTURE.md`)**: The map of the codebase, Hexagonal boundaries, ports, adapters, and flow of control.
 2. **Feature Specifications (`docs/specs/`)**: Active business logic and API contracts for features in progress.
    - Note: `docs/specs/archive/` contains completed historical blueprints. Archived specs never override the active codebase.
 3. **Implementation Plans (`docs/plans/`)**: Ephemeral step-by-step TDD execution plans (gitignored).
 
 ## 3. Mandatory 6-Step Workflow
+
 Every task (new feature, subsystem modification, or structural refactor) must follow this lifecycle:
+
 1. **Brainstorming Session**: Discuss user intent, scope, and technical trade-offs collaboratively with the user.
 2. **Spec Creation**: Draft `docs/specs/YYYY-MM-DD-<topic>-spec.md` focusing strictly on requirements, domain logic, edge cases, and API contracts.
 3. **Human Review Gate (Hard Stop)**:
@@ -29,11 +34,13 @@ Every task (new feature, subsystem modification, or structural refactor) must fo
      3. **Atomic Spec Archival**: Move the completed specification from `docs/specs/` to `docs/specs/archive/` within the same branch. Never archive automatically without explicit user instruction.
 
 ## 4. Architectural Invariants
+
 - **Hexagonal Purity**: `src/core/` must have **zero** external runtime dependencies. Core entities, use cases, and ports are 100% pure TypeScript.
 - **Directional Adapters**: Inbound drivers live in `src/adapters/inbound/`. Outbound gateways implementing core ports live in `src/adapters/outbound/`.
 - **Composition Root**: In production runtime code, only `src/index.ts` is permitted to wire and inject root adapters into use cases (unit tests and internal adapter factory methods like `PinoLoggerAdapter.child()` may instantiate adapters directly).
 
 ## 5. Git Commits
+
 Whenever you create a git commit, you MUST follow the Conventional Commits format and you MUST include a body explaining the changes.
 
 **Format:**
@@ -42,6 +49,7 @@ Whenever you create a git commit, you MUST follow the Conventional Commits forma
 [optional body]
 
 **Rules:**
+
 1. **Type:** Must be `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, or `revert`.
 2. **Subject line:** Use the imperative, present tense ("add feature", not "added feature"). Do not capitalize the first letter. No dot (.) at the end.
 3. **Body:** A body is REQUIRED. It should include the motivation for the change and contrast this with previous behavior. Wrap text at 72 characters.

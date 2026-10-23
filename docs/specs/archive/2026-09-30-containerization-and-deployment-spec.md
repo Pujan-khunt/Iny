@@ -13,6 +13,7 @@ With the completion of PostgreSQL-backed conversation memory (`dialogue_turns`) 
 This specification defines the production-grade **containerization and deployment orchestration** strategy for Iny, packaging the application into a lean, secure, multi-stage Docker container and orchestrating it alongside PostgreSQL 16 via Docker Compose on a single Linux host (including Oracle Cloud Infrastructure / OCI Ampere A1 ARM64 and standard x86_64 architectures).
 
 ### Goals
+
 1. **Multi-Stage `Dockerfile`**:
    - Standardize on `node:22-bookworm-slim` for both `builder` and `runner` stages to guarantee `glibc` runtime binary compatibility with native modules (specifically `@whiskeysockets/baileys`' native `whatsapp-rust-bridge` dependency) across ARM64 (aarch64) and x86_64 architectures.
    - Separate build-time tooling (TypeScript compiler, development dependencies) from runtime artifacts to produce a minimal, hardened image (~150MB).
@@ -33,6 +34,7 @@ This specification defines the production-grade **containerization and deploymen
    - Provide an automated, deterministic verification workflow to test the container build, startup sequence, healthchecks, and teardown offline.
 
 ### Non-Goals
+
 - Multi-host distributed Kubernetes clustering or Docker Swarm (Iny is an autonomous single-instance bot; WhatsApp Web protocol enforces a single active socket connection per registered account).
 - Public ingress reverse proxy (e.g. Nginx / Traefik / Caddy) or SSL certificate termination (Iny communicates outbound via WebSockets to WhatsApp servers; it exposes no public HTTP endpoints).
 - CI/CD container registry publishing pipelines (addressed in subsequent operational specs).
@@ -69,6 +71,7 @@ Host Environment (e.g., OCI Ampere A1 ARM64 VPS / Linux Host)
 ```
 
 ### Architectural Invariants
+
 1. **Hexagonal Boundaries Preserved**: Containerization is purely an infrastructure and deployment concern. No files in `src/core/` are altered.
 2. **Stateless App Container**: The `app` container holds zero runtime state on its root filesystem. All state is held in the `db` container's `postgres_data` volume.
 3. **Public Interface Isolation**: Port 5432 is strictly bound to `127.0.0.1`. It is physically inaccessible from any external network interface (`eth0`).
@@ -162,6 +165,7 @@ CMD ["node", "--enable-source-maps", "dist/index.js"]
 ```
 
 #### Key Technical Decisions:
+
 1. **`node:22-bookworm-slim`**:
    - Ensures `glibc` is present for native bindings like `whatsapp-rust-bridge`, preventing `musl` segfaults on ARM64 Ampere chips.
    - Slim variants discard man pages, compilers, and extraneous packages to maintain a minimal ~150MB image footprint.
@@ -228,6 +232,7 @@ networks:
 ```
 
 #### Key Technical Decisions:
+
 1. **Healthcheck-Driven Dependency**:
    - `depends_on: db: { condition: service_healthy }` ensures the `app` container does not boot until PostgreSQL is accepting TCP connections and the `iny` database is initialized. This eliminates startup connection race conditions.
 2. **`127.0.0.1:5432:5432` Loopback Port**:
@@ -286,6 +291,7 @@ DB_MAX_CONNECTIONS=10
 ## 4. Operational Lifecycle & Workflows
 
 ### 4.1. First-Time Setup on VPS
+
 1. Clone repository onto VPS:
    ```bash
    git clone https://github.com/Pujan-khunt/Iny.git /opt/iny
@@ -314,33 +320,44 @@ DB_MAX_CONNECTIONS=10
 5. Credentials automatically save to the PostgreSQL `whatsapp_auth` table in `postgres_data`. The bot remains authenticated across future container restarts and upgrades.
 
 ### 4.2. Upgrading Iny
+
 Because state is decoupled into `postgres_data`, upgrading the bot is completely zero-downtime-capable:
+
 ```bash
 git pull origin main
 docker compose build app
 docker compose up -d app
 ```
+
 The new `app` container boots, runs any new Drizzle migrations, re-attaches to the existing PostgreSQL credentials in milliseconds, and resumes message processing.
 
 ### 4.3. Inspecting the Database Remotely
 
 #### Option A: Local Laptop Desktop GUI (TablePlus, DBeaver, pgAdmin)
+
 Open an SSH tunnel from your local machine:
+
 ```bash
 ssh -L 5432:localhost:5432 ubuntu@your-vps-ip
 ```
+
 Connect your local desktop GUI to `localhost:5432` (User: `postgres`, Password: `<POSTGRES_PASSWORD>`, Database: `iny`).
 
 #### Option B: Local Drizzle Studio
+
 With the SSH tunnel active:
+
 ```bash
 # In your local project repository:
 npx drizzle-kit studio
 ```
+
 Open `http://localhost:4983` in your browser. It visualizes remote VPS tables locally through the tunnel.
 
 #### Option C: Host CLI via `docker exec`
+
 On the VPS:
+
 ```bash
 docker compose exec -it db psql -U postgres -d iny
 ```
@@ -349,13 +366,13 @@ docker compose exec -it db psql -U postgres -d iny
 
 ## 5. Edge Cases & Mitigations
 
-| Edge Case | Failure Mode | Mitigation |
-|---|---|---|
-| **Database starts slower than app** | App throws connection refused on startup. | `depends_on: db: { condition: service_healthy }` halts `app` boot until `pg_isready` succeeds. |
-| **Container terminated unexpectedly (`SIGTERM` / `SIGINT`)** | Unclosed sockets or orphaned connection pools. | Iny's `src/index.ts` captures signals, ends the active WhatsApp socket, and closes the `postgres.js` pool before exit. |
-| **ARM64 Native Addon Incompatibilities** | Native Rust addons crash on Alpine `musl`. | Using Debian-based `node:22-bookworm-slim` guarantees standard `glibc` binary interface on ARM64 and x86_64. |
-| **Accidental Database Exposure** | Port 5432 opened to internet scanners. | Hardcoded loopback binding `127.0.0.1:5432:5432` prevents Docker from publishing port to external interfaces. |
-| **Missing Migration Files in Production** | App boots but crashes querying non-existent tables. | Dockerfile explicitly copies `./drizzle/` into the runner image. |
+| Edge Case                                                    | Failure Mode                                        | Mitigation                                                                                                             |
+| ------------------------------------------------------------ | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Database starts slower than app**                          | App throws connection refused on startup.           | `depends_on: db: { condition: service_healthy }` halts `app` boot until `pg_isready` succeeds.                         |
+| **Container terminated unexpectedly (`SIGTERM` / `SIGINT`)** | Unclosed sockets or orphaned connection pools.      | Iny's `src/index.ts` captures signals, ends the active WhatsApp socket, and closes the `postgres.js` pool before exit. |
+| **ARM64 Native Addon Incompatibilities**                     | Native Rust addons crash on Alpine `musl`.          | Using Debian-based `node:22-bookworm-slim` guarantees standard `glibc` binary interface on ARM64 and x86_64.           |
+| **Accidental Database Exposure**                             | Port 5432 opened to internet scanners.              | Hardcoded loopback binding `127.0.0.1:5432:5432` prevents Docker from publishing port to external interfaces.          |
+| **Missing Migration Files in Production**                    | App boots but crashes querying non-existent tables. | Dockerfile explicitly copies `./drizzle/` into the runner image.                                                       |
 
 ---
 
