@@ -116,7 +116,7 @@ const inboundAdapter = new WhatsAppInboundAdapter(
 // 10. Inbound Food Announcements Driving Adapter
 const foodAnnouncementsAdapter = new FoodAnnouncementsInboundAdapter({
 	targetGroupJid: config.FOOD_ANNOUNCEMENTS_GROUP_JID,
-	db,
+	stagingRepository: messStagingRepository,
 	connectionManager,
 	logger: logger.child({ module: "food-announcements" }),
 });

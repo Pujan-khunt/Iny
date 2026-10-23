@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
-import { MediaPreviewer } from "../../../../src/adapters/inbound/cli/MediaPreviewer.js";
+import { MediaPreviewer } from "../../../../src/adapters/inbound/cli/MediaPreviewer";
 
 describe("MediaPreviewer", () => {
 	beforeEach(() => {

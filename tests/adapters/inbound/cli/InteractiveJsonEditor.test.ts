@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import { z } from "zod";
-import { InteractiveJsonEditor } from "../../../../src/adapters/inbound/cli/InteractiveJsonEditor.js";
+import { InteractiveJsonEditor } from "../../../../src/adapters/inbound/cli/InteractiveJsonEditor";
 
 describe("InteractiveJsonEditor", () => {
 	const originalEnv = process.env;

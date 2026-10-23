@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { TriageCliController } from "../../../../src/adapters/inbound/cli/TriageCliController.js";
-import type { WhatsappGroupFoodAnnouncementsMessageRow } from "../../../../src/adapters/outbound/mess/postgres/schema.js";
+import { TriageCliController } from "../../../../src/adapters/inbound/cli/TriageCliController";
+import type { StagedAnnouncementMessage } from "../../../../src/core/ports/MessStagingRepositoryPort";
 import type {
 	ExtractedWeeklyMenu,
 	ExtractedLocationDetail,
 	ExtractedTimingExtension,
 	ExtractedMealChange,
 	ExtractedCompositeAnnouncement,
-} from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas.js";
-import { ExtractedCompositeAnnouncementSchema } from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas.js";
+} from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
+import { ExtractedCompositeAnnouncementSchema } from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
 
 class MockIo {
 	private inputs: string[];
@@ -53,7 +53,7 @@ describe("TriageCliController", () => {
 		})),
 	};
 
-	const samplePendingPdfMessage: WhatsappGroupFoodAnnouncementsMessageRow = {
+	const samplePendingPdfMessage: StagedAnnouncementMessage = {
 		id: "MSG_PDF_01",
 		senderAddress: "+919876543210",
 		senderAddressType: "pn",
@@ -66,7 +66,7 @@ describe("TriageCliController", () => {
 		processedAt: null,
 	};
 
-	const sampleProcessedMessage: WhatsappGroupFoodAnnouncementsMessageRow = {
+	const sampleProcessedMessage: StagedAnnouncementMessage = {
 		id: "MSG_PROCESSED_01",
 		senderAddress: "+919876543210",
 		senderAddressType: "pn",
@@ -277,7 +277,7 @@ describe("TriageCliController", () => {
 	});
 
 	it("handles pending text message mark ignored [2] -> [y]", async () => {
-		const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+		const textMsg: StagedAnnouncementMessage = {
 			...samplePendingPdfMessage,
 			id: "MSG_TEXT_IGNORE_01",
 			messageType: "text",
@@ -302,7 +302,7 @@ describe("TriageCliController", () => {
 	});
 
 	it("handles media message streamlined menu choices (Open in Viewer [3], Ignore [4], Process Announcement [2])", async () => {
-		const mediaMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+		const mediaMsg: StagedAnnouncementMessage = {
 			...samplePendingPdfMessage,
 			id: "MSG_MEDIA_01",
 			textBody: "Lunch notice with image",
@@ -343,7 +343,7 @@ describe("TriageCliController", () => {
 	});
 
 	it("handles composite text announcement extraction and commit", async () => {
-		const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+		const textMsg: StagedAnnouncementMessage = {
 			...samplePendingPdfMessage,
 			id: "MSG_COMPOSITE_01",
 			messageType: "text",
@@ -399,7 +399,7 @@ describe("TriageCliController", () => {
 	});
 
 	it("blocks commit when swap source menu is missing (Option B gate)", async () => {
-		const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+		const textMsg: StagedAnnouncementMessage = {
 			...samplePendingPdfMessage,
 			id: "MSG_SWAP_MISSING_01",
 			messageType: "text",
@@ -452,7 +452,7 @@ describe("TriageCliController", () => {
 	});
 
 	it("blocks commit when swap target menu is missing (Option B gate)", async () => {
-		const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+		const textMsg: StagedAnnouncementMessage = {
 			...samplePendingPdfMessage,
 			id: "MSG_SWAP_MISSING_TARGET_01",
 			messageType: "text",
@@ -521,7 +521,7 @@ describe("TriageCliController", () => {
 	});
 
 	it("commits meal swap successfully when source menu exists in database", async () => {
-		const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+		const textMsg: StagedAnnouncementMessage = {
 			...samplePendingPdfMessage,
 			id: "MSG_SWAP_VALID_01",
 			messageType: "text",
@@ -607,7 +607,7 @@ describe("TriageCliController", () => {
 	});
 
 	it("allows Neovim editing of composite JSON before commit", async () => {
-		const textMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+		const textMsg: StagedAnnouncementMessage = {
 			...samplePendingPdfMessage,
 			id: "MSG_EDIT_01",
 			messageType: "text",

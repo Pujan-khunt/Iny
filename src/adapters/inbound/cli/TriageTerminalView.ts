@@ -1,5 +1,7 @@
-import type { WhatsappGroupFoodAnnouncementsMessageRow } from "../../outbound/mess/postgres/schema.js";
-import type { ResolvedMealSwapInput } from "../../outbound/mess/postgres/PostgresMessStagingRepository.js";
+import type {
+	StagedAnnouncementMessage,
+	ResolvedMealSwapInput,
+} from "../../../core/ports/MessStagingRepositoryPort";
 import type {
 	ExtractedWeeklyMenu,
 	ExtractedLocationDetail,
@@ -7,7 +9,7 @@ import type {
 	ExtractedMealChange,
 	ExtractedMealSwap,
 	ExtractedCompositeAnnouncement,
-} from "../../outbound/mess/extraction/ExtractionSchemas.js";
+} from "../../outbound/mess/extraction/ExtractionSchemas";
 
 export interface TriageTerminalViewOptions {
 	enableAnsi?: boolean;
@@ -112,7 +114,7 @@ export class TriageTerminalView {
 	/**
 	 * Formats the list of staged WhatsApp messages as an interactive CLI table.
 	 */
-	renderMessagesTable(messages: WhatsappGroupFoodAnnouncementsMessageRow[]): string {
+	renderMessagesTable(messages: StagedAnnouncementMessage[]): string {
 		const lines: string[] = [
 			this.ansi.bold + DIVIDER_LINE + this.ansi.reset,
 			`${this.ansi.bold}${this.ansi.cyan}📥 STAGED FOOD ANNOUNCEMENTS INBOX (${messages.length} messages)${this.ansi.reset}`,
@@ -163,7 +165,7 @@ export class TriageTerminalView {
 	 * Formats the Pre-Extraction Inspection & Confirmation card matching Spec Section 4.2.
 	 */
 	renderInspectionCard(
-		message: WhatsappGroupFoodAnnouncementsMessageRow,
+		message: StagedAnnouncementMessage,
 		selectedIntent?: string,
 		selectedIntentIndex?: string | number,
 	): string {
@@ -381,7 +383,7 @@ export class TriageTerminalView {
 	 */
 	renderLocationDetailPreview(
 		detail: ExtractedLocationDetail,
-		message?: WhatsappGroupFoodAnnouncementsMessageRow,
+		message?: StagedAnnouncementMessage,
 	): string {
 		const timeStr = formatIstAmPm(message?.receivedAt);
 		const dayName = getDayOfWeekName(detail.mealDate);
@@ -421,7 +423,7 @@ export class TriageTerminalView {
 	 */
 	renderTimingExtensionPreview(
 		extension: ExtractedTimingExtension,
-		message?: WhatsappGroupFoodAnnouncementsMessageRow,
+		message?: StagedAnnouncementMessage,
 	): string {
 		const timeStr = formatIstAmPm(message?.receivedAt);
 		const dayName = getDayOfWeekName(extension.mealDate);
@@ -454,7 +456,7 @@ export class TriageTerminalView {
 	 */
 	renderMealChangePreview(
 		change: ExtractedMealChange,
-		message?: WhatsappGroupFoodAnnouncementsMessageRow,
+		message?: StagedAnnouncementMessage,
 	): string {
 		const timeStr = formatIstAmPm(message?.receivedAt);
 		const dayName = getDayOfWeekName(change.mealDate);
@@ -487,7 +489,7 @@ export class TriageTerminalView {
 	/**
 	 * Formats the Ignore Staged Message preview matching Spec Section 4.4 Preview 5.
 	 */
-	renderIgnorePreview(message: WhatsappGroupFoodAnnouncementsMessageRow): string {
+	renderIgnorePreview(message: StagedAnnouncementMessage): string {
 		const timeStr = formatIstAmPm(message.receivedAt);
 		const sender = `${message.senderAddress} (${message.senderAddressType})`;
 		const snippet = message.textBody
@@ -516,7 +518,7 @@ export class TriageTerminalView {
 	/**
 	 * Formats the Surgical Rollback / Processed Message card matching Spec Section 4.4.
 	 */
-	renderProcessedMessageCard(message: WhatsappGroupFoodAnnouncementsMessageRow): string {
+	renderProcessedMessageCard(message: StagedAnnouncementMessage): string {
 		const processedAtStr = formatIst(message.processedAt);
 		const sender = `${message.senderAddress} (${message.senderAddressType})`;
 

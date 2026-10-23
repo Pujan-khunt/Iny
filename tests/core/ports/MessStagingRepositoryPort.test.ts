@@ -14,6 +14,7 @@ import {
 	StagedMealSwap,
 	StagedCompositeAnnouncement,
 	ResolvedMealSwapInput,
+	StagedMealLookupRecord,
 	CommitOperationalPayload,
 	AtomicCommitOptions,
 	AtomicCommitCompositeOptions,
@@ -25,6 +26,8 @@ class MockMessStagingRepository implements MessStagingRepositoryPort {
 	getMessageById = vi.fn<(id: string) => Promise<StagedAnnouncementMessage | null>>();
 	stageMessage = vi.fn<(message: NewStagedAnnouncementMessage) => Promise<void>>();
 	markIgnored = vi.fn<(id: string) => Promise<void>>();
+	getMealsByDateAndSlot =
+		vi.fn<(mealDate: string, mealSlot: any, vendor?: any) => Promise<StagedMealLookupRecord[]>>();
 	atomicCommit = vi.fn();
 	atomicCommitComposite = vi.fn<(options: AtomicCommitCompositeOptions) => Promise<void>>();
 	atomicUndo = vi.fn<(messageId: string) => Promise<void>>();
@@ -157,6 +160,7 @@ describe("MessStagingRepositoryPort", () => {
 		repo.getMessageById.mockResolvedValue(sampleMessage);
 		repo.stageMessage.mockResolvedValue(undefined);
 		repo.markIgnored.mockResolvedValue(undefined);
+		repo.getMealsByDateAndSlot.mockResolvedValue([]);
 		repo.atomicCommit.mockResolvedValue(undefined);
 		repo.atomicCommitComposite.mockResolvedValue(undefined);
 		repo.atomicUndo.mockResolvedValue(undefined);
@@ -179,6 +183,15 @@ describe("MessStagingRepositoryPort", () => {
 		// Execute and verify markIgnored
 		await repo.markIgnored("msg-123");
 		expect(repo.markIgnored).toHaveBeenCalledWith("msg-123");
+
+		// Execute and verify getMealsByDateAndSlot
+		const mealsLookup = await repo.getMealsByDateAndSlot("2026-10-21", "lunch", "cheftalk_regular");
+		expect(mealsLookup).toEqual([]);
+		expect(repo.getMealsByDateAndSlot).toHaveBeenCalledWith(
+			"2026-10-21",
+			"lunch",
+			"cheftalk_regular",
+		);
 
 		// Execute and verify atomicCommit (options overload)
 		await repo.atomicCommit(atomicOptions);

@@ -1,11 +1,12 @@
 import readline from "node:readline";
 import {
-	PostgresMessStagingRepository,
-	type ResolvedMealSwapInput,
-} from "../../outbound/mess/postgres/PostgresMessStagingRepository.js";
-import { DeepseekVisionExtractor } from "../../outbound/mess/extraction/DeepseekVisionExtractor.js";
-import { DeepseekTextExtractor } from "../../outbound/mess/extraction/DeepseekTextExtractor.js";
-import { PdfRasterizer } from "../../outbound/mess/extraction/PdfRasterizer.js";
+	MessStagingRepositoryPort,
+	StagedAnnouncementMessage,
+	ResolvedMealSwapInput,
+} from "../../../core/ports/MessStagingRepositoryPort";
+import { DeepseekVisionExtractor } from "../../outbound/mess/extraction/DeepseekVisionExtractor";
+import { DeepseekTextExtractor } from "../../outbound/mess/extraction/DeepseekTextExtractor";
+import { PdfRasterizer } from "../../outbound/mess/extraction/PdfRasterizer";
 import {
 	ExtractedWeeklyMenuSchema,
 	ExtractedCompositeAnnouncementSchema,
@@ -13,11 +14,10 @@ import {
 	type ExtractedWeeklyMealItem,
 	type ExtractedMealSwap,
 	type ExtractedCompositeAnnouncement,
-} from "../../outbound/mess/extraction/ExtractionSchemas.js";
-import { InteractiveJsonEditor } from "./InteractiveJsonEditor.js";
-import { MediaPreviewer } from "./MediaPreviewer.js";
-import { TriageTerminalView } from "./TriageTerminalView.js";
-import type { WhatsappGroupFoodAnnouncementsMessageRow } from "../../outbound/mess/postgres/schema.js";
+} from "../../outbound/mess/extraction/ExtractionSchemas";
+import { InteractiveJsonEditor } from "./InteractiveJsonEditor";
+import { MediaPreviewer } from "./MediaPreviewer";
+import { TriageTerminalView } from "./TriageTerminalView";
 
 export interface CliIo {
 	prompt(question: string): Promise<string>;
@@ -59,7 +59,7 @@ class DefaultCliIo implements CliIo {
 }
 
 export interface TriageCliControllerDependencies {
-	stagingRepo: PostgresMessStagingRepository;
+	stagingRepo: MessStagingRepositoryPort;
 	visionExtractor: DeepseekVisionExtractor;
 	textExtractor: DeepseekTextExtractor;
 	pdfRasterizer?: PdfRasterizer;
@@ -100,7 +100,7 @@ export function shiftWeeklyMenuDates(
 }
 
 export class TriageCliController {
-	private readonly stagingRepo: PostgresMessStagingRepository;
+	private readonly stagingRepo: MessStagingRepositoryPort;
 	private readonly visionExtractor: DeepseekVisionExtractor;
 	private readonly textExtractor: DeepseekTextExtractor;
 	private readonly pdfRasterizer: PdfRasterizer;
@@ -255,8 +255,11 @@ export class TriageCliController {
 
 						if (intentChoice === "3") {
 							if (selectedMessage.mediaBuffer && selectedMessage.mediaMimeType) {
+								const buf = Buffer.isBuffer(selectedMessage.mediaBuffer)
+									? selectedMessage.mediaBuffer
+									: Buffer.from(selectedMessage.mediaBuffer);
 								const previewRes = await this.previewer.previewMedia(
-									selectedMessage.mediaBuffer,
+									buf,
 									selectedMessage.mediaMimeType,
 									selectedMessage.textBody ?? undefined,
 								);
@@ -289,8 +292,11 @@ export class TriageCliController {
 									break;
 								} else if (inspChoice === "o") {
 									if (selectedMessage.mediaBuffer && selectedMessage.mediaMimeType) {
+										const buf = Buffer.isBuffer(selectedMessage.mediaBuffer)
+											? selectedMessage.mediaBuffer
+											: Buffer.from(selectedMessage.mediaBuffer);
 										const previewRes = await this.previewer.previewMedia(
-											selectedMessage.mediaBuffer,
+											buf,
 											selectedMessage.mediaMimeType,
 											selectedMessage.textBody ?? undefined,
 										);
@@ -329,28 +335,29 @@ export class TriageCliController {
 	/**
 	 * Executes weekly menu extraction and remediation review.
 	 */
-	private async handleWeeklyMenuExtraction(
-		message: WhatsappGroupFoodAnnouncementsMessageRow,
-	): Promise<void> {
+	private async handleWeeklyMenuExtraction(message: StagedAnnouncementMessage): Promise<void> {
 		const runExtraction = async (): Promise<ExtractedWeeklyMenu> => {
 			const isPdf =
 				message.mediaMimeType === "application/pdf" ||
 				Boolean(message.mediaBuffer?.subarray(0, 4).toString().startsWith("%PDF"));
 
-			if (isPdf && message.mediaBuffer) {
-				const pngBuffer = await this.pdfRasterizer.rasterizePageOneToPng(message.mediaBuffer);
-				return await this.visionExtractor.extractWeeklyMenu(pngBuffer, {
-					mimeType: "image/png",
-					textContext: message.textBody ?? undefined,
-				});
-			} else if (message.mediaBuffer) {
-				return await this.visionExtractor.extractWeeklyMenu(message.mediaBuffer, {
+			if (message.mediaBuffer) {
+				const buf = Buffer.isBuffer(message.mediaBuffer)
+					? message.mediaBuffer
+					: Buffer.from(message.mediaBuffer);
+				if (isPdf) {
+					const pngBuffer = await this.pdfRasterizer.rasterizePageOneToPng(buf);
+					return await this.visionExtractor.extractWeeklyMenu(pngBuffer, {
+						mimeType: "image/png",
+						textContext: message.textBody ?? undefined,
+					});
+				}
+				return await this.visionExtractor.extractWeeklyMenu(buf, {
 					mimeType: message.mediaMimeType ?? "image/png",
 					textContext: message.textBody ?? undefined,
 				});
-			} else {
-				throw new Error("Weekly menu extraction requires image or PDF media attachment.");
 			}
+			throw new Error("Weekly menu extraction requires image or PDF media attachment.");
 		};
 
 		let menu: ExtractedWeeklyMenu | null = null;
@@ -378,9 +385,7 @@ export class TriageCliController {
 	/**
 	 * Executes composite announcement extraction and remediation review.
 	 */
-	private async handleCompositeExtraction(
-		message: WhatsappGroupFoodAnnouncementsMessageRow,
-	): Promise<void> {
+	private async handleCompositeExtraction(message: StagedAnnouncementMessage): Promise<void> {
 		let composite: ExtractedCompositeAnnouncement | null = null;
 		while (true) {
 			try {
@@ -411,7 +416,7 @@ export class TriageCliController {
 	 * provides Neovim JSON editing, and atomically commits.
 	 */
 	private async reviewCompositeAnnouncement(
-		message: WhatsappGroupFoodAnnouncementsMessageRow,
+		message: StagedAnnouncementMessage,
 		composite: ExtractedCompositeAnnouncement,
 	): Promise<void> {
 		let currentComposite = composite;
@@ -538,7 +543,7 @@ export class TriageCliController {
 	}
 
 	private async reviewWeeklyMenu(
-		message: WhatsappGroupFoodAnnouncementsMessageRow,
+		message: StagedAnnouncementMessage,
 		menu: ExtractedWeeklyMenu,
 	): Promise<void> {
 		let currentMenu = menu;

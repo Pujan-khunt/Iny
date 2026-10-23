@@ -2,19 +2,19 @@ import { describe, it, expect } from "vitest";
 import {
 	TriageTerminalView,
 	stripAnsi,
-} from "../../../../src/adapters/inbound/cli/TriageTerminalView.js";
-import type { WhatsappGroupFoodAnnouncementsMessageRow } from "../../../../src/adapters/outbound/mess/postgres/schema.js";
+} from "../../../../src/adapters/inbound/cli/TriageTerminalView";
+import type { StagedAnnouncementMessage } from "../../../../src/core/ports/MessStagingRepositoryPort";
 import type {
 	ExtractedWeeklyMenu,
 	ExtractedLocationDetail,
 	ExtractedTimingExtension,
 	ExtractedMealChange,
-} from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas.js";
+} from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
 
 describe("TriageTerminalView", () => {
 	const view = new TriageTerminalView({ enableAnsi: false });
 
-	const mockMessage: WhatsappGroupFoodAnnouncementsMessageRow = {
+	const mockMessage: StagedAnnouncementMessage = {
 		id: "3EB0A1B2C3D4E5F6",
 		senderAddress: "+919876543210",
 		senderAddressType: "pn",
@@ -222,7 +222,7 @@ describe("TriageTerminalView", () => {
 	});
 
 	it("renders processed message actions undo card matching Spec 4.4", () => {
-		const processedMsg: WhatsappGroupFoodAnnouncementsMessageRow = {
+		const processedMsg: StagedAnnouncementMessage = {
 			...mockMessage,
 			status: "processed",
 			processedAt: new Date("2026-10-09T06:15:00.000Z"),

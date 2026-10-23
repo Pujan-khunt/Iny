@@ -429,7 +429,7 @@ describe("Mess System End-to-End Integration", () => {
 
 			const adapter = new FoodAnnouncementsInboundAdapter({
 				targetGroupJid: FOOD_GROUP_JID,
-				db,
+				stagingRepository,
 				connectionManager: fakeConnectionManager as any,
 				logger: mockLogger,
 				downloadMedia: fakeDownloadMedia as any,
@@ -500,7 +500,7 @@ describe("Mess System End-to-End Integration", () => {
 
 			const adapter = new FoodAnnouncementsInboundAdapter({
 				targetGroupJid: FOOD_GROUP_JID,
-				db,
+				stagingRepository,
 				connectionManager: fakeConnectionManager as any,
 				logger: mockLogger,
 			});

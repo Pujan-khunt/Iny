@@ -124,6 +124,13 @@ export interface AtomicCommitCompositeOptions {
 	resolvedSwaps?: ResolvedMealSwapInput[];
 }
 
+export interface StagedMealLookupRecord {
+	mealDate: string;
+	mealSlot: MealSlot | string;
+	vendor: Vendor | string;
+	items: string[];
+}
+
 /** Port contract for staged announcement messages and atomic transaction operations. */
 export interface MessStagingRepositoryPort {
 	/** Lists staged messages filtered by options. */
@@ -134,6 +141,12 @@ export interface MessStagingRepositoryPort {
 	stageMessage(message: NewStagedAnnouncementMessage): Promise<void>;
 	/** Marks a staged message as ignored. */
 	markIgnored(id: string): Promise<void>;
+	/** Retrieves operational mess meals for date, slot, and optional vendor. */
+	getMealsByDateAndSlot(
+		mealDate: string,
+		mealSlot: MealSlot | string,
+		vendor?: Vendor | string | null,
+	): Promise<StagedMealLookupRecord[]>;
 	/** Atomically commits operational payload and updates message status. */
 	atomicCommit(options: AtomicCommitOptions): Promise<void>;
 	atomicCommit(messageId: string, payload: CommitOperationalPayload): Promise<void>;

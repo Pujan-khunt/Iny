@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { FoodAnnouncementsInboundAdapter } from "../../../../src/adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter.js";
-import { whatsappGroupFoodAnnouncementsMessages } from "../../../../src/adapters/outbound/mess/postgres/schema.js";
-import { LoggerPort } from "../../../../src/core/ports/LoggerPort.js";
+import { FoodAnnouncementsInboundAdapter } from "../../../../src/adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter";
+import { LoggerPort } from "../../../../src/core/ports/LoggerPort";
 import { WAMessage } from "@whiskeysockets/baileys";
 
 describe("FoodAnnouncementsInboundAdapter", () => {
@@ -9,9 +8,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 	let mockLogger: LoggerPort;
 	let mockConn: { subscribe: ReturnType<typeof vi.fn> };
-	let mockDb: { insert: ReturnType<typeof vi.fn> };
-	let mockValues: ReturnType<typeof vi.fn>;
-	let mockOnConflictDoNothing: ReturnType<typeof vi.fn>;
+	let mockStagingRepo: { stageMessage: ReturnType<typeof vi.fn> };
 	let mockDownloadMedia: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
@@ -28,10 +25,8 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			subscribe: vi.fn(),
 		};
 
-		mockOnConflictDoNothing = vi.fn().mockResolvedValue(undefined);
-		mockValues = vi.fn().mockReturnValue({ onConflictDoNothing: mockOnConflictDoNothing });
-		mockDb = {
-			insert: vi.fn().mockReturnValue({ values: mockValues }),
+		mockStagingRepo = {
+			stageMessage: vi.fn().mockResolvedValue(undefined),
 		};
 
 		mockDownloadMedia = vi.fn().mockResolvedValue(Buffer.from("fake-media-bytes"));
@@ -40,7 +35,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 	it("ignores messages from non-target groups and messages where fromMe is true", async () => {
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -53,17 +48,17 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		// Self message
 		await handler({ messages: [{ key: { remoteJid: TARGET_GROUP_JID, fromMe: true } }] });
-		expect(mockDb.insert).not.toHaveBeenCalled();
+		expect(mockStagingRepo.stageMessage).not.toHaveBeenCalled();
 
 		// Wrong group
 		await handler({ messages: [{ key: { remoteJid: "other@g.us", fromMe: false } }] });
-		expect(mockDb.insert).not.toHaveBeenCalled();
+		expect(mockStagingRepo.stageMessage).not.toHaveBeenCalled();
 	});
 
 	it("ignores messages with missing id or missing participant", async () => {
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -82,7 +77,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 				},
 			],
 		});
-		expect(mockDb.insert).not.toHaveBeenCalled();
+		expect(mockStagingRepo.stageMessage).not.toHaveBeenCalled();
 
 		// Missing participant
 		await handler({
@@ -93,13 +88,13 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 				},
 			],
 		});
-		expect(mockDb.insert).not.toHaveBeenCalled();
+		expect(mockStagingRepo.stageMessage).not.toHaveBeenCalled();
 	});
 
 	it("ingests plain text message and normalizes PN sender address", async () => {
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -122,8 +117,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		await handler({ messages: [rawMsg] });
 
-		expect(mockDb.insert).toHaveBeenCalledWith(whatsappGroupFoodAnnouncementsMessages);
-		expect(mockValues).toHaveBeenCalledWith({
+		expect(mockStagingRepo.stageMessage).toHaveBeenCalledWith({
 			id: "wamid-txt-1",
 			senderAddress: "919876543210@s.whatsapp.net",
 			senderAddressType: "pn",
@@ -133,14 +127,13 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			mediaBuffer: null,
 			status: "pending",
 		});
-		expect(mockOnConflictDoNothing).toHaveBeenCalled();
 		expect(mockDownloadMedia).not.toHaveBeenCalled();
 	});
 
 	it("ingests extended text message and normalizes LID sender address", async () => {
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -165,8 +158,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		await handler({ messages: [rawMsg] });
 
-		expect(mockDb.insert).toHaveBeenCalledWith(whatsappGroupFoodAnnouncementsMessages);
-		expect(mockValues).toHaveBeenCalledWith({
+		expect(mockStagingRepo.stageMessage).toHaveBeenCalledWith({
 			id: "wamid-txt-lid",
 			senderAddress: "123456789012345@lid",
 			senderAddressType: "lid",
@@ -176,7 +168,6 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			mediaBuffer: null,
 			status: "pending",
 		});
-		expect(mockOnConflictDoNothing).toHaveBeenCalled();
 	});
 
 	it("ingests image message, downloads media buffer, and saves caption", async () => {
@@ -185,7 +176,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -212,8 +203,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 		await handler({ messages: [rawMsg] });
 
 		expect(mockDownloadMedia).toHaveBeenCalledWith(rawMsg, "buffer", {});
-		expect(mockDb.insert).toHaveBeenCalledWith(whatsappGroupFoodAnnouncementsMessages);
-		expect(mockValues).toHaveBeenCalledWith({
+		expect(mockStagingRepo.stageMessage).toHaveBeenCalledWith({
 			id: "wamid-img-1",
 			senderAddress: "919876543210@s.whatsapp.net",
 			senderAddressType: "pn",
@@ -223,7 +213,6 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			mediaBuffer: fakeImageBuffer,
 			status: "pending",
 		});
-		expect(mockOnConflictDoNothing).toHaveBeenCalled();
 	});
 
 	it("ingests document message, downloads buffer, and uses fileName if caption is absent", async () => {
@@ -232,7 +221,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -259,7 +248,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 		await handler({ messages: [rawMsg] });
 
 		expect(mockDownloadMedia).toHaveBeenCalledWith(rawMsg, "buffer", {});
-		expect(mockValues).toHaveBeenCalledWith({
+		expect(mockStagingRepo.stageMessage).toHaveBeenCalledWith({
 			id: "wamid-doc-1",
 			senderAddress: "919876543210@s.whatsapp.net",
 			senderAddressType: "pn",
@@ -269,7 +258,6 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			mediaBuffer: fakePdfBuffer,
 			status: "pending",
 		});
-		expect(mockOnConflictDoNothing).toHaveBeenCalled();
 	});
 
 	it("unwraps container messages (e.g. ephemeral or view-once)", async () => {
@@ -278,7 +266,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -308,7 +296,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		await handler({ messages: [rawMsg] });
 
-		expect(mockValues).toHaveBeenCalledWith({
+		expect(mockStagingRepo.stageMessage).toHaveBeenCalledWith({
 			id: "wamid-ephem-1",
 			senderAddress: "919876543210@s.whatsapp.net",
 			senderAddressType: "pn",
@@ -325,7 +313,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -357,8 +345,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			expect.objectContaining({ messageId: "wamid-img-fail" }),
 		);
 
-		expect(mockDb.insert).toHaveBeenCalledWith(whatsappGroupFoodAnnouncementsMessages);
-		expect(mockValues).toHaveBeenCalledWith({
+		expect(mockStagingRepo.stageMessage).toHaveBeenCalledWith({
 			id: "wamid-img-fail",
 			senderAddress: "919876543210@s.whatsapp.net",
 			senderAddressType: "pn",
@@ -368,13 +355,12 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			mediaBuffer: null,
 			status: "pending",
 		});
-		expect(mockOnConflictDoNothing).toHaveBeenCalled();
 	});
 
 	it("ignores unsupported message types such as audio or reactions", async () => {
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -399,17 +385,17 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		await handler({ messages: [audioMsg] });
 
-		expect(mockDb.insert).not.toHaveBeenCalled();
+		expect(mockStagingRepo.stageMessage).not.toHaveBeenCalled();
 		expect(mockDownloadMedia).not.toHaveBeenCalled();
 	});
 
 	it("catches database insertion errors and continues processing subsequent messages", async () => {
 		const dbError = new Error("Database connection failed");
-		mockOnConflictDoNothing.mockRejectedValueOnce(dbError).mockResolvedValueOnce(undefined);
+		mockStagingRepo.stageMessage.mockRejectedValueOnce(dbError).mockResolvedValueOnce(undefined);
 
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -446,13 +432,13 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			expect.objectContaining({ messageId: "wamid-fail-db" }),
 		);
 
-		expect(mockDb.insert).toHaveBeenCalledTimes(2);
+		expect(mockStagingRepo.stageMessage).toHaveBeenCalledTimes(2);
 	});
 
 	it("works with default logger and default downloadMedia without throwing", async () => {
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 		});
 
@@ -471,7 +457,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			}),
 		).resolves.not.toThrow();
 
-		expect(mockDb.insert).toHaveBeenCalled();
+		expect(mockStagingRepo.stageMessage).toHaveBeenCalled();
 	});
 
 	it("prefers caption over fileName when document message provides both", async () => {
@@ -480,7 +466,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 			downloadMedia: mockDownloadMedia as any,
@@ -505,7 +491,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			],
 		});
 
-		expect(mockValues).toHaveBeenCalledWith(
+		expect(mockStagingRepo.stageMessage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				messageType: "document",
 				textBody: "Document caption takes priority",
@@ -516,7 +502,7 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 	it("ignores message when upsert payload or messages array is malformed", async () => {
 		const adapter = new FoodAnnouncementsInboundAdapter({
 			targetGroupJid: TARGET_GROUP_JID,
-			db: mockDb as any,
+			stagingRepository: mockStagingRepo as any,
 			connectionManager: mockConn as any,
 			logger: mockLogger,
 		});
@@ -528,6 +514,6 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 		await expect(handler({})).resolves.not.toThrow();
 		await expect(handler({ messages: "not-an-array" })).resolves.not.toThrow();
 
-		expect(mockDb.insert).not.toHaveBeenCalled();
+		expect(mockStagingRepo.stageMessage).not.toHaveBeenCalled();
 	});
 });
