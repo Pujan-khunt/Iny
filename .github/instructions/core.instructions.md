@@ -1,5 +1,5 @@
 ---
-applyTo: 'src/core/**/*.ts'
+applyTo: "src/core/**/*.ts"
 ---
 
 # Core Domain Boundary Rules (`src/core/`)
@@ -9,6 +9,7 @@ You are inspecting, reviewing, or modifying files within `src/core/`. This direc
 ---
 
 ## 1. Zero External Runtime Dependencies (Strict)
+
 - **No 3rd-Party Imports**: Under no circumstances may any file in `src/core/` import an external npm dependency.
   - ❌ `import { z } from 'zod';`
   - ❌ `import OpenAI from 'openai';`
@@ -24,16 +25,19 @@ You are inspecting, reviewing, or modifying files within `src/core/`. This direc
 ## 2. Structural Layer Responsibilities
 
 ### Entities (`src/core/entities/`)
+
 - Must represent pure business domain models and types (e.g., `Message`, `DialogueTurn`).
 - Use strict TypeScript discriminated unions for polymorphic records (e.g., `role: 'user' | 'assistant' | 'tool'`).
 - Must not contain I/O logic, database access, or network transport concerns.
 
 ### Ports (`src/core/ports/`)
+
 - Must be pure TypeScript interfaces or type definitions.
 - Represent primary (driving/inbound) and secondary (driven/outbound) boundaries.
 - Ports must never reference concrete adapters or third-party SDK types.
 
 ### Use Cases (`src/core/use-cases/`)
+
 - Encapsulate business workflow orchestration (e.g., `ProcessIncomingMessage`).
 - **Dependency Inversion**: All external interactions (sending messages, querying LLMs, persisting turns, logging) must be injected via Port interfaces in the constructor.
 - **Config Ingestion**: Accept plain TypeScript config interfaces. Do not perform defensive runtime schema validation; rely on the composition root and boundary validation (`src/config.ts`) to provide valid parameters.
@@ -42,7 +46,9 @@ You are inspecting, reviewing, or modifying files within `src/core/`. This direc
 ---
 
 ## 3. Review Checklist for `src/core/` PRs
+
 When reviewing diffs affecting `src/core/**`:
+
 - [ ] Are all imports strictly internal to `src/core/` or native Node.js built-ins?
 - [ ] Does any use case instantiate a concrete adapter? (Must be flagged as Critical).
 - [ ] Are domain models immutably handled where necessary to prevent cross-turn state pollution?

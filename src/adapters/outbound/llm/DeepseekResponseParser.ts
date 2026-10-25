@@ -1,12 +1,53 @@
-import OpenAI from 'openai';
-import { LLMResponse, LLMResponseFactory } from '../../../core/ports/LLMPort';
-import { LLMResponseError } from '../../../core/errors/LLMErrors';
-import { LoggerPort } from '../../../core/ports/LoggerPort';
-import { parseToolCalls, FunctionToolCall } from './DeepseekToolCallParser';
+import OpenAI from "openai";
+import { LLMResponse, LLMResponseFactory } from "../../../core/ports/LLMPort";
+import { LLMResponseError } from "../../../core/errors/LLMErrors";
+import { LoggerPort } from "../../../core/ports/LoggerPort";
+import { parseToolCalls, FunctionToolCall } from "./DeepseekToolCallParser";
 
 type DeepseekChatCompletionMessage = OpenAI.Chat.ChatCompletionMessage & {
-  reasoning_content?: string | null;
+	reasoning_content?: string | null;
 };
+
+function createToolCallsResponse(
+	responseMessage: DeepseekChatCompletionMessage,
+	functionCalls: FunctionToolCall[],
+	reasoning?: string,
+	logger?: LoggerPort,
+): LLMResponse {
+	const content = responseMessage.content || undefined;
+	const toolCalls = parseToolCalls(functionCalls);
+
+	logger?.debug("Received response from Deepseek LLM", {
+		hasToolCall: true,
+		toolCallCount: toolCalls.length,
+		hasReasoning: Boolean(reasoning),
+		hasContent: Boolean(content),
+	});
+
+	return LLMResponseFactory.createToolCalls({
+		toolCalls,
+		content,
+		reasoning,
+	});
+}
+
+function createTextResponse(
+	responseMessage: DeepseekChatCompletionMessage,
+	reasoning?: string,
+	logger?: LoggerPort,
+): LLMResponse {
+	const content = responseMessage.content ?? "";
+
+	logger?.debug("Received response from Deepseek LLM", {
+		hasToolCall: false,
+		hasReasoning: Boolean(reasoning),
+	});
+
+	return LLMResponseFactory.createText({
+		content,
+		reasoning,
+	});
+}
 
 /**
  * Parses an OpenAI ChatCompletion payload into a domain LLMResponse.
@@ -17,49 +58,24 @@ type DeepseekChatCompletionMessage = OpenAI.Chat.ChatCompletionMessage & {
  * @throws LLMResponseError if the response contains no choices or message.
  */
 export function parseOpenAIResponse(
-  response: OpenAI.Chat.ChatCompletion,
-  logger?: LoggerPort
+	response: OpenAI.Chat.ChatCompletion,
+	logger?: LoggerPort,
 ): LLMResponse {
-  const choice = response.choices?.[0];
-  const responseMessage = choice?.message as DeepseekChatCompletionMessage | undefined;
+	const choice = response.choices?.[0];
+	const responseMessage = choice?.message as DeepseekChatCompletionMessage | undefined;
 
-  if (!choice || !responseMessage) {
-    throw new LLMResponseError('No message returned from LLM provider');
-  }
+	if (!choice || !responseMessage) {
+		throw new LLMResponseError("No message returned from LLM provider");
+	}
 
-  const reasoning = responseMessage.reasoning_content || undefined;
-  const functionCalls =
-    responseMessage.tool_calls?.filter(
-      (tc): tc is FunctionToolCall => tc.type === 'function'
-    ) ?? [];
+	const reasoning = responseMessage.reasoning_content || undefined;
+	const functionCalls =
+		responseMessage.tool_calls?.filter((tc): tc is FunctionToolCall => tc.type === "function") ??
+		[];
 
-  if (functionCalls.length > 0) {
-    const content = responseMessage.content || undefined;
-    const toolCalls = parseToolCalls(functionCalls);
+	if (functionCalls.length > 0) {
+		return createToolCallsResponse(responseMessage, functionCalls, reasoning, logger);
+	}
 
-    logger?.debug('Received response from Deepseek LLM', {
-      hasToolCall: true,
-      toolCallCount: toolCalls.length,
-      hasReasoning: Boolean(reasoning),
-      hasContent: Boolean(content),
-    });
-
-    return LLMResponseFactory.createToolCalls({
-      toolCalls,
-      content,
-      reasoning,
-    });
-  }
-
-  const content = responseMessage.content ?? '';
-
-  logger?.debug('Received response from Deepseek LLM', {
-    hasToolCall: false,
-    hasReasoning: Boolean(reasoning),
-  });
-
-  return LLMResponseFactory.createText({
-    content,
-    reasoning,
-  });
+	return createTextResponse(responseMessage, reasoning, logger);
 }

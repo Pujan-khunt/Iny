@@ -2,15 +2,16 @@
 
 **Status:** Draft  
 **Date:** 2026-09-30  
-**Authors:** Pujan Khunt, Antigravity AI  
+**Authors:** Pujan Khunt, Antigravity AI
 
 ---
 
 ## 1. Context & Business Motivations
 
-Iny currently manages authorized users via a static comma-separated environment variable (`ALLOWED_USERS`) loaded on startup into an in-memory `WhatsAppAllowlist` (`Set<string>`). 
+Iny currently manages authorized users via a static comma-separated environment variable (`ALLOWED_USERS`) loaded on startup into an in-memory `WhatsAppAllowlist` (`Set<string>`).
 
 This architecture presents two major limitations:
+
 1. **Static Access Control**: Adding or revoking users requires editing `.env` on the host and restarting the entire Docker container stack. There is no persistent database audit trail or metadata (e.g. user names, roles, or active status) stored for authorized callers.
 2. **The WhatsApp LID Blindspot**: In modern WhatsApp (and `@whiskeysockets/baileys` 7.x), WhatsApp delivers incoming direct messages using **LID (Linked Identity JID - `@lid`)** by default instead of the user's phone number (**PNJID - `@s.whatsapp.net`**) to protect privacy. Currently, `WhatsAppJid.normalize` strictly rejects `@lid` addresses. When a user sends a message from a modern WhatsApp client, Iny fails to normalize the identifier, rejects the user as unauthorized, and drops the message. Furthermore, if `remoteJid` flips between LID and PN, conversation memory in `dialogue_turns` becomes fragmented under different `userId`s.
 
@@ -21,6 +22,7 @@ This specification designs a **PostgreSQL-backed allowlist subsystem** with **na
 ## 2. Architectural Boundaries & Hexagonal Invariants
 
 Following Iny's Hexagonal Architecture:
+
 - **Core Domain (`src/core/`)**:
   - Remains 100% pure TypeScript with zero external runtime dependencies.
   - The domain `UserMessage` entity continues to use a canonical `userId` string (`<digits>@s.whatsapp.net`).
@@ -40,18 +42,20 @@ Following Iny's Hexagonal Architecture:
 A new table `allowed_users` will be defined using Drizzle ORM in `src/adapters/outbound/access-control/postgres/schema.ts`:
 
 ### Columns
-| Column Name | PostgreSQL Type | Nullable | Default | Description |
-|---|---|---|---|---|
-| `phone_number` | `TEXT` | No | Primary Key | Normalized phone number with country code, digits only (e.g. `'919876543210'`). |
-| `jid` | `TEXT` | No | Unique | Canonical WhatsApp Phone Number JID (e.g. `'919876543210@s.whatsapp.net'`). |
-| `lid` | `TEXT` | Yes | Null | Paired WhatsApp Linked Identity JID (e.g. `'123456789012345@lid'`). Dynamically cached on first contact. |
-| `name` | `TEXT` | Yes | Null | Friendly display name or college student/staff identifier (e.g. `'Pujan Khunt'`). |
-| `role` | `TEXT` | No | `'user'` | Role classification for future permissions (`'admin'` vs `'user'`). |
-| `is_active` | `BOOLEAN` | No | `true` | Soft deletion/revocation flag. If `false`, access is immediately blocked. |
-| `created_at` | `TIMESTAMPTZ` | No | `now()` | Timestamp when the user was initially granted access. |
-| `updated_at` | `TIMESTAMPTZ` | No | `now()` | Timestamp of last modification (e.g., LID caching or revocation). |
+
+| Column Name    | PostgreSQL Type | Nullable | Default     | Description                                                                                              |
+| -------------- | --------------- | -------- | ----------- | -------------------------------------------------------------------------------------------------------- |
+| `phone_number` | `TEXT`          | No       | Primary Key | Normalized phone number with country code, digits only (e.g. `'919876543210'`).                          |
+| `jid`          | `TEXT`          | No       | Unique      | Canonical WhatsApp Phone Number JID (e.g. `'919876543210@s.whatsapp.net'`).                              |
+| `lid`          | `TEXT`          | Yes      | Null        | Paired WhatsApp Linked Identity JID (e.g. `'123456789012345@lid'`). Dynamically cached on first contact. |
+| `name`         | `TEXT`          | Yes      | Null        | Friendly display name or college student/staff identifier (e.g. `'Pujan Khunt'`).                        |
+| `role`         | `TEXT`          | No       | `'user'`    | Role classification for future permissions (`'admin'` vs `'user'`).                                      |
+| `is_active`    | `BOOLEAN`       | No       | `true`      | Soft deletion/revocation flag. If `false`, access is immediately blocked.                                |
+| `created_at`   | `TIMESTAMPTZ`   | No       | `now()`     | Timestamp when the user was initially granted access.                                                    |
+| `updated_at`   | `TIMESTAMPTZ`   | No       | `now()`     | Timestamp of last modification (e.g., LID caching or revocation).                                        |
 
 ### Table Constraints & Indexes
+
 1. **Primary Key**: `PRIMARY KEY (phone_number)`
 2. **Unique Index on `jid`**: `CREATE UNIQUE INDEX idx_allowed_users_jid ON allowed_users (jid);`
 3. **Unique Index on `lid`**: `CREATE UNIQUE INDEX idx_allowed_users_lid ON allowed_users (lid) WHERE lid IS NOT NULL;`
@@ -81,57 +85,59 @@ Refactor `src/adapters/common/whatsapp/WhatsAppJid.ts` to delegate directly to `
 ## 5. Persistent Allowlist Adapter Specification
 
 ### Interface Definition
+
 ```typescript
 export interface AllowedUserRecord {
-  phoneNumber: string;
-  jid: string;
-  lid: string | null;
-  name: string | null;
-  role: 'admin' | 'user';
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+	phoneNumber: string;
+	jid: string;
+	lid: string | null;
+	name: string | null;
+	role: "admin" | "user";
+	isActive: boolean;
+	createdAt: Date;
+	updatedAt: Date;
 }
 
 export interface AllowlistPort {
-  /**
-   * Verifies whether an incoming address (PNJID, LIDJID, or phone number)
-   * is actively authorized to access Iny.
-   *
-   * If the user is authorized and the incoming message provides an LID that was
-   * not previously cached, schedules an asynchronous update to store the LID.
-   */
-  isAllowed(address: string, pairedLid?: string | null): Promise<boolean>;
+	/**
+	 * Verifies whether an incoming address (PNJID, LIDJID, or phone number)
+	 * is actively authorized to access Iny.
+	 *
+	 * If the user is authorized and the incoming message provides an LID that was
+	 * not previously cached, schedules an asynchronous update to store the LID.
+	 */
+	isAllowed(address: string, pairedLid?: string | null): Promise<boolean>;
 
-  /**
-   * Retrieves full user record by phone number, JID, or LID.
-   */
-  getUser(address: string): Promise<AllowedUserRecord | null>;
+	/**
+	 * Retrieves full user record by phone number, JID, or LID.
+	 */
+	getUser(address: string): Promise<AllowedUserRecord | null>;
 
-  /**
-   * Seeds initial administrator users from configuration into the database.
-   * Existing entries are never overwritten (ON CONFLICT DO NOTHING).
-   */
-  seedUsers(entries: string[]): Promise<void>;
+	/**
+	 * Seeds initial administrator users from configuration into the database.
+	 * Existing entries are never overwritten (ON CONFLICT DO NOTHING).
+	 */
+	seedUsers(entries: string[]): Promise<void>;
 
-  /**
-   * Returns the count of active allowed users currently in the database.
-   */
-  countActiveUsers(): Promise<number>;
+	/**
+	 * Returns the count of active allowed users currently in the database.
+	 */
+	countActiveUsers(): Promise<number>;
 
-  /**
-   * Updates the paired LID for an existing user record.
-   */
-  cacheLid(phoneNumber: string, lid: string): Promise<void>;
+	/**
+	 * Updates the paired LID for an existing user record.
+	 */
+	cacheLid(phoneNumber: string, lid: string): Promise<void>;
 }
 ```
 
 ### Runtime Verification Flow
+
 1. Normalize incoming `address` using `WhatsAppJid.normalize(address)`.
 2. Query PostgreSQL with indexed $O(1)$ lookup:
    ```sql
-   SELECT phone_number, jid, lid, is_active, role 
-   FROM allowed_users 
+   SELECT phone_number, jid, lid, is_active, role
+   FROM allowed_users
    WHERE (jid = $1 OR lid = $1 OR phone_number = $1)
    LIMIT 1;
    ```
@@ -145,6 +151,7 @@ export interface AllowlistPort {
 ## 6. Message Processing & Identity Normalization Flow
 
 ### Inbound Message Handling (`WhatsAppInboundAdapter`)
+
 ```mermaid
 sequenceDiagram
     participant WA as Baileys Socket
@@ -188,6 +195,7 @@ sequenceDiagram
    - Result: `dialogue_turns` conversation memory in PostgreSQL is **100% unified and never fragmented by LID changes**.
 
 ### Outbound Message Handling (`BaileysMessageSenderAdapter`)
+
 - Before dispatching via `socket.sendMessage(userId, { text })`, verifies `await this.allowlist.isAllowed(userId)`.
 - Because Baileys natively accepts PNJIDs (`@s.whatsapp.net`) and handles internal LID translation, transmission requires no extra transformation.
 
@@ -196,6 +204,7 @@ sequenceDiagram
 ## 7. Startup Bootstrapping & Fail-Fast Safety
 
 In `src/index.ts`:
+
 1. **Migrations**: Database startup migrations run first via `runStartupMigrations()`.
 2. **Seeding**:
    - Reads `config.ALLOWED_USERS`.

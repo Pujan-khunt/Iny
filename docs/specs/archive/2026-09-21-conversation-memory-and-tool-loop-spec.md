@@ -5,6 +5,7 @@
 Iny aims to be a zero-friction, intelligent assistant for college students. Currently, Iny operates on a single-turn basis (forgetting context between messages) and terminates abruptly whenever a tool is called by sending raw tool output strings directly to the user.
 
 This specification defines the architecture, domain entities, ports, and orchestration logic for:
+
 1. **Multi-Turn Conversation Memory**: Preserving context across conversation turns while enforcing turn-atomic boundaries to prevent API errors and token inflation.
 2. **First-Class `DialogueTurn` Abstraction**: Eliminating fragile sliding-window slicing by modeling dialogue as atomic turn transactions.
 3. **Closed ReAct Tool Loop**: Allowing the LLM to autonomously reason, call tools, inspect tool results (or error messages), and synthesize friendly, conversational responses.
@@ -51,6 +52,7 @@ src/
 ```
 
 ### Architectural Invariants
+
 1. **Hexagonal Purity**: `src/core/` contains strictly TypeScript types, interfaces, and classes. Zero external dependencies.
 2. **Turn-Atomic Integrity**: Conversation history loaded into the LLM prompt must always consist of whole dialogue turns. An assistant tool-call message must never be orphaned from its corresponding tool-result messages.
 3. **Single Point of Commitment**: The repository is updated only upon successful completion of a dialogue turn. Failed or aborted turns do not corrupt conversational memory.
@@ -64,34 +66,34 @@ src/
 
 ```typescript
 export interface ToolCall {
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
+	id: string;
+	name: string;
+	arguments: Record<string, unknown>;
 }
 
 export interface BaseMessage {
-  id: string;
-  userId: string;
-  timestamp: Date;
+	id: string;
+	userId: string;
+	timestamp: Date;
 }
 
 export interface UserMessage extends BaseMessage {
-  role: 'user';
-  content: string;
+	role: "user";
+	content: string;
 }
 
 export interface AssistantMessage extends BaseMessage {
-  role: 'assistant';
-  content?: string;
-  thought?: string;
-  toolCalls?: ToolCall[];
+	role: "assistant";
+	content?: string;
+	thought?: string;
+	toolCalls?: ToolCall[];
 }
 
 export interface ToolMessage extends BaseMessage {
-  role: 'tool';
-  toolCallId: string;
-  name: string;
-  content: string;
+	role: "tool";
+	toolCallId: string;
+	name: string;
+	content: string;
 }
 
 export type Message = UserMessage | AssistantMessage | ToolMessage;
@@ -100,17 +102,17 @@ export type Message = UserMessage | AssistantMessage | ToolMessage;
 ### 3.2. `src/core/entities/DialogueTurn.ts`
 
 ```typescript
-import { Message } from './Message';
+import { Message } from "./Message";
 
 export interface DialogueTurn {
-  id: string;
-  userId: string;
-  /**
-   * Complete, atomic sequence of messages for this turn:
-   * [UserMessage, ...(AssistantMessage(toolCalls) + ToolMessage)*, AssistantMessage(final)]
-   */
-  messages: Message[];
-  createdAt: Date;
+	id: string;
+	userId: string;
+	/**
+	 * Complete, atomic sequence of messages for this turn:
+	 * [UserMessage, ...(AssistantMessage(toolCalls) + ToolMessage)*, AssistantMessage(final)]
+	 */
+	messages: Message[];
+	createdAt: Date;
 }
 ```
 
@@ -121,63 +123,63 @@ export interface DialogueTurn {
 ### 4.1. `src/core/ports/ChatRepositoryPort.ts`
 
 ```typescript
-import { DialogueTurn } from '../entities/DialogueTurn';
+import { DialogueTurn } from "../entities/DialogueTurn";
 
 export interface ChatRepositoryPort {
-  /**
-   * Retrieves the most recent dialogue turns for a user, ordered chronologically (oldest to newest).
-   * @param userId The unique user identifier.
-   * @param maxTurns Maximum number of complete turns to retrieve.
-   */
-  getRecentTurns(userId: string, maxTurns: number): Promise<DialogueTurn[]>;
+	/**
+	 * Retrieves the most recent dialogue turns for a user, ordered chronologically (oldest to newest).
+	 * @param userId The unique user identifier.
+	 * @param maxTurns Maximum number of complete turns to retrieve.
+	 */
+	getRecentTurns(userId: string, maxTurns: number): Promise<DialogueTurn[]>;
 
-  /**
-   * Atomically persists a completed dialogue turn.
-   */
-  saveTurn(turn: DialogueTurn): Promise<void>;
+	/**
+	 * Atomically persists a completed dialogue turn.
+	 */
+	saveTurn(turn: DialogueTurn): Promise<void>;
 
-  /**
-   * Clears all dialogue turns for a user (used for tests or /reset).
-   */
-  clearHistory(userId: string): Promise<void>;
+	/**
+	 * Clears all dialogue turns for a user (used for tests or /reset).
+	 */
+	clearHistory(userId: string): Promise<void>;
 }
 ```
 
 ### 4.2. `src/core/ports/LLMPort.ts`
 
 ```typescript
-import { Plugin } from './PluginRegistryPort';
-import { Message, ToolCall } from '../entities/Message';
+import { Plugin } from "./PluginRegistryPort";
+import { Message, ToolCall } from "../entities/Message";
 
 export interface ToolCallDecision {
-  type: 'tool_calls';
-  toolCalls: ToolCall[];
-  thought?: string;
+	type: "tool_calls";
+	toolCalls: ToolCall[];
+	thought?: string;
 }
 
 export interface TextResponseDecision {
-  type: 'text';
-  content: string;
-  thought?: string;
+	type: "text";
+	content: string;
+	thought?: string;
 }
 
 export type LLMResponse = ToolCallDecision | TextResponseDecision;
 
 export interface GenerateResponseOptions {
-  forcedSynthesis?: boolean;
+	forcedSynthesis?: boolean;
 }
 
 export interface LLMPort {
-  /**
-   * Queries the LLM with system prompt, full dialogue history, and available plugins.
-   * When options.forcedSynthesis is true, tool definitions are withheld to force a text response.
-   */
-  generateResponse(
-    systemPrompt: string,
-    history: Message[],
-    plugins: Plugin[],
-    options?: GenerateResponseOptions
-  ): Promise<LLMResponse>;
+	/**
+	 * Queries the LLM with system prompt, full dialogue history, and available plugins.
+	 * When options.forcedSynthesis is true, tool definitions are withheld to force a text response.
+	 */
+	generateResponse(
+		systemPrompt: string,
+		history: Message[],
+		plugins: Plugin[],
+		options?: GenerateResponseOptions,
+	): Promise<LLMResponse>;
 }
 ```
 
@@ -186,31 +188,32 @@ export interface LLMPort {
 ## 5. Orchestration: `ProcessIncomingMessage` Use Case
 
 ### 5.1. Dependencies & Initialization
+
 ```typescript
 export interface ProcessIncomingMessageConfig {
-  systemPrompt: string;
-  maxToolIterations?: number;
-  maxHistoryTurns?: number;
+	systemPrompt: string;
+	maxToolIterations?: number;
+	maxHistoryTurns?: number;
 }
 
 export class ProcessIncomingMessage {
-  private maxToolIterations: number;
-  private maxHistoryTurns: number;
-  private readonly systemPrompt: string;
+	private maxToolIterations: number;
+	private maxHistoryTurns: number;
+	private readonly systemPrompt: string;
 
-  constructor(
-    private sender: MessageSenderPort,
-    private llm: LLMPort,
-    private registry: PluginRegistryPort,
-    private chatRepository: ChatRepositoryPort,
-    private logger: LoggerPort,
-    config: ProcessIncomingMessageConfig
-  ) {
-    this.systemPrompt = config.systemPrompt;
-    this.maxToolIterations = config.maxToolIterations ?? 5;
-    this.maxHistoryTurns = config.maxHistoryTurns ?? 10;
-  }
-  // ...
+	constructor(
+		private sender: MessageSenderPort,
+		private llm: LLMPort,
+		private registry: PluginRegistryPort,
+		private chatRepository: ChatRepositoryPort,
+		private logger: LoggerPort,
+		config: ProcessIncomingMessageConfig,
+	) {
+		this.systemPrompt = config.systemPrompt;
+		this.maxToolIterations = config.maxToolIterations ?? 5;
+		this.maxHistoryTurns = config.maxHistoryTurns ?? 10;
+	}
+	// ...
 }
 ```
 
@@ -260,7 +263,9 @@ sequenceDiagram
 ```
 
 ### 5.3. Error Reflection Mechanism
+
 If `registry.executePlugin()` throws an exception or rejects:
+
 - Do NOT crash the conversation turn.
 - Wrap the error into a `ToolMessage`:
   `content: "Error executing tool '${tool.name}': ${error.message}"`
@@ -271,6 +276,7 @@ If `registry.executePlugin()` throws an exception or rejects:
 ## 6. Driven Adapters
 
 ### 6.1. `InMemoryChatRepository`
+
 - **File:** `src/adapters/outbound/chat-repository/InMemoryChatRepository.ts`
 - **Responsibilities:**
   - Implements `ChatRepositoryPort`.
@@ -286,6 +292,7 @@ If `registry.executePlugin()` throws an exception or rejects:
     - Deletes key from map.
 
 ### 6.2. `DeepseekAdapter` Updates
+
 - **File:** `src/adapters/outbound/llm/DeepseekAdapter.ts`
 - **Responsibilities:**
   - Maps `Message[]` to OpenAI `ChatCompletionMessageParam[]`:
@@ -321,20 +328,23 @@ If `registry.executePlugin()` throws an exception or rejects:
 ## 7. Configuration & Composition Root
 
 ### 7.1. `src/config.ts`
+
 Update Zod schema:
+
 ```typescript
 export const configSchema = z.object({
-  DEEPSEEK_API_KEY: z.string().min(1, 'DEEPSEEK_API_KEY is required'),
-  DEEPSEEK_BASE_URL: z.url().default('https://api.deepseek.com'),
-  DEEPSEEK_MODEL: z.string().default('deepseek-flash'),
-  SYSTEM_PROMPT: z.string().min(1, 'SYSTEM_PROMPT is required'),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  MAX_TOOL_ITERATIONS: z.coerce.number().int().positive().max(20).default(5),
-  MAX_HISTORY_TURNS: z.coerce.number().int().positive().max(100).default(10),
+	DEEPSEEK_API_KEY: z.string().min(1, "DEEPSEEK_API_KEY is required"),
+	DEEPSEEK_BASE_URL: z.url().default("https://api.deepseek.com"),
+	DEEPSEEK_MODEL: z.string().default("deepseek-flash"),
+	SYSTEM_PROMPT: z.string().min(1, "SYSTEM_PROMPT is required"),
+	LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+	MAX_TOOL_ITERATIONS: z.coerce.number().int().positive().max(20).default(5),
+	MAX_HISTORY_TURNS: z.coerce.number().int().positive().max(100).default(10),
 });
 ```
 
 ### 7.2. `src/index.ts`
+
 1. Instantiate `InMemoryChatRepository`.
 2. Pass `chatRepository` and config parameters into `ProcessIncomingMessage`.
 
@@ -342,15 +352,15 @@ export const configSchema = z.object({
 
 ## 8. Edge Cases & Resilience
 
-| Edge Case | Mitigation |
-| :--- | :--- |
-| **Dangling Tool Call** | Impossible by design: History is retrieved as complete `DialogueTurn` units. Slicing never bisects a turn. |
-| **Tool Execution Throws Error** | Caught in use case, serialized into `ToolMessage`, and returned to LLM for self-correction. |
-| **Runaway Tool Loop** | Terminated when `iterationCount === MAX_TOOL_ITERATIONS` by invoking `forcedSynthesis`. |
-| **Malformed Tool Arguments from LLM** | `DeepseekAdapter` catches JSON parse errors and returns a defensive tool error message to the LLM. |
-| **Parallel Tool Calls with Mismatched Order** | Each `ToolMessage` embeds `toolCallId` matching its specific `ToolCall.id`. |
-| **User Sends Empty String or Whitespace** | `CLIAdapter` already validates and ignores empty input before invoking use case. |
-| **Concurrent Requests from Same User** | In-memory arrays are synchronous in Node.js event loop; turns append deterministically. |
+| Edge Case                                     | Mitigation                                                                                                 |
+| :-------------------------------------------- | :--------------------------------------------------------------------------------------------------------- |
+| **Dangling Tool Call**                        | Impossible by design: History is retrieved as complete `DialogueTurn` units. Slicing never bisects a turn. |
+| **Tool Execution Throws Error**               | Caught in use case, serialized into `ToolMessage`, and returned to LLM for self-correction.                |
+| **Runaway Tool Loop**                         | Terminated when `iterationCount === MAX_TOOL_ITERATIONS` by invoking `forcedSynthesis`.                    |
+| **Malformed Tool Arguments from LLM**         | `DeepseekAdapter` catches JSON parse errors and returns a defensive tool error message to the LLM.         |
+| **Parallel Tool Calls with Mismatched Order** | Each `ToolMessage` embeds `toolCallId` matching its specific `ToolCall.id`.                                |
+| **User Sends Empty String or Whitespace**     | `CLIAdapter` already validates and ignores empty input before invoking use case.                           |
+| **Concurrent Requests from Same User**        | In-memory arrays are synchronous in Node.js event loop; turns append deterministically.                    |
 
 ---
 

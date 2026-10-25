@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+.worktrees/
+.superpowers/
+drizzle/
+package-lock.json

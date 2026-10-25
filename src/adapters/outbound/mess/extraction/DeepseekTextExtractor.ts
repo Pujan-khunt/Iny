@@ -1,52 +1,52 @@
-import OpenAI from 'openai';
+import OpenAI from "openai";
 import {
-  ExtractedLocationDetail,
-  ExtractedLocationDetailSchema,
-  ExtractedTimingExtension,
-  ExtractedTimingExtensionSchema,
-  ExtractedMealChange,
-  ExtractedMealChangeSchema,
-  ExtractedCompositeAnnouncement,
-  ExtractedCompositeAnnouncementSchema,
-} from './ExtractionSchemas.js';
+	ExtractedLocationDetail,
+	ExtractedLocationDetailSchema,
+	ExtractedTimingExtension,
+	ExtractedTimingExtensionSchema,
+	ExtractedMealChange,
+	ExtractedMealChangeSchema,
+	ExtractedCompositeAnnouncement,
+	ExtractedCompositeAnnouncementSchema,
+} from "./ExtractionSchemas";
 import {
-  cleanJsonResponse,
-  classifyAndThrowExtractorError,
-  resolveOpenAiClient,
-} from './ExtractorUtils.js';
-import { getISTDateString } from '../../../../core/entities/MessMeal.js';
+	cleanJsonResponse,
+	classifyAndThrowExtractorError,
+	resolveOpenAiClient,
+} from "./ExtractorUtils";
+import { getISTDateString } from "../../../../core/entities/MessMeal";
 
 export interface DeepseekTextExtractorOptions {
-  client?: OpenAI;
-  apiKey?: string;
-  baseURL?: string;
-  model?: string;
+	client?: OpenAI;
+	apiKey?: string;
+	baseURL?: string;
+	model?: string;
 }
 
 export class DeepseekTextExtractor {
-  private readonly client: OpenAI;
-  private readonly model: string;
+	private readonly client: OpenAI;
+	private readonly model: string;
 
-  constructor(
-    clientOrApiKeyOrOptions: OpenAI | string | DeepseekTextExtractorOptions,
-    options?: { baseURL?: string; model?: string }
-  ) {
-    const resolved = resolveOpenAiClient(clientOrApiKeyOrOptions, options);
-    this.client = resolved.client;
-    this.model = resolved.model;
-  }
+	constructor(
+		clientOrApiKeyOrOptions: OpenAI | string | DeepseekTextExtractorOptions,
+		options?: { baseURL?: string; model?: string },
+	) {
+		const resolved = resolveOpenAiClient(clientOrApiKeyOrOptions, options);
+		this.client = resolved.client;
+		this.model = resolved.model;
+	}
 
-  /**
-   * Extracts lunch/meal location and batch allocation details from announcement text.
-   */
-  async extractLocationDetail(
-    textBody: string,
-    receivedAt?: Date
-  ): Promise<ExtractedLocationDetail> {
-    const refDate = receivedAt ?? new Date();
-    const istDateStr = getISTDateString(refDate);
+	/**
+	 * Extracts lunch/meal location and batch allocation details from announcement text.
+	 */
+	async extractLocationDetail(
+		textBody: string,
+		receivedAt?: Date,
+	): Promise<ExtractedLocationDetail> {
+		const refDate = receivedAt ?? new Date();
+		const istDateStr = getISTDateString(refDate);
 
-    const systemPrompt = `You are an expert assistant extracting campus mess seating and location details from WhatsApp announcements.
+		const systemPrompt = `You are an expert assistant extracting campus mess seating and location details from WhatsApp announcements.
 Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr}).
 
 Batch & Seating Rules:
@@ -68,43 +68,43 @@ Return ONLY a valid JSON object matching:
   "collegeBatches": ["..."]
 }`;
 
-    const userPrompt = `Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr})\nAnnouncement text:\n"${textBody}"`;
+		const userPrompt = `Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr})\nAnnouncement text:\n"${textBody}"`;
 
-    let content: string | undefined;
-    try {
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        response_format: { type: 'json_object' },
-      });
+		let content: string | undefined;
+		try {
+			const completion = await this.client.chat.completions.create({
+				model: this.model,
+				messages: [
+					{ role: "system", content: systemPrompt },
+					{ role: "user", content: userPrompt },
+				],
+				response_format: { type: "json_object" },
+			});
 
-      content = completion.choices[0]?.message?.content ?? undefined;
-      if (!content) {
-        throw new Error('LLM returned empty response during location extraction');
-      }
+			content = completion.choices[0]?.message?.content ?? undefined;
+			if (!content) {
+				throw new Error("LLM returned empty response during location extraction");
+			}
 
-      const cleaned = cleanJsonResponse(content);
-      const parsedJson = JSON.parse(cleaned);
-      return ExtractedLocationDetailSchema.parse(parsedJson);
-    } catch (error) {
-      classifyAndThrowExtractorError(error, content);
-    }
-  }
+			const cleaned = cleanJsonResponse(content);
+			const parsedJson = JSON.parse(cleaned);
+			return ExtractedLocationDetailSchema.parse(parsedJson);
+		} catch (error) {
+			classifyAndThrowExtractorError(error, content);
+		}
+	}
 
-  /**
-   * Extracts meal timing extension details from announcement text.
-   */
-  async extractTimingExtension(
-    textBody: string,
-    receivedAt?: Date
-  ): Promise<ExtractedTimingExtension> {
-    const refDate = receivedAt ?? new Date();
-    const istDateStr = getISTDateString(refDate);
+	/**
+	 * Extracts meal timing extension details from announcement text.
+	 */
+	async extractTimingExtension(
+		textBody: string,
+		receivedAt?: Date,
+	): Promise<ExtractedTimingExtension> {
+		const refDate = receivedAt ?? new Date();
+		const istDateStr = getISTDateString(refDate);
 
-    const systemPrompt = `You are an expert assistant extracting campus mess timing updates from WhatsApp announcements.
+		const systemPrompt = `You are an expert assistant extracting campus mess timing updates from WhatsApp announcements.
 Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr}).
 
 Requirements:
@@ -121,40 +121,40 @@ Return ONLY a valid JSON object matching:
   "extendedTimings": "..."
 }`;
 
-    const userPrompt = `Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr})\nAnnouncement text:\n"${textBody}"`;
+		const userPrompt = `Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr})\nAnnouncement text:\n"${textBody}"`;
 
-    let content: string | undefined;
-    try {
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        response_format: { type: 'json_object' },
-      });
+		let content: string | undefined;
+		try {
+			const completion = await this.client.chat.completions.create({
+				model: this.model,
+				messages: [
+					{ role: "system", content: systemPrompt },
+					{ role: "user", content: userPrompt },
+				],
+				response_format: { type: "json_object" },
+			});
 
-      content = completion.choices[0]?.message?.content ?? undefined;
-      if (!content) {
-        throw new Error('LLM returned empty response during timing extension extraction');
-      }
+			content = completion.choices[0]?.message?.content ?? undefined;
+			if (!content) {
+				throw new Error("LLM returned empty response during timing extension extraction");
+			}
 
-      const cleaned = cleanJsonResponse(content);
-      const parsedJson = JSON.parse(cleaned);
-      return ExtractedTimingExtensionSchema.parse(parsedJson);
-    } catch (error) {
-      classifyAndThrowExtractorError(error, content);
-    }
-  }
+			const cleaned = cleanJsonResponse(content);
+			const parsedJson = JSON.parse(cleaned);
+			return ExtractedTimingExtensionSchema.parse(parsedJson);
+		} catch (error) {
+			classifyAndThrowExtractorError(error, content);
+		}
+	}
 
-  /**
-   * Extracts dish replacements, additions, or cancellations from announcement text.
-   */
-  async extractMealChange(textBody: string, receivedAt?: Date): Promise<ExtractedMealChange> {
-    const refDate = receivedAt ?? new Date();
-    const istDateStr = getISTDateString(refDate);
+	/**
+	 * Extracts dish replacements, additions, or cancellations from announcement text.
+	 */
+	async extractMealChange(textBody: string, receivedAt?: Date): Promise<ExtractedMealChange> {
+		const refDate = receivedAt ?? new Date();
+		const istDateStr = getISTDateString(refDate);
 
-    const systemPrompt = `You are an expert assistant extracting campus mess dish changes from WhatsApp announcements.
+		const systemPrompt = `You are an expert assistant extracting campus mess dish changes from WhatsApp announcements.
 Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr}).
 
 Requirements:
@@ -175,49 +175,49 @@ Return ONLY a valid JSON object matching:
   "originalItem": "Paneer Butter Masala"
 }`;
 
-    const userPrompt = `Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr})\nAnnouncement text:\n"${textBody}"`;
+		const userPrompt = `Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr})\nAnnouncement text:\n"${textBody}"`;
 
-    let content: string | undefined;
-    try {
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        response_format: { type: 'json_object' },
-      });
+		let content: string | undefined;
+		try {
+			const completion = await this.client.chat.completions.create({
+				model: this.model,
+				messages: [
+					{ role: "system", content: systemPrompt },
+					{ role: "user", content: userPrompt },
+				],
+				response_format: { type: "json_object" },
+			});
 
-      content = completion.choices[0]?.message?.content ?? undefined;
-      if (!content) {
-        throw new Error('LLM returned empty response during meal change extraction');
-      }
+			content = completion.choices[0]?.message?.content ?? undefined;
+			if (!content) {
+				throw new Error("LLM returned empty response during meal change extraction");
+			}
 
-      const cleaned = cleanJsonResponse(content);
-      const parsedJson = JSON.parse(cleaned);
-      return ExtractedMealChangeSchema.parse(parsedJson);
-    } catch (error) {
-      classifyAndThrowExtractorError(error, content);
-    }
-  }
+			const cleaned = cleanJsonResponse(content);
+			const parsedJson = JSON.parse(cleaned);
+			return ExtractedMealChangeSchema.parse(parsedJson);
+		} catch (error) {
+			classifyAndThrowExtractorError(error, content);
+		}
+	}
 
-  /**
-   * Extracts composite operational announcement events (location, timing extensions,
-   * dish changes, and one-way meal swaps) from WhatsApp announcement text in a single pass.
-   */
-  async extractAnnouncementEvents(
-    textBody: string,
-    receivedAt?: Date
-  ): Promise<ExtractedCompositeAnnouncement> {
-    const refDate = receivedAt ?? new Date();
-    const istDateStr = getISTDateString(refDate);
-    const istFormattedTime = refDate.toLocaleString('en-US', {
-      timeZone: 'Asia/Kolkata',
-      dateStyle: 'full',
-      timeStyle: 'medium',
-    });
+	/**
+	 * Extracts composite operational announcement events (location, timing extensions,
+	 * dish changes, and one-way meal swaps) from WhatsApp announcement text in a single pass.
+	 */
+	async extractAnnouncementEvents(
+		textBody: string,
+		receivedAt?: Date,
+	): Promise<ExtractedCompositeAnnouncement> {
+		const refDate = receivedAt ?? new Date();
+		const istDateStr = getISTDateString(refDate);
+		const istFormattedTime = refDate.toLocaleString("en-US", {
+			timeZone: "Asia/Kolkata",
+			dateStyle: "full",
+			timeStyle: "medium",
+		});
 
-    const systemPrompt = `You are an expert AI assistant that extracts operational mess meal events from campus WhatsApp announcements.
+		const systemPrompt = `You are an expert AI assistant that extracts operational mess meal events from campus WhatsApp announcements.
 Message received timestamp: ${refDate.toISOString()} (IST: ${istFormattedTime}, Date: ${istDateStr}).
 
 Extract all operational events described in the message into a single JSON object. A message may contain one or multiple events:
@@ -286,78 +286,81 @@ Return ONLY a valid JSON object matching:
 }
 (Note: When location is not null, it must be an object with: { "mealDate": "YYYY-MM-DD", "mealSlot": "lunch", "hostelBatches": [...], "collegeBatches": [...] })`;
 
-    const userPrompt = `Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr})\nAnnouncement text:\n"${textBody}"`;
+		const userPrompt = `Message received at: ${refDate.toISOString()} (IST Date: ${istDateStr})\nAnnouncement text:\n"${textBody}"`;
 
-    let content: string | undefined;
-    try {
-      const completion = await this.client.chat.completions.create({
-        model: this.model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.0,
-        response_format: { type: 'json_object' },
-      });
+		let content: string | undefined;
+		try {
+			const completion = await this.client.chat.completions.create({
+				model: this.model,
+				messages: [
+					{ role: "system", content: systemPrompt },
+					{ role: "user", content: userPrompt },
+				],
+				temperature: 0.0,
+				response_format: { type: "json_object" },
+			});
 
-      content = completion.choices[0]?.message?.content ?? undefined;
-      if (!content) {
-        throw new Error('LLM returned empty response during announcement event extraction');
-      }
+			content = completion.choices[0]?.message?.content ?? undefined;
+			if (!content) {
+				throw new Error("LLM returned empty response during announcement event extraction");
+			}
 
-      const cleaned = cleanJsonResponse(content);
-      const parsedJson = JSON.parse(cleaned);
+			const cleaned = cleanJsonResponse(content);
+			const parsedJson = JSON.parse(cleaned);
 
-      if (parsedJson && typeof parsedJson === 'object') {
-        const topMealDate =
-          typeof parsedJson.mealDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsedJson.mealDate)
-            ? parsedJson.mealDate
-            : istDateStr;
+			if (parsedJson && typeof parsedJson === "object") {
+				const topMealDate =
+					typeof parsedJson.mealDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsedJson.mealDate)
+						? parsedJson.mealDate
+						: istDateStr;
 
-        if (!parsedJson.mealDate || !/^\d{4}-\d{2}-\d{2}$/.test(parsedJson.mealDate)) {
-          parsedJson.mealDate = topMealDate;
-        }
+				if (!parsedJson.mealDate || !/^\d{4}-\d{2}-\d{2}$/.test(parsedJson.mealDate)) {
+					parsedJson.mealDate = topMealDate;
+				}
 
-        if (parsedJson.location && typeof parsedJson.location === 'object') {
-          if (!parsedJson.location.mealDate || !/^\d{4}-\d{2}-\d{2}$/.test(parsedJson.location.mealDate)) {
-            parsedJson.location.mealDate = topMealDate;
-          }
-        }
+				if (parsedJson.location && typeof parsedJson.location === "object") {
+					if (
+						!parsedJson.location.mealDate ||
+						!/^\d{4}-\d{2}-\d{2}$/.test(parsedJson.location.mealDate)
+					) {
+						parsedJson.location.mealDate = topMealDate;
+					}
+				}
 
-        if (Array.isArray(parsedJson.timingExtensions)) {
-          for (const ext of parsedJson.timingExtensions) {
-            if (ext && typeof ext === 'object') {
-              if (!ext.mealDate || !/^\d{4}-\d{2}-\d{2}$/.test(ext.mealDate)) {
-                ext.mealDate = topMealDate;
-              }
-            }
-          }
-        }
+				if (Array.isArray(parsedJson.timingExtensions)) {
+					for (const ext of parsedJson.timingExtensions) {
+						if (ext && typeof ext === "object") {
+							if (!ext.mealDate || !/^\d{4}-\d{2}-\d{2}$/.test(ext.mealDate)) {
+								ext.mealDate = topMealDate;
+							}
+						}
+					}
+				}
 
-        if (Array.isArray(parsedJson.mealChanges)) {
-          for (const change of parsedJson.mealChanges) {
-            if (change && typeof change === 'object') {
-              if (!change.mealDate || !/^\d{4}-\d{2}-\d{2}$/.test(change.mealDate)) {
-                change.mealDate = topMealDate;
-              }
-            }
-          }
-        }
+				if (Array.isArray(parsedJson.mealChanges)) {
+					for (const change of parsedJson.mealChanges) {
+						if (change && typeof change === "object") {
+							if (!change.mealDate || !/^\d{4}-\d{2}-\d{2}$/.test(change.mealDate)) {
+								change.mealDate = topMealDate;
+							}
+						}
+					}
+				}
 
-        if (Array.isArray(parsedJson.mealSwaps)) {
-          for (const swap of parsedJson.mealSwaps) {
-            if (swap && typeof swap === 'object') {
-              if (!swap.targetMealDate || !/^\d{4}-\d{2}-\d{2}$/.test(swap.targetMealDate)) {
-                swap.targetMealDate = topMealDate;
-              }
-            }
-          }
-        }
-      }
+				if (Array.isArray(parsedJson.mealSwaps)) {
+					for (const swap of parsedJson.mealSwaps) {
+						if (swap && typeof swap === "object") {
+							if (!swap.targetMealDate || !/^\d{4}-\d{2}-\d{2}$/.test(swap.targetMealDate)) {
+								swap.targetMealDate = topMealDate;
+							}
+						}
+					}
+				}
+			}
 
-      return ExtractedCompositeAnnouncementSchema.parse(parsedJson);
-    } catch (error) {
-      classifyAndThrowExtractorError(error, content);
-    }
-  }
+			return ExtractedCompositeAnnouncementSchema.parse(parsedJson);
+		} catch (error) {
+			classifyAndThrowExtractorError(error, content);
+		}
+	}
 }

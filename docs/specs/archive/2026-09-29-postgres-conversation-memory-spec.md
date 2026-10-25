@@ -15,6 +15,7 @@ Furthermore, Iny currently lacks end-to-end turn observability. While individual
 This specification establishes production-grade, persistent conversation memory powered by **PostgreSQL 16+**, **Drizzle ORM**, and the **`postgres.js`** driver, employing the **Hybrid Envelope** storage pattern with first-class turn latency tracking.
 
 ### Goals
+
 1. Implement a persistent outbound adapter `PostgresChatRepository` fulfilling [`ChatRepositoryPort`](../../src/core/ports/ChatRepositoryPort.ts).
 2. Refactor [`DialogueTurn`](../../src/core/entities/DialogueTurn.ts) to replace the ambiguous `createdAt` timestamp with precise lifecycle timestamps:
    - `startedAt: Date`: The exact millisecond Iny received and began processing the incoming turn.
@@ -32,6 +33,7 @@ This specification establishes production-grade, persistent conversation memory 
 11. Fully retire and remove the deprecated `InMemoryChatRepository` and its tests to keep the codebase lean and free of dead code.
 
 ### Non-Goals (Future Specs)
+
 - Vector embedding generation and semantic similarity search (`pgvector` queries). The schema prepares the foundation, but vector search will be implemented in a dedicated RAG / Long-Term Memory feature spec.
 - User profile, settings, and authorization database tables.
 - Distributed transaction coordinators or read-replicas.
@@ -199,7 +201,7 @@ sequenceDiagram
     participant DB as PostgreSQL (dialogue_turns)
 
     Note over UC: Ingestion: Capture startedAt = new Date()
-    
+
     rect rgb(240, 248, 255)
         Note over UC,Loop: Phase 1: Reasoning Phase
         UC->>Rep: getRecentTurns(userId, maxTurns: 10)
@@ -236,15 +238,15 @@ sequenceDiagram
 
 ## 5. Error Handling & Lifecycle Policy
 
-| Failure Scenario | Component Handling | Policy / Behavior |
-| :--- | :--- | :--- |
-| **Invalid Connection URL** | `src/config.ts` | Zod validation rejects invalid URI format at startup; terminates immediately with clear error. |
-| **Database Unreachable at Boot** | `src/index.ts` / `migrator.ts` | Startup migration runner fails fast, logs fatal error with connection details, and exits with code `1`. |
-| **Invalid Turn Invariant** | `validation.ts` | Rejects turn before SQL execution; throws descriptive error; prevents corrupted database writes. |
-| **Timing Order Inversion** | `validation.ts` / DB Check | Throws validation error if `completedAt < startedAt`; DB check constraint rejects write. |
-| **SQL Constraint Violation** | `PostgresChatRepository` | Catches database constraint error, logs structured error with `turnId` and `userId`, and propagates to use case caller. |
-| **Query Timeout / Transient Drop** | `postgres.js` pool | Driver automatically reconnects on dropped TCP sockets. Unrecoverable failures throw transport errors caught in use case Phase 3. |
-| **Application Shutdown (SIGINT/SIGTERM)** | `src/index.ts` | Signal handlers invoke `sqlClient.end({ timeout: 5 })`, closing pooled connections gracefully before process termination. |
+| Failure Scenario                          | Component Handling             | Policy / Behavior                                                                                                                 |
+| :---------------------------------------- | :----------------------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
+| **Invalid Connection URL**                | `src/config.ts`                | Zod validation rejects invalid URI format at startup; terminates immediately with clear error.                                    |
+| **Database Unreachable at Boot**          | `src/index.ts` / `migrator.ts` | Startup migration runner fails fast, logs fatal error with connection details, and exits with code `1`.                           |
+| **Invalid Turn Invariant**                | `validation.ts`                | Rejects turn before SQL execution; throws descriptive error; prevents corrupted database writes.                                  |
+| **Timing Order Inversion**                | `validation.ts` / DB Check     | Throws validation error if `completedAt < startedAt`; DB check constraint rejects write.                                          |
+| **SQL Constraint Violation**              | `PostgresChatRepository`       | Catches database constraint error, logs structured error with `turnId` and `userId`, and propagates to use case caller.           |
+| **Query Timeout / Transient Drop**        | `postgres.js` pool             | Driver automatically reconnects on dropped TCP sockets. Unrecoverable failures throw transport errors caught in use case Phase 3. |
+| **Application Shutdown (SIGINT/SIGTERM)** | `src/index.ts`                 | Signal handlers invoke `sqlClient.end({ timeout: 5 })`, closing pooled connections gracefully before process termination.         |
 
 ---
 
@@ -270,6 +272,7 @@ DB_MAX_CONNECTIONS: z
 ```
 
 Example `.env`:
+
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/iny
 DB_MAX_CONNECTIONS=10
