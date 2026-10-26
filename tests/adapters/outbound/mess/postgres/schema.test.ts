@@ -45,7 +45,6 @@ describe("Mess Schema & Config", () => {
 			expect(() =>
 				parseConfig({
 					DEEPSEEK_API_KEY: "test-key",
-					SYSTEM_PROMPT: "test-prompt",
 					BOT_PHONE_NUMBER: "15551234567",
 					DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 					FOOD_ANNOUNCEMENTS_GROUP_JID: "invalid_jid@s.whatsapp.net",

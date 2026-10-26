@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { ProcessIncomingMessage } from "./core/use-cases/ProcessIncomingMessage";
 import { AgentLoop } from "./core/use-cases/AgentLoop";
+import { SYSTEM_PROMPT } from "./core/prompts/SystemPrompt";
 import { loadConfig } from "./config";
 import { DeepseekAdapter } from "./adapters/outbound/llm/DeepseekAdapter";
 import { InMemoryToolRegistry } from "./adapters/outbound/tool-registry/InMemoryToolRegistry";
@@ -49,7 +50,6 @@ const displayMessCardTool = new DisplayMessCardTool(messRepository, defaultMessC
 const queryMessDetailsTool = new QueryMessDetailsTool(messRepository);
 registry.register(displayMessCardTool);
 registry.register(queryMessDetailsTool);
-
 const accessControl = new PostgresAccessControlAdapter(
 	db,
 	logger.child({ module: "access-control" }),
@@ -63,10 +63,9 @@ const sessionManager = new PostgresBaileysSessionManager(db, logger, "default");
 const pairingManager = new BaileysPairingManager(logger);
 const connectionManager = new BaileysConnectionManager(logger, pairingManager, sessionManager);
 const messageSender = new BaileysMessageSenderAdapter(connectionManager, logger);
-
 const agentLoop = new AgentLoop(deepseekAdapter, registry, {
 	maxToolIterations: config.MAX_TOOL_ITERATIONS,
-	systemPrompt: config.SYSTEM_PROMPT,
+	systemPrompt: SYSTEM_PROMPT,
 });
 const contextRetrieval = new ChatRepositoryContextRetrievalAdapter(chatRepository, logger, {
 	maxTurns: config.MAX_HISTORY_TURNS,
