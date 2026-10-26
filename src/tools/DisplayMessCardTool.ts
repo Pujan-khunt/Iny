@@ -17,23 +17,19 @@ const displayMessCardSchema = z.object({
 		.regex(/^\d{4}-\d{2}-\d{2}$/, "Must be ISO YYYY-MM-DD")
 		.optional()
 		.describe(
-			"ISO calendar date in YYYY-MM-DD format. Omit this field if the user is referring to the current or upcoming meal, or when the user does not specify an explicit date.",
+			'ISO calendar date in YYYY-MM-DD format. Omit for current or upcoming meals. Provide ONLY when the user explicitly specifies a calendar date (e.g. "tomorrow", "Monday", "2026-10-27").',
 		),
 	mealSlot: z
 		.enum(["breakfast", "lunch", "dinner"])
 		.optional()
 		.describe(
-			'Strictly provide ONLY if the user explicitly mentions "breakfast", "lunch", or "dinner". If the user did NOT mention a specific meal name (e.g. they asked "menu", "food", "what is there to eat?"), you MUST omit this field so the deterministic system resolves the active or upcoming meal cutoff.',
+			'Meal slot: "breakfast", "lunch", or "dinner". Provide ONLY if explicitly mentioned by name. Omit for general queries ("menu", "food", "what is there to eat?") to trigger automatic cutoff and rollover.',
 		),
 	vendor: z
 		.enum(["cheftalk_regular", "cheftalk_jain", "tcb"])
 		.optional()
 		.describe(
-			"Optional mess caterer. Rules: " +
-				'(1) If the user specifically mentions "jain" or "cheftalk jain", pass "cheftalk_jain". ' +
-				'(2) If the user mentions "cheftalk" without specifying Jain, pass "cheftalk_regular". ' +
-				'(3) If the user mentions "tcb" or "uniworld", pass "tcb". ' +
-				'(4) If the user does not specify any caterer (e.g. "what\'s for lunch?"), OMIT this field to display all caterers.',
+			'Mess caterer: "cheftalk_regular", "cheftalk_jain", or "tcb" (The Craving Brew / Uniworld). Omit if no caterer is specified to display all caterers.',
 		),
 });
 
@@ -49,7 +45,13 @@ type DisplayMessCardInput = z.infer<typeof displayMessCardSchema>;
  */
 export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> {
 	readonly name = "display_mess_card";
-	readonly description = "Serves 95% of standard meal and location lookups.";
+	readonly description =
+		"Renders formatted WhatsApp mess meal cards across 4 presentation quadrants: " +
+		'(1) Slot query (e.g. "what\'s for lunch") -> pass mealSlot; ' +
+		'(2) Single-vendor slot (e.g. "cheftalk lunch") -> pass mealSlot and vendor; ' +
+		'(3) Generic menu (e.g. "menu", "food", "what to eat") -> pass {} (omit all args) for automatic cutoff/rollover; ' +
+		'(4) Single-vendor full-day (e.g. "tcb menu") -> pass vendor (omit mealSlot). ' +
+		"Output is terminal. Call at most once per turn; never call speculatively in parallel.";
 	readonly schema = displayMessCardSchema as typeof displayMessCardSchema & Record<string, unknown>;
 
 	constructor(

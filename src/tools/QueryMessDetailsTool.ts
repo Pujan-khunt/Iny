@@ -15,11 +15,15 @@ const queryMessDetailsSchema = z.object({
 	mealSlot: z
 		.enum(["breakfast", "lunch", "dinner"])
 		.optional()
-		.describe("Optional meal slot: breakfast, lunch, or dinner."),
+		.describe(
+			'Meal slot: "breakfast", "lunch", or "dinner". Omit to query all slots for the date.',
+		),
 	vendor: z
 		.enum(["cheftalk_regular", "cheftalk_jain", "tcb"])
 		.optional()
-		.describe("Optional vendor caterer: cheftalk_regular, cheftalk_jain, or tcb."),
+		.describe(
+			'Optional vendor caterer: "cheftalk_regular", "cheftalk_jain", or "tcb". Omit to query across all vendors.',
+		),
 });
 
 type QueryMessDetailsInput = z.infer<typeof queryMessDetailsSchema>;
@@ -31,7 +35,7 @@ type QueryMessDetailsInput = z.infer<typeof queryMessDetailsSchema>;
 export class QueryMessDetailsTool extends BaseTool<typeof queryMessDetailsSchema> {
 	readonly name = "query_mess_details";
 	readonly description =
-		"Queries raw structured mess meal information (dishes, seating locations, extensions, live substitutions) for analytical dietary reasoning.";
+		'Queries raw structured mess meal data (dishes, seating locations, extensions, live substitutions) strictly for specific dietary, ingredient, or comparative questions (e.g. "is there paneer in lunch?", "who is serving chicken today?"). Do NOT use this tool for showing general menus or meal cards (use display_mess_card instead).';
 	readonly schema = queryMessDetailsSchema as typeof queryMessDetailsSchema &
 		Record<string, unknown>;
 

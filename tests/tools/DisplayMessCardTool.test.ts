@@ -59,7 +59,7 @@ describe("DisplayMessCardTool", () => {
 	it("exposes definition with correct name and schema", () => {
 		const tool = new DisplayMessCardTool(mockMessRepo, defaultMessCardPresenter);
 		expect(tool.name).toBe("display_mess_card");
-		expect(tool.description).toContain("Serves 95% of standard meal and location lookups");
+		expect(tool.description).toContain("4 presentation quadrants");
 		expect(tool.definition.name).toBe("display_mess_card");
 	});
 
