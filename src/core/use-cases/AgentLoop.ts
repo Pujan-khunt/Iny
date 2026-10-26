@@ -21,12 +21,10 @@ interface ToolExecutionOutcome {
 	readonly toolResult: ToolResult;
 	readonly isError: boolean;
 }
-
 const shouldTerminateEarly = (outcomes: readonly ToolExecutionOutcome[]): boolean =>
 	outcomes.length > 0 && outcomes.every((o) => !o.isError && o.toolResult.isTerminal === true);
 const formatTerminalToolOutputs = (outcomes: readonly ToolExecutionOutcome[]): string =>
 	outcomes.map((o) => o.toolResult.content).join("\n\n---\n\n");
-
 const toResult = (
 	userId: string,
 	content: string,
@@ -37,7 +35,6 @@ const toResult = (
 	session.push(MessageFactory.createAssistantText({ userId, content, reasoning: resReasoning }));
 	return { finalText: content, reasoning, sessionMessages: session };
 };
-
 const createToolOutcome = (
 	userId: string,
 	tc: ToolCallRequest,
@@ -60,6 +57,9 @@ export class AgentLoop {
 		private readonly registry: ToolRegistryPort,
 		config: AgentLoopConfig,
 	) {
+		if (!config.systemPrompt?.trim()) {
+			throw new Error("AgentLoop requires a non-empty systemPrompt");
+		}
 		this.prompt = config.systemPrompt;
 		this.maxIters = config.maxToolIterations ?? 5;
 	}
