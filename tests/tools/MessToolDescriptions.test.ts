@@ -35,7 +35,7 @@ describe("Mess Tool Descriptions and Schemas", () => {
 		expect(schema.properties?.mealSlot?.description).toContain(
 			"trigger automatic cutoff and rollover",
 		);
-		expect(schema.properties?.vendor?.description).toContain("The Culinary Bay / Uniworld");
+		expect(schema.properties?.vendor?.description).toContain("The Craving Brew / Uniworld");
 	});
 
 	it("QueryMessDetailsTool documents dietary analytical query scope", () => {
