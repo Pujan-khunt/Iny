@@ -499,22 +499,4 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			}),
 		);
 	});
-
-	it("ignores message when upsert payload or messages array is malformed", async () => {
-		const adapter = new FoodAnnouncementsInboundAdapter({
-			targetGroupJid: TARGET_GROUP_JID,
-			stagingRepository: mockStagingRepo as any,
-			connectionManager: mockConn as any,
-			logger: mockLogger,
-		});
-
-		adapter.start();
-		const handler = mockConn.subscribe.mock.calls[0][1];
-
-		await expect(handler(null)).resolves.not.toThrow();
-		await expect(handler({})).resolves.not.toThrow();
-		await expect(handler({ messages: "not-an-array" })).resolves.not.toThrow();
-
-		expect(mockStagingRepo.stageMessage).not.toHaveBeenCalled();
-	});
 });

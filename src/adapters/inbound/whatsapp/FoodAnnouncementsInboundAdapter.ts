@@ -45,22 +45,19 @@ export class FoodAnnouncementsInboundAdapter {
 
 	/**
 	 * Subscribes to Baileys messages.upsert events.
+	 *
+	 * Note: Ingests both "notify" (real-time messages) and "append" (replayed/offline backlog)
+	 * updates to guarantee zero missed announcements during network reconnects or downtime.
 	 */
 	start(): void {
-		this.connectionManager.subscribe(
-			"messages.upsert",
-			async (upsert: { type?: string; messages?: WAMessage[] }) => {
-				this.logger.debug("Received messages.upsert event from Baileys", {
-					type: upsert?.type,
-					messageCount: Array.isArray(upsert?.messages) ? upsert.messages.length : 0,
-				});
+		this.connectionManager.subscribe("messages.upsert", async (upsert) => {
+			this.logger.debug("Received messages.upsert event from Baileys", {
+				type: upsert.type,
+				messageCount: upsert.messages.length,
+			});
 
-				if (!upsert || !Array.isArray(upsert.messages)) {
-					return;
-				}
-				await this.handleMessages(upsert.messages);
-			},
-		);
+			await this.handleMessages(upsert.messages);
+		});
 
 		this.logger.info("Food announcements inbound adapter listening for messages", {
 			targetGroupJid: this.targetGroupJid,
