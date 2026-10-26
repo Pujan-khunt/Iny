@@ -5,7 +5,6 @@ const emptyToUndefined = <T extends z.ZodType>(schema: T) =>
 
 export const envSchema = z.object({
 	DEEPSEEK_API_KEY: z.string().trim().min(1, "DEEPSEEK_API_KEY is required"),
-	SYSTEM_PROMPT: z.string().trim().min(1, "SYSTEM_PROMPT is required"),
 	BOT_PHONE_NUMBER: z
 		.string()
 		.trim()

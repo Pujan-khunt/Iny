@@ -2,10 +2,21 @@ import { describe, it, expect, vi } from "vitest";
 import { parseConfig, loadConfig } from "../src/config";
 
 describe("Config", () => {
+	it("validates and parses configuration without SYSTEM_PROMPT", () => {
+		const envWithoutPrompt = {
+			DEEPSEEK_API_KEY: "test-key",
+			BOT_PHONE_NUMBER: "15551234567",
+			DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
+			FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
+		};
+		const config = parseConfig(envWithoutPrompt);
+		expect(config).toBeDefined();
+		expect((config as Record<string, unknown>).SYSTEM_PROMPT).toBeUndefined();
+	});
+
 	it("should apply valid default settings when only required variables are provided", () => {
 		const config = parseConfig({
 			DEEPSEEK_API_KEY: "test-key",
-			SYSTEM_PROMPT: "test-prompt",
 			BOT_PHONE_NUMBER: "15551234567",
 			ALLOWED_USERS: "15559876543, 15550001111@s.whatsapp.net",
 			DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
@@ -13,7 +24,6 @@ describe("Config", () => {
 		});
 
 		expect(config.DEEPSEEK_API_KEY).toBe("test-key");
-		expect(config.SYSTEM_PROMPT).toBe("test-prompt");
 		expect(config.BOT_PHONE_NUMBER).toBe("15551234567");
 		expect(config.ALLOWED_USERS).toEqual(["15559876543", "15550001111@s.whatsapp.net"]);
 		expect(config.DATABASE_URL).toBe("postgresql://postgres:postgres@localhost:5432/iny");
@@ -29,7 +39,6 @@ describe("Config", () => {
 	it("should correctly override defaults with provided custom variables", () => {
 		const config = parseConfig({
 			DEEPSEEK_API_KEY: "custom-key",
-			SYSTEM_PROMPT: "custom-prompt",
 			BOT_PHONE_NUMBER: "15551234567",
 			ALLOWED_USERS: "15559876543",
 			DATABASE_URL: "postgres://custom_user:pass@db.example.com:5432/custom_db",
@@ -50,7 +59,6 @@ describe("Config", () => {
 	it("should default ALLOWED_USERS and ALLOWED_USER_NAMES to empty array when omitted from environment", () => {
 		const config = parseConfig({
 			DEEPSEEK_API_KEY: "test-key",
-			SYSTEM_PROMPT: "test-prompt",
 			BOT_PHONE_NUMBER: "15551234567",
 			DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 			FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
@@ -63,7 +71,6 @@ describe("Config", () => {
 	it("should parse empty or whitespace ALLOWED_USERS and ALLOWED_USER_NAMES into empty array", () => {
 		const configEmpty = parseConfig({
 			DEEPSEEK_API_KEY: "test-key",
-			SYSTEM_PROMPT: "test-prompt",
 			BOT_PHONE_NUMBER: "15551234567",
 			ALLOWED_USERS: "",
 			ALLOWED_USER_NAMES: "",
@@ -75,7 +82,6 @@ describe("Config", () => {
 
 		const configWhitespace = parseConfig({
 			DEEPSEEK_API_KEY: "test-key",
-			SYSTEM_PROMPT: "test-prompt",
 			BOT_PHONE_NUMBER: "15551234567",
 			ALLOWED_USERS: "   ,  , ",
 			ALLOWED_USER_NAMES: "   ,  , ",
@@ -89,7 +95,6 @@ describe("Config", () => {
 	it("should parse comma-separated ALLOWED_USER_NAMES into string array", () => {
 		const config = parseConfig({
 			DEEPSEEK_API_KEY: "test-key",
-			SYSTEM_PROMPT: "test-prompt",
 			BOT_PHONE_NUMBER: "15551234567",
 			ALLOWED_USERS: "15551234567, 15559876543",
 			ALLOWED_USER_NAMES: "Pujan, Alice",
@@ -102,7 +107,6 @@ describe("Config", () => {
 	it("should preserve empty slots in ALLOWED_USER_NAMES for positional correlation", () => {
 		const config = parseConfig({
 			DEEPSEEK_API_KEY: "test-key",
-			SYSTEM_PROMPT: "test-prompt",
 			BOT_PHONE_NUMBER: "15551234567",
 			ALLOWED_USERS: "15551111111, 15552222222, 15553333333",
 			ALLOWED_USER_NAMES: "Alice, , Charlie",
@@ -127,7 +131,6 @@ describe("Config", () => {
 		expect(() =>
 			parseConfig({
 				DEEPSEEK_API_KEY: "test-key",
-				SYSTEM_PROMPT: "test-prompt",
 				BOT_PHONE_NUMBER: "15551234567",
 				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 			}),
@@ -142,7 +145,6 @@ describe("Config", () => {
 		expect(() =>
 			parseConfig({
 				DEEPSEEK_API_KEY: "test-key",
-				SYSTEM_PROMPT: "test-prompt",
 				BOT_PHONE_NUMBER: "15551234567",
 				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 				FOOD_ANNOUNCEMENTS_GROUP_JID: "invalid_user@s.whatsapp.net",
@@ -152,7 +154,6 @@ describe("Config", () => {
 		expect(() =>
 			parseConfig({
 				DEEPSEEK_API_KEY: "test-key",
-				SYSTEM_PROMPT: "test-prompt",
 				BOT_PHONE_NUMBER: "15551234567",
 				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 				FOOD_ANNOUNCEMENTS_GROUP_JID: "@g.us",
@@ -168,7 +169,6 @@ describe("Config", () => {
 		expect(() =>
 			parseConfig({
 				DEEPSEEK_API_KEY: "test-key",
-				SYSTEM_PROMPT: "test-prompt",
 				BOT_PHONE_NUMBER: "+91 (987) 654-3210",
 				ALLOWED_USERS: "919876543211",
 				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
@@ -186,7 +186,6 @@ describe("Config", () => {
 		expect(() =>
 			parseConfig({
 				DEEPSEEK_API_KEY: "test-key",
-				SYSTEM_PROMPT: "test-prompt",
 				BOT_PHONE_NUMBER: "123456",
 				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 				FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
@@ -197,7 +196,6 @@ describe("Config", () => {
 		expect(() =>
 			parseConfig({
 				DEEPSEEK_API_KEY: "test-key",
-				SYSTEM_PROMPT: "test-prompt",
 				BOT_PHONE_NUMBER: "1234567890123456",
 				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 				FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
@@ -213,7 +211,6 @@ describe("Config", () => {
 		expect(() =>
 			parseConfig({
 				DEEPSEEK_API_KEY: "test-key",
-				SYSTEM_PROMPT: "test-prompt",
 				BOT_PHONE_NUMBER: "15551234567",
 				ALLOWED_USERS: "15559876543",
 				FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
@@ -229,7 +226,6 @@ describe("Config", () => {
 		expect(() =>
 			parseConfig({
 				DEEPSEEK_API_KEY: "test-key",
-				SYSTEM_PROMPT: "test-prompt",
 				BOT_PHONE_NUMBER: "15551234567",
 				ALLOWED_USERS: "15559876543",
 				DATABASE_URL: "mysql://root:pass@localhost:3306/db",
@@ -243,7 +239,6 @@ describe("Config", () => {
 	it("should fallback to defaults when optional or defaulted variables are empty strings or whitespace", () => {
 		const config = parseConfig({
 			DEEPSEEK_API_KEY: "test-key",
-			SYSTEM_PROMPT: "test-prompt",
 			BOT_PHONE_NUMBER: "15551234567",
 			DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 			FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
@@ -271,7 +266,6 @@ describe("Config", () => {
 		expect(() =>
 			parseConfig({
 				DEEPSEEK_API_KEY: "   ",
-				SYSTEM_PROMPT: "test-prompt",
 				BOT_PHONE_NUMBER: "15551234567",
 				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 				FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
@@ -284,7 +278,6 @@ describe("Config", () => {
 	it("should load and parse config using loadConfig()", () => {
 		const loaded = loadConfig({
 			DEEPSEEK_API_KEY: "test-key",
-			SYSTEM_PROMPT: "test-prompt",
 			BOT_PHONE_NUMBER: "15551234567",
 			DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
 			FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",

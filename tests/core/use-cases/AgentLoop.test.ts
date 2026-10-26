@@ -61,6 +61,16 @@ describe("AgentLoop", () => {
 		mockLogger = createMockLogger();
 	});
 
+	it("throws an error if systemPrompt is empty or whitespace", () => {
+		expect(() => new AgentLoop(mockLLM, mockRegistry, { systemPrompt: "" })).toThrow(
+			"AgentLoop requires a non-empty systemPrompt",
+		);
+
+		expect(() => new AgentLoop(mockLLM, mockRegistry, { systemPrompt: "   " })).toThrow(
+			"AgentLoop requires a non-empty systemPrompt",
+		);
+	});
+
 	it("should immediately return final text response when LLM responds with text", async () => {
 		vi.mocked(mockLLM.generateResponse).mockResolvedValueOnce({
 			type: "text",
