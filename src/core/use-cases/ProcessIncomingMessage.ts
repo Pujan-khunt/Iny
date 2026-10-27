@@ -1,7 +1,7 @@
 import { UserMessage } from "../entities/Message";
 import { DialogueTurnFactory } from "../entities/DialogueTurn";
 import { MessageSenderPort } from "../ports/MessageSenderPort";
-import { ChatRepositoryPort } from "../ports/ChatRepositoryPort";
+import { DialogueTurnRepositoryPort } from "../ports/DialogueTurnRepositoryPort";
 import { ContextRetrievalPort } from "../ports/ContextRetrievalPort";
 import { ToolRegistryPort } from "../ports/ToolRegistryPort";
 import { LoggerPort } from "../ports/LoggerPort";
@@ -32,7 +32,7 @@ export class ProcessIncomingMessage {
 	 */
 	constructor(
 		private sender: MessageSenderPort,
-		private chatRepository: ChatRepositoryPort,
+		private chatRepository: DialogueTurnRepositoryPort,
 		private contextRetrieval: ContextRetrievalPort,
 		private agentLoop: AgentLoop,
 		private toolRegistry: ToolRegistryPort,
@@ -44,7 +44,7 @@ export class ProcessIncomingMessage {
 	 * 1. Context Retrieval: Loads historical messages via ContextRetrievalPort.
 	 * 2. Reasoning: Runs the autonomous AgentLoop with active tools.
 	 * 3. Delivery: Dispatches the assistant's final response via MessageSenderPort.
-	 * 4. Persistence: Saves the completed dialogue turn to ChatRepositoryPort.
+	 * 4. Persistence: Saves the completed dialogue turn to DialogueTurnRepositoryPort.
 	 *
 	 * @param message The verified inbound user message.
 	 */

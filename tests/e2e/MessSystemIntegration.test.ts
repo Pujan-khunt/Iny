@@ -12,7 +12,7 @@ import { MessageSenderPort } from "../../src/core/ports/MessageSenderPort";
 import { ContextRetrievalPort } from "../../src/core/ports/ContextRetrievalPort";
 import { LoggerPort } from "../../src/core/ports/LoggerPort";
 import { InMemoryToolRegistry } from "../../src/adapters/outbound/tool-registry/InMemoryToolRegistry";
-import { PostgresChatRepository } from "../../src/adapters/outbound/chat-repository/postgres/PostgresChatRepository";
+import { PostgresDialogueTurnRepository } from "../../src/adapters/outbound/dialogue-turn-repository/postgres/PostgresDialogueTurnRepository";
 import { PostgresMessRepository } from "../../src/adapters/outbound/mess/postgres/PostgresMessRepository";
 import { PostgresMessStagingRepository } from "../../src/adapters/outbound/mess/postgres/PostgresMessStagingRepository";
 import { defaultMessCardPresenter } from "../../src/adapters/outbound/mess/formatting/MessCardRenderer";
@@ -25,7 +25,7 @@ import {
 	messMealLocationDetails,
 	whatsappGroupFoodAnnouncementsMessages,
 } from "../../src/adapters/outbound/mess/postgres/schema";
-import { dialogueTurns } from "../../src/adapters/outbound/chat-repository/postgres/schema";
+import { dialogueTurns } from "../../src/adapters/outbound/dialogue-turn-repository/postgres/schema";
 import { WAMessage } from "@whiskeysockets/baileys";
 
 describe("Mess System End-to-End Integration", () => {
@@ -72,7 +72,7 @@ describe("Mess System End-to-End Integration", () => {
 
 	describe("Runtime Flow & Database Invariants", () => {
 		let db: NodePgDatabase;
-		let chatRepository: PostgresChatRepository;
+		let chatRepository: PostgresDialogueTurnRepository;
 		let messRepository: PostgresMessRepository;
 		let stagingRepository: PostgresMessStagingRepository;
 		let registry: InMemoryToolRegistry;
@@ -196,7 +196,7 @@ describe("Mess System End-to-End Integration", () => {
 			};
 
 			db = drizzle(pool);
-			chatRepository = new PostgresChatRepository(db, mockLogger);
+			chatRepository = new PostgresDialogueTurnRepository(db, mockLogger);
 			messRepository = new PostgresMessRepository(db, mockLogger);
 			stagingRepository = new PostgresMessStagingRepository(db, mockLogger);
 

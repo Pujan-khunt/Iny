@@ -4,7 +4,7 @@ import { DialogueTurn } from "../entities/DialogueTurn";
  * Outbound port for persisting and retrieving conversation history.
  * Operates strictly on turn-atomic DialogueTurn boundaries.
  */
-export interface ChatRepositoryPort {
+export interface DialogueTurnRepositoryPort {
 	/**
 	 * Retrieves the most recent completed dialogue turns for a user.
 	 * Returns turns ordered chronologically from oldest to newest.

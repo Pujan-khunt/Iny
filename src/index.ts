@@ -7,17 +7,17 @@ import { loadConfig } from "./config";
 import { DeepseekAdapter } from "./adapters/outbound/llm/DeepseekAdapter";
 import { InMemoryToolRegistry } from "./adapters/outbound/tool-registry/InMemoryToolRegistry";
 import { PinoLoggerAdapter } from "./adapters/outbound/logger/PinoLoggerAdapter";
-import * as chatSchema from "./adapters/outbound/chat-repository/postgres/schema";
+import * as dialogueSchema from "./adapters/outbound/dialogue-turn-repository/postgres/schema";
 import * as whatsappSchema from "./adapters/outbound/whatsapp/postgres/schema";
 import * as accessControlSchema from "./adapters/outbound/access-control/postgres/schema";
 import * as messSchema from "./adapters/outbound/mess/postgres/schema";
-import { PostgresChatRepository } from "./adapters/outbound/chat-repository/postgres/PostgresChatRepository";
+import { PostgresDialogueTurnRepository } from "./adapters/outbound/dialogue-turn-repository/postgres/PostgresDialogueTurnRepository";
 import { PostgresMessRepository } from "./adapters/outbound/mess/postgres/PostgresMessRepository";
 import { PostgresMessStagingRepository } from "./adapters/outbound/mess/postgres/PostgresMessStagingRepository";
 import { defaultMessCardPresenter } from "./adapters/outbound/mess/formatting/MessCardRenderer";
 import { DisplayMessCardTool } from "./tools/DisplayMessCardTool";
 import { QueryMessDetailsTool } from "./tools/QueryMessDetailsTool";
-import { runDatabaseMigrations } from "./adapters/outbound/chat-repository/postgres/migrator";
+import { runDatabaseMigrations } from "./adapters/outbound/dialogue-turn-repository/postgres/migrator";
 import { PostgresAccessControlAdapter } from "./adapters/outbound/access-control/postgres/PostgresAccessControlAdapter";
 import { PostgresBaileysSessionManager } from "./adapters/outbound/whatsapp/PostgresBaileysSessionManager";
 import { BaileysPairingManager } from "./adapters/outbound/whatsapp/BaileysPairingManager";
@@ -27,7 +27,7 @@ import { BaileysMessageFilter } from "./adapters/inbound/whatsapp/BaileysMessage
 import { BaileysMessageParser } from "./adapters/inbound/whatsapp/BaileysMessageParser";
 import { WhatsAppInboundAdapter } from "./adapters/inbound/whatsapp/WhatsAppInboundAdapter";
 import { FoodAnnouncementsInboundAdapter } from "./adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter";
-import { ChatRepositoryContextRetrievalAdapter } from "./adapters/outbound/context-retrieval/ChatRepositoryContextRetrievalAdapter";
+import { DialogueTurnContextRetrievalAdapter } from "./adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter";
 
 const config = loadConfig();
 const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
@@ -38,9 +38,9 @@ const sqlClient = postgres(config.DATABASE_URL, {
 	connect_timeout: 10,
 });
 const db = drizzle(sqlClient, {
-	schema: { ...chatSchema, ...whatsappSchema, ...accessControlSchema, ...messSchema },
+	schema: { ...dialogueSchema, ...whatsappSchema, ...accessControlSchema, ...messSchema },
 });
-const chatRepository = new PostgresChatRepository(db, logger);
+const dialogueTurnRepository = new PostgresDialogueTurnRepository(db, logger);
 const messRepository = new PostgresMessRepository(db, logger.child({ module: "mess-repository" }));
 const messStagingRepository = new PostgresMessStagingRepository(
 	db,
@@ -67,12 +67,12 @@ const agentLoop = new AgentLoop(deepseekAdapter, registry, {
 	maxToolIterations: config.MAX_TOOL_ITERATIONS,
 	systemPrompt: SYSTEM_PROMPT,
 });
-const contextRetrieval = new ChatRepositoryContextRetrievalAdapter(chatRepository, logger, {
+const contextRetrieval = new DialogueTurnContextRetrievalAdapter(dialogueTurnRepository, logger, {
 	maxTurns: config.MAX_HISTORY_TURNS,
 });
 const useCase = new ProcessIncomingMessage(
 	messageSender,
-	chatRepository,
+	dialogueTurnRepository,
 	contextRetrieval,
 	agentLoop,
 	registry,

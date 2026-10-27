@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ProcessIncomingMessage } from "../../../src/core/use-cases/ProcessIncomingMessage";
 import { MessageSenderPort } from "../../../src/core/ports/MessageSenderPort";
-import { ChatRepositoryPort } from "../../../src/core/ports/ChatRepositoryPort";
+import { DialogueTurnRepositoryPort } from "../../../src/core/ports/DialogueTurnRepositoryPort";
 import { ContextRetrievalPort } from "../../../src/core/ports/ContextRetrievalPort";
 import { ToolRegistryPort, ToolDefinition } from "../../../src/core/ports/ToolRegistryPort";
 import { LoggerPort } from "../../../src/core/ports/LoggerPort";
@@ -17,7 +17,7 @@ import {
 
 describe("ProcessIncomingMessage", () => {
 	let mockSender: MessageSenderPort;
-	let mockChatRepository: ChatRepositoryPort;
+	let mockChatRepository: DialogueTurnRepositoryPort;
 	let mockContextRetrieval: ContextRetrievalPort;
 	let mockAgentLoop: AgentLoop;
 	let mockToolRegistry: ToolRegistryPort;

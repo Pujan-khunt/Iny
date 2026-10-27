@@ -9,7 +9,7 @@ try {
 export default defineConfig({
 	schema: [
 		"./src/adapters/outbound/access-control/postgres/schema.ts",
-		"./src/adapters/outbound/chat-repository/postgres/schema.ts",
+		"./src/adapters/outbound/dialogue-turn-repository/postgres/schema.ts",
 		"./src/adapters/outbound/whatsapp/postgres/schema.ts",
 		"./src/adapters/outbound/mess/postgres/schema.ts",
 	],

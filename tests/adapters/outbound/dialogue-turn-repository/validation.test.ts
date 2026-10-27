@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { assertValidDialogueTurn } from "../../../../../src/adapters/outbound/chat-repository/postgres/validation";
-import { DialogueTurn } from "../../../../../src/core/entities/DialogueTurn";
+import { assertValidDialogueTurn } from "../../../../src/adapters/outbound/dialogue-turn-repository/postgres/validation";
+import { DialogueTurn } from "../../../../src/core/entities/DialogueTurn";
 
 describe("assertValidDialogueTurn", () => {
 	const validTurn: DialogueTurn = {

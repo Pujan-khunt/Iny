@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ChatRepositoryContextRetrievalAdapter } from "../../../../src/adapters/outbound/context-retrieval/ChatRepositoryContextRetrievalAdapter";
-import { ChatRepositoryPort } from "../../../../src/core/ports/ChatRepositoryPort";
+import { DialogueTurnContextRetrievalAdapter } from "../../../../src/adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter";
+import { DialogueTurnRepositoryPort } from "../../../../src/core/ports/DialogueTurnRepositoryPort";
 import { LoggerPort } from "../../../../src/core/ports/LoggerPort";
 import { DialogueTurn } from "../../../../src/core/entities/DialogueTurn";
 import { UserMessage, AssistantTextMessage } from "../../../../src/core/entities/Message";
 
-describe("ChatRepositoryContextRetrievalAdapter", () => {
-	let mockChatRepository: ChatRepositoryPort;
+describe("DialogueTurnContextRetrievalAdapter", () => {
+	let mockTurnRepository: DialogueTurnRepositoryPort;
 	let mockLogger: LoggerPort;
 
 	const userMsg1: UserMessage = {
@@ -54,7 +54,7 @@ describe("ChatRepositoryContextRetrievalAdapter", () => {
 	};
 
 	beforeEach(() => {
-		mockChatRepository = {
+		mockTurnRepository = {
 			getRecentTurns: vi.fn().mockResolvedValue([turn1, turn2]),
 			saveTurn: vi.fn(),
 			clearHistory: vi.fn(),
@@ -70,20 +70,20 @@ describe("ChatRepositoryContextRetrievalAdapter", () => {
 	});
 
 	it("should retrieve turns using default maxTurns and flatten to Message array", async () => {
-		const adapter = new ChatRepositoryContextRetrievalAdapter(mockChatRepository, mockLogger);
+		const adapter = new DialogueTurnContextRetrievalAdapter(mockTurnRepository, mockLogger);
 		const messages = await adapter.retrieveContext("user1");
 
-		expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith("user1", 10);
+		expect(mockTurnRepository.getRecentTurns).toHaveBeenCalledWith("user1", 10);
 		expect(messages).toEqual([userMsg1, asstMsg1, userMsg2, asstMsg2]);
 	});
 
 	it("should respect custom maxTurns in config", async () => {
-		const adapter = new ChatRepositoryContextRetrievalAdapter(mockChatRepository, mockLogger, {
+		const adapter = new DialogueTurnContextRetrievalAdapter(mockTurnRepository, mockLogger, {
 			maxTurns: 5,
 		});
 		await adapter.retrieveContext("user1");
 
-		expect(mockChatRepository.getRecentTurns).toHaveBeenCalledWith("user1", 5);
+		expect(mockTurnRepository.getRecentTurns).toHaveBeenCalledWith("user1", 5);
 	});
 
 	it("should filter out turns exceeding TTL window when ttlMs is provided", async () => {
@@ -93,7 +93,7 @@ describe("ChatRepositoryContextRetrievalAdapter", () => {
 			vi.setSystemTime(new Date("2026-09-20T11:30:00Z"));
 
 			// 1 hour TTL (3600000 ms) -> turn1 (90m ago) expired, turn2 (30m ago) valid
-			const adapter = new ChatRepositoryContextRetrievalAdapter(mockChatRepository, mockLogger, {
+			const adapter = new DialogueTurnContextRetrievalAdapter(mockTurnRepository, mockLogger, {
 				ttlMs: 3600000,
 			});
 
@@ -104,11 +104,11 @@ describe("ChatRepositoryContextRetrievalAdapter", () => {
 		}
 	});
 
-	it("should return empty array and log warning when chatRepository throws", async () => {
+	it("should return empty array and log warning when turnRepository throws", async () => {
 		const error = new Error("Database connection failed");
-		vi.mocked(mockChatRepository.getRecentTurns).mockRejectedValueOnce(error);
+		vi.mocked(mockTurnRepository.getRecentTurns).mockRejectedValueOnce(error);
 
-		const adapter = new ChatRepositoryContextRetrievalAdapter(mockChatRepository, mockLogger);
+		const adapter = new DialogueTurnContextRetrievalAdapter(mockTurnRepository, mockLogger);
 		const messages = await adapter.retrieveContext("user1");
 
 		expect(messages).toEqual([]);
