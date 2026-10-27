@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { HandleDialogueTurn } from "./core/use-cases/HandleDialogueTurn";
+import { HandleIncomingUserMessage } from "./core/use-cases/HandleIncomingUserMessage";
 import { StageIncomingFoodAnnouncement } from "./core/use-cases/StageIncomingFoodAnnouncement";
 import { AgentLoop } from "./core/services/AgentLoop";
 import { SYSTEM_PROMPT } from "./core/prompts/SystemPrompt";
@@ -26,6 +26,7 @@ import { BaileysConnectionManager } from "./adapters/outbound/whatsapp/BaileysCo
 import { BaileysMessageSenderAdapter } from "./adapters/outbound/whatsapp/BaileysMessageSenderAdapter";
 import { DirectMessageInboundAdapter } from "./adapters/inbound/whatsapp/DirectMessageInboundAdapter";
 import { FoodAnnouncementInboundAdapter } from "./adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
+import { WhatsAppMessageContentExtractor } from "./adapters/inbound/whatsapp/router/WhatsAppMessageContentExtractor";
 import { WhatsAppMessageNormalizer } from "./adapters/inbound/whatsapp/router/WhatsAppMessageNormalizer";
 import { WhatsAppMessageRouter } from "./adapters/inbound/whatsapp/router/WhatsAppMessageRouter";
 import { CatchAllLoggingHandler } from "./adapters/inbound/whatsapp/router/CatchAllLoggingHandler";
@@ -65,7 +66,7 @@ const agentLoop = new AgentLoop(deepseekAdapter, registry, {
 const contextRetrieval = new DialogueTurnContextRetrievalAdapter(dialogueTurnRepository, logger, {
 	maxTurns: config.MAX_HISTORY_TURNS,
 });
-const useCase = new HandleDialogueTurn(
+const useCase = new HandleIncomingUserMessage(
 	messageSender,
 	dialogueTurnRepository,
 	contextRetrieval,
@@ -87,11 +88,12 @@ const foodAnnouncementAdapter = new FoodAnnouncementInboundAdapter({
 	useCase: stageFoodAnnouncement,
 	logger: logMod("food-announcements"),
 });
-const normalizer = new WhatsAppMessageNormalizer(logMod("normalizer"));
-const router = new WhatsAppMessageRouter(connectionManager, normalizer, logMod("router"));
-router.register(foodAnnouncementAdapter);
-router.register(directMessageAdapter);
-router.register(new CatchAllLoggingHandler(logMod("catch-all")));
+const contentExtractor = new WhatsAppMessageContentExtractor(logMod("content-extractor"));
+const normalizer = new WhatsAppMessageNormalizer(logMod("normalizer"), contentExtractor);
+const router = new WhatsAppMessageRouter(normalizer, logMod("router"))
+	.register(foodAnnouncementAdapter)
+	.register(directMessageAdapter)
+	.register(new CatchAllLoggingHandler(logMod("catch-all-handler")));
 
 let isShuttingDown = false;
 async function shutdown(signal: string, exitCode = 0) {
@@ -134,7 +136,8 @@ async function start() {
 		process.exit(1);
 	}
 	logger.info("Access control initialized", { activeUsers: count });
-	router.start();
+	connectionManager.subscribe("messages.upsert", (upsert) => router.handleUpsert(upsert));
+	logger.info("Subscribed WhatsApp message router to messages.upsert");
 	logger.info("Starting Iny WhatsApp connection...");
 	const session = await sessionManager.initSession();
 	await connectionManager.start({ session, botPhoneNumber: config.BOT_PHONE_NUMBER });

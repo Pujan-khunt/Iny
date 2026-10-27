@@ -60,7 +60,7 @@ export class StageIncomingFoodAnnouncement {
 		if (!command.senderAddress || command.senderAddress.trim() === "") {
 			throw new Error("Invalid announcement command: senderAddress is required");
 		}
-		const hasText = command.textBody !== null && command.textBody.trim() !== "";
+		const hasText = typeof command.textBody === "string" && command.textBody.trim() !== "";
 		const hasMedia = command.mediaBuffer !== null;
 		if (!hasText && !hasMedia) {
 			throw new Error("Invalid announcement command: message must have text body or media content");

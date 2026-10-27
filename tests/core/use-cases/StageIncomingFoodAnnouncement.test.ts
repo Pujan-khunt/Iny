@@ -91,6 +91,9 @@ describe("StageIncomingFoodAnnouncement", () => {
 			useCase.execute({ ...validCommand, textBody: null, mediaBuffer: null }),
 		).rejects.toThrow("Invalid announcement command: message must have text body or media content");
 		await expect(
+			useCase.execute({ ...validCommand, textBody: undefined as any, mediaBuffer: null }),
+		).rejects.toThrow("Invalid announcement command: message must have text body or media content");
+		await expect(
 			useCase.execute({ ...validCommand, textBody: "   ", mediaBuffer: null }),
 		).rejects.toThrow("Invalid announcement command: message must have text body or media content");
 		expect(mockRepo.stageMessage).not.toHaveBeenCalled();
