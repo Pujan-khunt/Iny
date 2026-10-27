@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { HandleDialogueTurn } from "./core/use-cases/HandleDialogueTurn";
+import { StageIncomingFoodAnnouncement } from "./core/use-cases/StageIncomingFoodAnnouncement";
 import { AgentLoop } from "./core/services/AgentLoop";
 import { SYSTEM_PROMPT } from "./core/prompts/SystemPrompt";
 import { loadConfig } from "./config";
@@ -23,14 +24,16 @@ import { PostgresBaileysSessionManager } from "./adapters/outbound/whatsapp/Post
 import { BaileysPairingManager } from "./adapters/outbound/whatsapp/BaileysPairingManager";
 import { BaileysConnectionManager } from "./adapters/outbound/whatsapp/BaileysConnectionManager";
 import { BaileysMessageSenderAdapter } from "./adapters/outbound/whatsapp/BaileysMessageSenderAdapter";
-import { BaileysMessageFilter } from "./adapters/inbound/whatsapp/BaileysMessageFilter";
-import { BaileysMessageParser } from "./adapters/inbound/whatsapp/BaileysMessageParser";
-import { WhatsAppInboundAdapter } from "./adapters/inbound/whatsapp/WhatsAppInboundAdapter";
-import { FoodAnnouncementsInboundAdapter } from "./adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter";
+import { DirectMessageInboundAdapter } from "./adapters/inbound/whatsapp/DirectMessageInboundAdapter";
+import { FoodAnnouncementInboundAdapter } from "./adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
+import { WhatsAppMessageNormalizer } from "./adapters/inbound/whatsapp/router/WhatsAppMessageNormalizer";
+import { WhatsAppMessageRouter } from "./adapters/inbound/whatsapp/router/WhatsAppMessageRouter";
+import { CatchAllLoggingHandler } from "./adapters/inbound/whatsapp/router/CatchAllLoggingHandler";
 import { DialogueTurnContextRetrievalAdapter } from "./adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter";
 
 const config = loadConfig();
 const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
+const logMod = (module: string) => logger.child({ module });
 const registry = new InMemoryToolRegistry(logger);
 const sqlClient = postgres(config.DATABASE_URL, {
 	max: config.DB_MAX_CONNECTIONS,
@@ -41,19 +44,11 @@ const db = drizzle(sqlClient, {
 	schema: { ...dialogueSchema, ...whatsappSchema, ...accessControlSchema, ...messSchema },
 });
 const dialogueTurnRepository = new PostgresDialogueTurnRepository(db, logger);
-const messRepository = new PostgresMessRepository(db, logger.child({ module: "mess-repository" }));
-const messStagingRepository = new PostgresMessStagingRepository(
-	db,
-	logger.child({ module: "mess-staging-repository" }),
-);
-const displayMessCardTool = new DisplayMessCardTool(messRepository, defaultMessCardPresenter);
-const queryMessDetailsTool = new QueryMessDetailsTool(messRepository);
-registry.register(displayMessCardTool);
-registry.register(queryMessDetailsTool);
-const accessControl = new PostgresAccessControlAdapter(
-	db,
-	logger.child({ module: "access-control" }),
-);
+const messRepository = new PostgresMessRepository(db, logMod("mess-repository"));
+const messStagingRepository = new PostgresMessStagingRepository(db, logMod("mess-staging"));
+registry.register(new DisplayMessCardTool(messRepository, defaultMessCardPresenter));
+registry.register(new QueryMessDetailsTool(messRepository));
+const accessControl = new PostgresAccessControlAdapter(db, logMod("access-control"));
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
 	baseURL: config.DEEPSEEK_BASE_URL,
 	model: config.DEEPSEEK_MODEL,
@@ -78,34 +73,39 @@ const useCase = new HandleDialogueTurn(
 	registry,
 	logger,
 );
-const inboundAdapter = new WhatsAppInboundAdapter(
-	useCase,
-	connectionManager,
-	accessControl,
-	new BaileysMessageFilter(),
-	new BaileysMessageParser(),
-	logger,
+const stageFoodAnnouncement = new StageIncomingFoodAnnouncement(
+	messStagingRepository,
+	logMod("food-announcements"),
 );
-const foodAnnouncementsAdapter = new FoodAnnouncementsInboundAdapter({
+const directMessageAdapter = new DirectMessageInboundAdapter(
+	useCase,
+	accessControl,
+	logMod("direct-message"),
+);
+const foodAnnouncementAdapter = new FoodAnnouncementInboundAdapter({
 	targetGroupJid: config.FOOD_ANNOUNCEMENTS_GROUP_JID,
-	stagingRepository: messStagingRepository,
-	connectionManager,
-	logger: logger.child({ module: "food-announcements" }),
+	useCase: stageFoodAnnouncement,
+	logger: logMod("food-announcements"),
 });
+const normalizer = new WhatsAppMessageNormalizer(logMod("normalizer"));
+const router = new WhatsAppMessageRouter(connectionManager, normalizer, logMod("router"));
+router.register(foodAnnouncementAdapter);
+router.register(directMessageAdapter);
+router.register(new CatchAllLoggingHandler(logMod("catch-all")));
 
 let isShuttingDown = false;
 async function shutdown(signal: string, exitCode = 0) {
 	if (isShuttingDown) return;
 	isShuttingDown = true;
 	logger.info(`Received ${signal}. Closing connections gracefully...`);
-	const safe = (p: () => unknown, msg: string) =>
-		Promise.resolve()
-			.then(p)
-			.catch((e) => logger.error(msg, e));
-	await Promise.all([
-		safe(() => connectionManager.disconnect(), "Error closing WhatsApp connection"),
-		safe(() => sqlClient.end({ timeout: 5 }), "Error closing database connection pool"),
-	]);
+	try {
+		connectionManager.disconnect();
+	} catch (e) {
+		logger.error("Error closing WhatsApp connection", e);
+	}
+	await sqlClient
+		.end({ timeout: 5 })
+		.catch((e: unknown) => logger.error("Error closing database pool", e));
 	process.exit(exitCode);
 }
 
@@ -121,12 +121,11 @@ process.on("unhandledRejection", handleFatal("Unhandled promise rejection"));
 async function start() {
 	await runDatabaseMigrations(db, logger);
 	if (config.ALLOWED_USERS.length > 0) {
-		await accessControl.seedUsers(
-			config.ALLOWED_USERS.map((phoneNumber, index) => ({
-				phoneNumber,
-				name: config.ALLOWED_USER_NAMES[index] || null,
-			})),
-		);
+		const seeds = config.ALLOWED_USERS.map((phoneNumber, index) => ({
+			phoneNumber,
+			name: config.ALLOWED_USER_NAMES[index] || null,
+		}));
+		await accessControl.seedUsers(seeds);
 	}
 	const count = await accessControl.countActiveUsers();
 	if (count === 0) {
@@ -135,8 +134,7 @@ async function start() {
 		process.exit(1);
 	}
 	logger.info("Access control initialized", { activeUsers: count });
-	foodAnnouncementsAdapter.start();
-	inboundAdapter.start();
+	router.start();
 	logger.info("Starting Iny WhatsApp connection...");
 	const session = await sessionManager.initSession();
 	await connectionManager.start({ session, botPhoneNumber: config.BOT_PHONE_NUMBER });

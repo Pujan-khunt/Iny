@@ -18,7 +18,10 @@ import { PostgresMessStagingRepository } from "../../src/adapters/outbound/mess/
 import { defaultMessCardPresenter } from "../../src/adapters/outbound/mess/formatting/MessCardRenderer";
 import { DisplayMessCardTool } from "../../src/tools/DisplayMessCardTool";
 import { QueryMessDetailsTool } from "../../src/tools/QueryMessDetailsTool";
-import { FoodAnnouncementsInboundAdapter } from "../../src/adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter";
+import { FoodAnnouncementInboundAdapter } from "../../src/adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
+import { StageIncomingFoodAnnouncement } from "../../src/core/use-cases/StageIncomingFoodAnnouncement";
+import { WhatsAppMessageNormalizer } from "../../src/adapters/inbound/whatsapp/router/WhatsAppMessageNormalizer";
+import { WhatsAppMessageRouter } from "../../src/adapters/inbound/whatsapp/router/WhatsAppMessageRouter";
 import { DeepseekTextExtractor } from "../../src/adapters/outbound/mess/extraction/DeepseekTextExtractor";
 import {
 	messMeals,
@@ -52,7 +55,7 @@ describe("Mess System End-to-End Integration", () => {
 			expect(indexContent).toContain("PostgresMessStagingRepository");
 			expect(indexContent).toContain("DisplayMessCardTool");
 			expect(indexContent).toContain("QueryMessDetailsTool");
-			expect(indexContent).toContain("FoodAnnouncementsInboundAdapter");
+			expect(indexContent).toContain("FoodAnnouncementInboundAdapter");
 			expect(indexContent).toContain("messSchema");
 
 			// Verify instantiation & wiring
@@ -60,13 +63,13 @@ describe("Mess System End-to-End Integration", () => {
 			expect(indexContent).toMatch(/new\s+PostgresMessStagingRepository\s*\(/);
 			expect(indexContent).toMatch(/new\s+DisplayMessCardTool\s*\(/);
 			expect(indexContent).toMatch(/new\s+QueryMessDetailsTool\s*\(/);
-			expect(indexContent).toMatch(/registry\.register\s*\(\s*displayMessCardTool\s*\)/);
-			expect(indexContent).toMatch(/registry\.register\s*\(\s*queryMessDetailsTool\s*\)/);
+			expect(indexContent).toMatch(/registry\.register\s*\(\s*new\s+DisplayMessCardTool\s*\(/);
+			expect(indexContent).toMatch(/registry\.register\s*\(\s*new\s+QueryMessDetailsTool\s*\(/);
 
-			// Verify FoodAnnouncementsInboundAdapter wiring and startup
-			expect(indexContent).toMatch(/new\s+FoodAnnouncementsInboundAdapter\s*\(/);
+			// Verify FoodAnnouncementInboundAdapter wiring and startup
+			expect(indexContent).toMatch(/new\s+FoodAnnouncementInboundAdapter\s*\(/);
 			expect(indexContent).toMatch(/FOOD_ANNOUNCEMENTS_GROUP_JID/);
-			expect(indexContent).toMatch(/foodAnnouncementsAdapter\.start\s*\(\s*\)/);
+			expect(indexContent).toMatch(/router\.start\s*\(\s*\)/);
 		});
 	});
 
@@ -427,15 +430,21 @@ describe("Mess System End-to-End Integration", () => {
 				.fn()
 				.mockResolvedValue(Buffer.from("test-weekly-menu-pdf-bytes"));
 
-			const adapter = new FoodAnnouncementsInboundAdapter({
+			const useCase = new StageIncomingFoodAnnouncement(stagingRepository, mockLogger);
+			const adapter = new FoodAnnouncementInboundAdapter({
 				targetGroupJid: FOOD_GROUP_JID,
-				stagingRepository,
-				connectionManager: fakeConnectionManager as any,
+				useCase,
 				logger: mockLogger,
-				downloadMedia: fakeDownloadMedia as any,
 			});
+			const normalizer = new WhatsAppMessageNormalizer(mockLogger, fakeDownloadMedia as any);
+			const router = new WhatsAppMessageRouter(
+				fakeConnectionManager as any,
+				normalizer,
+				mockLogger,
+			);
+			router.register(adapter);
+			router.start();
 
-			adapter.start();
 			expect(fakeConnectionManager.subscribe).toHaveBeenCalledWith(
 				"messages.upsert",
 				expect.any(Function),
@@ -460,7 +469,7 @@ describe("Mess System End-to-End Integration", () => {
 				},
 			} as unknown as WAMessage;
 
-			await registeredHandler!({ messages: [incomingWAMessage] });
+			await registeredHandler!({ type: "notify", messages: [incomingWAMessage] });
 
 			// Verify record is staged in database table
 			const staged = await db
@@ -498,14 +507,20 @@ describe("Mess System End-to-End Integration", () => {
 				}),
 			};
 
-			const adapter = new FoodAnnouncementsInboundAdapter({
+			const useCase = new StageIncomingFoodAnnouncement(stagingRepository, mockLogger);
+			const adapter = new FoodAnnouncementInboundAdapter({
 				targetGroupJid: FOOD_GROUP_JID,
-				stagingRepository,
-				connectionManager: fakeConnectionManager as any,
+				useCase,
 				logger: mockLogger,
 			});
-
-			adapter.start();
+			const normalizer = new WhatsAppMessageNormalizer(mockLogger);
+			const router = new WhatsAppMessageRouter(
+				fakeConnectionManager as any,
+				normalizer,
+				mockLogger,
+			);
+			router.register(adapter);
+			router.start();
 			expect(registeredHandler).not.toBeNull();
 
 			// 2. Inbound WhatsApp announcement containing combo message (location seating + timing extension)
@@ -525,7 +540,7 @@ describe("Mess System End-to-End Integration", () => {
 				},
 			} as unknown as WAMessage;
 
-			await registeredHandler!({ messages: [incomingWAMessage] });
+			await registeredHandler!({ type: "notify", messages: [incomingWAMessage] });
 
 			// Verify staged in whatsappGroupFoodAnnouncementsMessages
 			const staged = await stagingRepository.getMessageById(messageId);
