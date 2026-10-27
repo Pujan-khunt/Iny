@@ -1,5 +1,5 @@
 import { WAMessage } from "@whiskeysockets/baileys";
-import { ProcessIncomingMessage } from "../../../core/use-cases/ProcessIncomingMessage";
+import { HandleDialogueTurn } from "../../../core/use-cases/HandleDialogueTurn";
 import { BaileysConnectionManager } from "../../outbound/whatsapp/BaileysConnectionManager";
 import { AccessControlPort, UserRecord } from "../../../core/ports/AccessControlPort";
 import { BaileysMessageFilter, EligibleWebMessageInfo } from "./BaileysMessageFilter";
@@ -11,11 +11,11 @@ import { WhatsAppJid } from "../../common/whatsapp/WhatsAppJid";
 /**
  * Inbound adapter that listens for incoming WhatsApp messages from Baileys,
  * enforces eligibility policy and access control authorization, parses payloads,
- * and triggers ProcessIncomingMessage.
+ * and triggers HandleDialogueTurn.
  */
 export class WhatsAppInboundAdapter {
 	constructor(
-		private processIncomingMessage: ProcessIncomingMessage,
+		private handleDialogueTurn: HandleDialogueTurn,
 		private connectionManager: BaileysConnectionManager,
 		private accessControl: AccessControlPort,
 		private filter: BaileysMessageFilter,
@@ -97,7 +97,7 @@ export class WhatsAppInboundAdapter {
 		}
 
 		try {
-			await this.processIncomingMessage.execute(userMessage);
+			await this.handleDialogueTurn.execute(userMessage);
 		} catch (err) {
 			this.logger.error("Unhandled error processing incoming message", err, {
 				messageId: userMessage.id,

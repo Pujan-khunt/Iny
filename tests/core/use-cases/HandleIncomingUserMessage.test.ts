@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ProcessIncomingMessage } from "../../../src/core/use-cases/ProcessIncomingMessage";
+import { HandleIncomingUserMessage } from "../../../src/core/use-cases/HandleIncomingUserMessage";
 import { MessageSenderPort } from "../../../src/core/ports/MessageSenderPort";
 import { DialogueTurnRepositoryPort } from "../../../src/core/ports/DialogueTurnRepositoryPort";
 import { ContextRetrievalPort } from "../../../src/core/ports/ContextRetrievalPort";
 import { ToolRegistryPort, ToolDefinition } from "../../../src/core/ports/ToolRegistryPort";
 import { LoggerPort } from "../../../src/core/ports/LoggerPort";
-import { AgentLoop } from "../../../src/core/use-cases/AgentLoop";
+import { AgentLoop } from "../../../src/core/services/AgentLoop";
 import { UserMessage, AssistantTextMessage, Message } from "../../../src/core/entities/Message";
 import {
 	LLMAuthenticationError,
@@ -15,9 +15,9 @@ import {
 	LLMServerError,
 } from "../../../src/core/errors/LLMErrors";
 
-describe("ProcessIncomingMessage", () => {
+describe("HandleIncomingUserMessage", () => {
 	let mockSender: MessageSenderPort;
-	let mockChatRepository: DialogueTurnRepositoryPort;
+	let mockDialogueTurnRepository: DialogueTurnRepositoryPort;
 	let mockContextRetrieval: ContextRetrievalPort;
 	let mockAgentLoop: AgentLoop;
 	let mockToolRegistry: ToolRegistryPort;
@@ -58,10 +58,10 @@ describe("ProcessIncomingMessage", () => {
 		child: vi.fn(),
 	});
 
-	const createUseCase = (): ProcessIncomingMessage => {
-		return new ProcessIncomingMessage(
+	const createUseCase = (): HandleIncomingUserMessage => {
+		return new HandleIncomingUserMessage(
 			mockSender,
-			mockChatRepository,
+			mockDialogueTurnRepository,
 			mockContextRetrieval,
 			mockAgentLoop,
 			mockToolRegistry,
@@ -71,7 +71,7 @@ describe("ProcessIncomingMessage", () => {
 
 	beforeEach(() => {
 		mockSender = { sendMessage: vi.fn().mockResolvedValue(undefined) };
-		mockChatRepository = {
+		mockDialogueTurnRepository = {
 			getRecentTurns: vi.fn().mockResolvedValue([]),
 			saveTurn: vi.fn().mockResolvedValue(undefined),
 			clearHistory: vi.fn().mockResolvedValue(undefined),
@@ -142,8 +142,8 @@ describe("ProcessIncomingMessage", () => {
 			);
 
 			// Phase 3: Persistence
-			expect(mockChatRepository.saveTurn).toHaveBeenCalledTimes(1);
-			const savedTurn = vi.mocked(mockChatRepository.saveTurn).mock.calls[0][0];
+			expect(mockDialogueTurnRepository.saveTurn).toHaveBeenCalledTimes(1);
+			const savedTurn = vi.mocked(mockDialogueTurnRepository.saveTurn).mock.calls[0][0];
 			expect(savedTurn.userId).toBe("user1");
 			expect(savedTurn.messages).toEqual([sampleUserMessage, sampleAssistantMessage]);
 			expect(savedTurn.startedAt).toBeInstanceOf(Date);
@@ -164,7 +164,7 @@ describe("ProcessIncomingMessage", () => {
 				const useCase = createUseCase();
 				await useCase.execute(sampleUserMessage);
 
-				expect(mockChatRepository.saveTurn).toHaveBeenCalledWith(
+				expect(mockDialogueTurnRepository.saveTurn).toHaveBeenCalledWith(
 					expect.objectContaining({
 						userId: "user1",
 						messages: [sampleUserMessage, sampleAssistantMessage],
@@ -173,7 +173,7 @@ describe("ProcessIncomingMessage", () => {
 					}),
 				);
 
-				const savedTurn = (mockChatRepository.saveTurn as any).mock.calls[0][0];
+				const savedTurn = (mockDialogueTurnRepository.saveTurn as any).mock.calls[0][0];
 				expect(savedTurn.startedAt).toEqual(startTime);
 				expect(savedTurn.completedAt).toEqual(endTime);
 			} finally {
@@ -222,7 +222,7 @@ describe("ProcessIncomingMessage", () => {
 				"user1",
 				"An error occurred during processing.",
 			);
-			expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
+			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
 		});
 
 		it("should log fatal error when authentication fails during reasoning", async () => {
@@ -243,7 +243,7 @@ describe("ProcessIncomingMessage", () => {
 				"user1",
 				"An error occurred during processing.",
 			);
-			expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
+			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
 		});
 
 		it("should log fatal error when LLM account has insufficient balance", async () => {
@@ -264,7 +264,7 @@ describe("ProcessIncomingMessage", () => {
 				"user1",
 				"An error occurred during processing.",
 			);
-			expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
+			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
 		});
 
 		it("should inform user of high traffic on rate limit errors", async () => {
@@ -278,7 +278,7 @@ describe("ProcessIncomingMessage", () => {
 				"user1",
 				"Iny is experiencing heavy traffic right now. Please try again in a moment.",
 			);
-			expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
+			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
 		});
 
 		it("should inform user of high traffic on server overloaded errors", async () => {
@@ -292,7 +292,7 @@ describe("ProcessIncomingMessage", () => {
 				"user1",
 				"Iny is experiencing heavy traffic right now. Please try again in a moment.",
 			);
-			expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
+			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
 		});
 
 		it("should safely catch and log error if sending fallback message also fails", async () => {
@@ -303,7 +303,7 @@ describe("ProcessIncomingMessage", () => {
 			await expect(useCase.execute(sampleUserMessage)).resolves.toBeUndefined();
 
 			expect(mockChildLogger.error).toHaveBeenCalled();
-			expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
+			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
 		});
 	});
 
@@ -325,14 +325,14 @@ describe("ProcessIncomingMessage", () => {
 				transportError,
 			);
 			// Turn must NOT be saved when delivery fails
-			expect(mockChatRepository.saveTurn).not.toHaveBeenCalled();
+			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
 		});
 	});
 
 	describe("Phase 4: Persistence error handling", () => {
 		it("should log persistence error without sending duplicate message to user", async () => {
 			const dbError = new Error("Database write constraint failed");
-			vi.mocked(mockChatRepository.saveTurn).mockRejectedValueOnce(dbError);
+			vi.mocked(mockDialogueTurnRepository.saveTurn).mockRejectedValueOnce(dbError);
 
 			const useCase = createUseCase();
 			await useCase.execute(sampleUserMessage);

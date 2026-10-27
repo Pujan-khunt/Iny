@@ -4,8 +4,8 @@ import path from "node:path";
 import { newDb } from "pg-mem";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
-import { AgentLoop } from "../../src/core/use-cases/AgentLoop";
-import { ProcessIncomingMessage } from "../../src/core/use-cases/ProcessIncomingMessage";
+import { AgentLoop } from "../../src/core/services/AgentLoop";
+import { HandleDialogueTurn } from "../../src/core/use-cases/HandleDialogueTurn";
 import { MessageFactory, UserMessage } from "../../src/core/entities/Message";
 import { LLMPort, LLMResponse } from "../../src/core/ports/LLMPort";
 import { MessageSenderPort } from "../../src/core/ports/MessageSenderPort";
@@ -258,7 +258,7 @@ describe("Mess System End-to-End Integration", () => {
 			};
 		});
 
-		it("executes DisplayMessCardTool in AgentLoop and ProcessIncomingMessage with early termination and check constraint satisfaction", async () => {
+		it("executes DisplayMessCardTool in AgentLoop and HandleDialogueTurn with early termination and check constraint satisfaction", async () => {
 			// LLM emits a tool call for display_mess_card
 			const llmMock: LLMPort = {
 				generateResponse: vi.fn().mockResolvedValue({
@@ -281,7 +281,7 @@ describe("Mess System End-to-End Integration", () => {
 				systemPrompt: "You are a helpful assistant.",
 			});
 
-			const useCase = new ProcessIncomingMessage(
+			const useCase = new HandleDialogueTurn(
 				senderMock,
 				chatRepository,
 				contextRetrievalMock,
@@ -380,7 +380,7 @@ describe("Mess System End-to-End Integration", () => {
 				systemPrompt: "You are a helpful assistant.",
 			});
 
-			const useCase = new ProcessIncomingMessage(
+			const useCase = new HandleDialogueTurn(
 				senderMock,
 				chatRepository,
 				contextRetrievalMock,

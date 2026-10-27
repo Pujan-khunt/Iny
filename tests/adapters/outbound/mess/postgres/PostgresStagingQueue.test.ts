@@ -64,19 +64,29 @@ describe("PostgresStagingQueue", () => {
 	});
 
 	it("stages a message and retrieves it by id", async () => {
-		await queue.stageMessage({
+		const result = await queue.stageMessage({
 			id: "msg-1",
 			senderAddress: "+919876543210@s.whatsapp.net",
 			senderAddressType: "pn",
 			messageType: "text",
 			textBody: "Lunch menu announcement",
 		});
+		expect(result).toBe("staged");
 
 		const message = await queue.getMessageById("msg-1");
 		expect(message).not.toBeNull();
 		expect(message?.id).toBe("msg-1");
 		expect(message?.textBody).toBe("Lunch menu announcement");
 		expect(message?.status).toBe("pending");
+
+		const duplicateResult = await queue.stageMessage({
+			id: "msg-1",
+			senderAddress: "+919876543210@s.whatsapp.net",
+			senderAddressType: "pn",
+			messageType: "text",
+			textBody: "Duplicate announcement",
+		});
+		expect(duplicateResult).toBe("already_staged");
 	});
 
 	it("returns null for non-existent message id", async () => {

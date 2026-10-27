@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { ProcessIncomingMessage } from "./core/use-cases/ProcessIncomingMessage";
-import { AgentLoop } from "./core/use-cases/AgentLoop";
+import { HandleDialogueTurn } from "./core/use-cases/HandleDialogueTurn";
+import { AgentLoop } from "./core/services/AgentLoop";
 import { SYSTEM_PROMPT } from "./core/prompts/SystemPrompt";
 import { loadConfig } from "./config";
 import { DeepseekAdapter } from "./adapters/outbound/llm/DeepseekAdapter";
@@ -70,7 +70,7 @@ const agentLoop = new AgentLoop(deepseekAdapter, registry, {
 const contextRetrieval = new DialogueTurnContextRetrievalAdapter(dialogueTurnRepository, logger, {
 	maxTurns: config.MAX_HISTORY_TURNS,
 });
-const useCase = new ProcessIncomingMessage(
+const useCase = new HandleDialogueTurn(
 	messageSender,
 	dialogueTurnRepository,
 	contextRetrieval,

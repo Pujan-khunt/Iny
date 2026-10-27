@@ -4,13 +4,13 @@ import { WhatsAppInboundAdapter } from "../../../../src/adapters/inbound/whatsap
 import { AccessControlPort, UserRecord } from "../../../../src/core/ports/AccessControlPort";
 import { BaileysMessageFilter } from "../../../../src/adapters/inbound/whatsapp/BaileysMessageFilter";
 import { BaileysMessageParser } from "../../../../src/adapters/inbound/whatsapp/BaileysMessageParser";
-import { ProcessIncomingMessage } from "../../../../src/core/use-cases/ProcessIncomingMessage";
+import { HandleDialogueTurn } from "../../../../src/core/use-cases/HandleDialogueTurn";
 import { BaileysConnectionManager } from "../../../../src/adapters/outbound/whatsapp/BaileysConnectionManager";
 import { LoggerPort } from "../../../../src/core/ports/LoggerPort";
 
 describe("WhatsAppInboundAdapter", () => {
 	let mockLogger: LoggerPort;
-	let mockUseCase: ProcessIncomingMessage;
+	let mockUseCase: HandleDialogueTurn;
 	let mockConnManager: BaileysConnectionManager;
 	let mockAccessControl: AccessControlPort;
 	let filter: BaileysMessageFilter;
@@ -28,7 +28,7 @@ describe("WhatsAppInboundAdapter", () => {
 		};
 		mockUseCase = {
 			execute: vi.fn().mockResolvedValue(undefined),
-		} as unknown as ProcessIncomingMessage;
+		} as unknown as HandleDialogueTurn;
 		mockConnManager = {
 			subscribe: vi.fn(),
 		} as unknown as BaileysConnectionManager;
@@ -196,7 +196,7 @@ describe("WhatsAppInboundAdapter", () => {
 			});
 		});
 
-		it("should dispatch valid, authorized user messages to ProcessIncomingMessage.execute", async () => {
+		it("should dispatch valid, authorized user messages to HandleDialogueTurn.execute", async () => {
 			const validMessage: WAMessage = {
 				key: { remoteJid: "919876543210@s.whatsapp.net", fromMe: false, id: "m3" },
 				message: { conversation: "Calculate 10 + 20" },
@@ -243,7 +243,7 @@ describe("WhatsAppInboundAdapter", () => {
 			expect(mockUseCase.execute).not.toHaveBeenCalled();
 		});
 
-		it("should catch unhandled errors from ProcessIncomingMessage.execute, log error, and not crash", async () => {
+		it("should catch unhandled errors from HandleDialogueTurn.execute, log error, and not crash", async () => {
 			const error = new Error("Execution failure in use case");
 			(mockUseCase.execute as any).mockRejectedValue(error);
 

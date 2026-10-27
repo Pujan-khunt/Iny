@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { AgentLoop, AgentLoopConfig } from "../../../src/core/use-cases/AgentLoop";
+import { AgentLoop, AgentLoopConfig } from "../../../src/core/services/AgentLoop";
 import { LLMPort } from "../../../src/core/ports/LLMPort";
 import { ToolRegistryPort, ToolDefinition } from "../../../src/core/ports/ToolRegistryPort";
 import { LoggerPort } from "../../../src/core/ports/LoggerPort";

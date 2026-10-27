@@ -3,7 +3,7 @@
  *
  * In Hexagonal Architecture, this adapter manages the lifecycle and execution
  * of executable tools available to domain use cases (such as AgentLoop and
- * ProcessIncomingMessage). It strictly encapsulates internal tool instances:
+ * HandleIncomingUserMessage). It strictly encapsulates internal tool instances:
  * callers discover tool capabilities via read-only ToolDefinition metadata and
  * execute tools polymorphically through executeTool.
  */

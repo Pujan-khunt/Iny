@@ -18,13 +18,14 @@ import {
 	CommitOperationalPayload,
 	AtomicCommitOptions,
 	AtomicCommitCompositeOptions,
+	StageMessageResult,
 } from "../../../src/core/ports/MessStagingRepositoryPort";
 
 class MockMessStagingRepository implements MessStagingRepositoryPort {
 	listStagedMessages =
 		vi.fn<(options?: ListStagedMessagesOptions) => Promise<StagedAnnouncementMessage[]>>();
 	getMessageById = vi.fn<(id: string) => Promise<StagedAnnouncementMessage | null>>();
-	stageMessage = vi.fn<(message: NewStagedAnnouncementMessage) => Promise<void>>();
+	stageMessage = vi.fn<(message: NewStagedAnnouncementMessage) => Promise<StageMessageResult>>();
 	markIgnored = vi.fn<(id: string) => Promise<void>>();
 	getMealsByDateAndSlot =
 		vi.fn<(mealDate: string, mealSlot: any, vendor?: any) => Promise<StagedMealLookupRecord[]>>();
@@ -158,7 +159,7 @@ describe("MessStagingRepositoryPort", () => {
 
 		repo.listStagedMessages.mockResolvedValue([sampleMessage]);
 		repo.getMessageById.mockResolvedValue(sampleMessage);
-		repo.stageMessage.mockResolvedValue(undefined);
+		repo.stageMessage.mockResolvedValue("staged");
 		repo.markIgnored.mockResolvedValue(undefined);
 		repo.getMealsByDateAndSlot.mockResolvedValue([]);
 		repo.atomicCommit.mockResolvedValue(undefined);
