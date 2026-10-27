@@ -499,4 +499,15 @@ describe("FoodAnnouncementsInboundAdapter", () => {
 			}),
 		);
 	});
+
+	it("initializes default payloadParser with a dedicated child logger", () => {
+		new FoodAnnouncementsInboundAdapter({
+			targetGroupJid: TARGET_GROUP_JID,
+			stagingRepository: mockStagingRepo as any,
+			connectionManager: mockConn as any,
+			logger: mockLogger,
+		});
+
+		expect(mockLogger.child).toHaveBeenCalledWith({ module: "food-announcements-parser" });
+	});
 });

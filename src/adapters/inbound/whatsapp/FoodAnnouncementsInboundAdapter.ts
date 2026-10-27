@@ -40,7 +40,9 @@ export class FoodAnnouncementsInboundAdapter {
 		this.connectionManager = options.connectionManager;
 		this.logger = options.logger;
 		this.downloadMedia = options.downloadMedia ?? downloadMediaMessage;
-		this.payloadParser = options.payloadParser ?? new FoodAnnouncementPayloadParser(this.logger);
+		this.payloadParser =
+			options.payloadParser ??
+			new FoodAnnouncementPayloadParser(this.logger.child({ module: "food-announcements-parser" }));
 	}
 
 	/**

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { FoodAnnouncementPayloadParser } from "../../../../src/adapters/inbound/whatsapp/FoodAnnouncementPayloadParser";
 import { WAMessage } from "@whiskeysockets/baileys";
 import { LoggerPort } from "../../../../src/core/ports/LoggerPort";
@@ -15,10 +15,21 @@ describe("FoodAnnouncementPayloadParser", () => {
 		child: vi.fn().mockReturnThis(),
 	};
 
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it("returns null when msg or key is missing", () => {
 		const parser = new FoodAnnouncementPayloadParser(mockLogger);
 		expect(parser.parse(null as unknown as WAMessage, TARGET_GROUP_JID)).toBeNull();
+		expect(mockLogger.debug).toHaveBeenCalledWith(
+			"Ignored malformed WAMessage missing key envelope",
+		);
+
 		expect(parser.parse({} as unknown as WAMessage, TARGET_GROUP_JID)).toBeNull();
+		expect(mockLogger.debug).toHaveBeenCalledWith(
+			"Ignored malformed WAMessage missing key envelope",
+		);
 	});
 
 	it("returns null when remoteJid does not match target group", () => {
@@ -33,9 +44,31 @@ describe("FoodAnnouncementPayloadParser", () => {
 			message: { conversation: "Hello" },
 		};
 		expect(parser.parse(msg, TARGET_GROUP_JID)).toBeNull();
+		expect(mockLogger.debug).toHaveBeenCalledWith("Ignored message from non-target group", {
+			messageId: "msg-1",
+			remoteJid: "other@g.us",
+			targetGroupJid: TARGET_GROUP_JID,
+		});
 	});
 
-	it("returns null when fromMe is true or messageId is empty", () => {
+	it("returns null and logs when messageId is empty or missing", () => {
+		const parser = new FoodAnnouncementPayloadParser(mockLogger);
+		const noIdMsg: WAMessage = {
+			key: {
+				id: "",
+				remoteJid: TARGET_GROUP_JID,
+				fromMe: false,
+				participant: "919876543210@s.whatsapp.net",
+			},
+			message: { conversation: "No id" },
+		};
+		expect(parser.parse(noIdMsg, TARGET_GROUP_JID)).toBeNull();
+		expect(mockLogger.debug).toHaveBeenCalledWith("Ignored food announcement message missing id", {
+			remoteJid: TARGET_GROUP_JID,
+		});
+	});
+
+	it("returns null and logs when fromMe is true", () => {
 		const parser = new FoodAnnouncementPayloadParser(mockLogger);
 		const selfMsg: WAMessage = {
 			key: {
@@ -47,17 +80,13 @@ describe("FoodAnnouncementPayloadParser", () => {
 			message: { conversation: "Self message" },
 		};
 		expect(parser.parse(selfMsg, TARGET_GROUP_JID)).toBeNull();
-
-		const noIdMsg: WAMessage = {
-			key: {
-				id: "",
+		expect(mockLogger.debug).toHaveBeenCalledWith(
+			"Ignored food announcement message sent from bot itself",
+			{
+				messageId: "msg-self",
 				remoteJid: TARGET_GROUP_JID,
-				fromMe: false,
-				participant: "919876543210@s.whatsapp.net",
 			},
-			message: { conversation: "No id" },
-		};
-		expect(parser.parse(noIdMsg, TARGET_GROUP_JID)).toBeNull();
+		);
 	});
 
 	it("returns null when participant is missing", () => {
@@ -74,7 +103,7 @@ describe("FoodAnnouncementPayloadParser", () => {
 	});
 
 	it("returns null for unsupported message types", () => {
-		const parser = new FoodAnnouncementPayloadParser();
+		const parser = new FoodAnnouncementPayloadParser(mockLogger);
 		const audioMsg: WAMessage = {
 			key: {
 				id: "msg-audio",
@@ -88,7 +117,7 @@ describe("FoodAnnouncementPayloadParser", () => {
 	});
 
 	it("parses valid text message and normalizes PN sender", () => {
-		const parser = new FoodAnnouncementPayloadParser();
+		const parser = new FoodAnnouncementPayloadParser(mockLogger);
 		const textMsg: WAMessage = {
 			key: {
 				id: "msg-txt",
@@ -110,7 +139,7 @@ describe("FoodAnnouncementPayloadParser", () => {
 	});
 
 	it("parses valid document message with caption and normalizes LID sender", () => {
-		const parser = new FoodAnnouncementPayloadParser();
+		const parser = new FoodAnnouncementPayloadParser(mockLogger);
 		const docMsg: WAMessage = {
 			key: {
 				id: "msg-doc",

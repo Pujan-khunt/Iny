@@ -12,12 +12,23 @@ export interface ParsedFoodAnnouncementPayload {
 }
 
 type UnwrappedContent = NonNullable<ReturnType<typeof normalizeMessageContent>>;
+type AnnouncementContent = Pick<
+	ParsedFoodAnnouncementPayload,
+	"messageType" | "mediaMimeType" | "textBody"
+>;
+
+type TargetFoodAnnouncementMessage = WAMessage & {
+	key: WAMessage["key"] & {
+		id: string;
+		remoteJid: string;
+	};
+};
 
 /**
  * Extracts, normalizes, and filters incoming WhatsApp food announcement messages.
  */
 export class FoodAnnouncementPayloadParser {
-	constructor(private readonly logger?: LoggerPort) {}
+	constructor(private readonly logger: LoggerPort) {}
 
 	/**
 	 * Parses a raw WAMessage and returns normalized announcement payload if eligible.
@@ -29,7 +40,7 @@ export class FoodAnnouncementPayloadParser {
 
 		const sender = this.resolveSender(msg);
 		if (!sender) {
-			this.logger?.debug("Ignored food announcement message missing participant", {
+			this.logger.debug("Ignored food announcement message missing participant", {
 				messageId: msg.key.id,
 			});
 			return null;
@@ -37,7 +48,7 @@ export class FoodAnnouncementPayloadParser {
 
 		const unwrapped = normalizeMessageContent(msg.message);
 		if (!unwrapped) {
-			this.logger?.debug("normalizeMessageContent returned empty for message", {
+			this.logger.debug("normalizeMessageContent returned empty for message", {
 				messageId: msg.key.id,
 			});
 			return null;
@@ -45,31 +56,46 @@ export class FoodAnnouncementPayloadParser {
 
 		const parsedType = this.resolveContentType(unwrapped);
 		if (!parsedType) {
-			this.logger?.debug("Ignored unsupported message type in food announcements group", {
+			this.logger.debug("Ignored unsupported message type in food announcements group", {
 				messageId: msg.key.id,
 			});
 			return null;
 		}
 
 		return {
-			messageId: msg.key.id as string,
+			messageId: msg.key.id,
 			senderAddress: sender.address,
 			senderAddressType: sender.type,
 			...parsedType,
 		};
 	}
 
-	private isTargetMessage(msg: WAMessage | null | undefined, targetGroupJid: string): boolean {
+	private isTargetMessage(
+		msg: WAMessage | null | undefined,
+		targetGroupJid: string,
+	): msg is TargetFoodAnnouncementMessage {
 		if (!msg?.key) {
-			this.logger?.debug("Ignored malformed WAMessage missing key envelope");
+			this.logger.debug("Ignored malformed WAMessage missing key envelope");
 			return false;
 		}
-		const { id, remoteJid, fromMe } = msg.key;
-		if (remoteJid !== targetGroupJid || fromMe === true || !id) {
-			this.logger?.debug("Ignored non-matching group or bot message", {
-				messageId: id,
-				remoteJid,
-				fromMe,
+		if (msg.key.remoteJid !== targetGroupJid) {
+			this.logger.debug("Ignored message from non-target group", {
+				messageId: msg.key.id,
+				remoteJid: msg.key.remoteJid,
+				targetGroupJid,
+			});
+			return false;
+		}
+		if (!msg.key.id) {
+			this.logger.debug("Ignored food announcement message missing id", {
+				remoteJid: msg.key.remoteJid,
+			});
+			return false;
+		}
+		if (msg.key.fromMe === true) {
+			this.logger.debug("Ignored food announcement message sent from bot itself", {
+				messageId: msg.key.id,
+				remoteJid: msg.key.remoteJid,
 			});
 			return false;
 		}
@@ -83,60 +109,37 @@ export class FoodAnnouncementPayloadParser {
 		}
 		const normalized = WhatsAppJid.normalize(rawParticipant);
 		const address = normalized ?? String(rawParticipant).trim().toLowerCase();
-		const type: "pn" | "lid" = WhatsAppJid.isLidUser(address) ? "lid" : "pn";
-		return { address, type };
+		return { address, type: WhatsAppJid.isLidUser(address) ? "lid" : "pn" };
 	}
 
-	private resolveMediaContent(unwrapped: UnwrappedContent): {
-		messageType: "image" | "document";
-		mediaMimeType: string | null;
-		textBody: string | null;
-	} | null {
-		if (unwrapped.imageMessage) {
+	private resolveMediaContent(unwrapped: UnwrappedContent): AnnouncementContent | null {
+		const img = unwrapped.imageMessage;
+		if (img) {
 			return {
 				messageType: "image",
-				mediaMimeType: unwrapped.imageMessage.mimetype ?? "image/jpeg",
-				textBody: unwrapped.imageMessage.caption ?? null,
+				mediaMimeType: img.mimetype ?? "image/jpeg",
+				textBody: img.caption ?? null,
 			};
 		}
-		if (unwrapped.documentMessage) {
+		const doc = unwrapped.documentMessage;
+		if (doc) {
 			return {
 				messageType: "document",
-				mediaMimeType: unwrapped.documentMessage.mimetype ?? "application/pdf",
-				textBody: unwrapped.documentMessage.caption ?? unwrapped.documentMessage.fileName ?? null,
+				mediaMimeType: doc.mimetype ?? "application/pdf",
+				textBody: doc.caption ?? doc.fileName ?? null,
 			};
 		}
 		return null;
 	}
 
-	private resolveTextContent(unwrapped: UnwrappedContent): {
-		messageType: "text";
-		mediaMimeType: null;
-		textBody: string | null;
-	} | null {
-		if (unwrapped.conversation !== undefined && unwrapped.conversation !== null) {
-			return {
-				messageType: "text",
-				mediaMimeType: null,
-				textBody: unwrapped.conversation,
-			};
-		}
-		const extendedText = unwrapped.extendedTextMessage?.text;
-		if (extendedText !== undefined && extendedText !== null) {
-			return {
-				messageType: "text",
-				mediaMimeType: null,
-				textBody: extendedText,
-			};
-		}
-		return null;
+	private resolveTextContent(unwrapped: UnwrappedContent): AnnouncementContent | null {
+		const text = unwrapped.conversation ?? unwrapped.extendedTextMessage?.text;
+		return text !== undefined && text !== null
+			? { messageType: "text", mediaMimeType: null, textBody: text }
+			: null;
 	}
 
-	private resolveContentType(unwrapped: UnwrappedContent): {
-		messageType: "image" | "document" | "text";
-		mediaMimeType: string | null;
-		textBody: string | null;
-	} | null {
+	private resolveContentType(unwrapped: UnwrappedContent): AnnouncementContent | null {
 		return this.resolveMediaContent(unwrapped) ?? this.resolveTextContent(unwrapped);
 	}
 }
