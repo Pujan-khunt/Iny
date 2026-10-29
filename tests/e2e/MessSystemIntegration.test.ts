@@ -4,28 +4,32 @@ import path from "node:path";
 import { newDb } from "pg-mem";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
-import { AgentLoop } from "../../src/core/use-cases/AgentLoop";
-import { ProcessIncomingMessage } from "../../src/core/use-cases/ProcessIncomingMessage";
+import { AgentLoop } from "../../src/core/services/AgentLoop";
+import { HandleIncomingUserMessage } from "../../src/core/use-cases/HandleIncomingUserMessage";
 import { MessageFactory, UserMessage } from "../../src/core/entities/Message";
 import { LLMPort, LLMResponse } from "../../src/core/ports/LLMPort";
 import { MessageSenderPort } from "../../src/core/ports/MessageSenderPort";
 import { ContextRetrievalPort } from "../../src/core/ports/ContextRetrievalPort";
 import { LoggerPort } from "../../src/core/ports/LoggerPort";
 import { InMemoryToolRegistry } from "../../src/adapters/outbound/tool-registry/InMemoryToolRegistry";
-import { PostgresChatRepository } from "../../src/adapters/outbound/chat-repository/postgres/PostgresChatRepository";
+import { PostgresDialogueTurnRepository } from "../../src/adapters/outbound/dialogue-turn-repository/postgres/PostgresDialogueTurnRepository";
 import { PostgresMessRepository } from "../../src/adapters/outbound/mess/postgres/PostgresMessRepository";
 import { PostgresMessStagingRepository } from "../../src/adapters/outbound/mess/postgres/PostgresMessStagingRepository";
 import { defaultMessCardPresenter } from "../../src/adapters/outbound/mess/formatting/MessCardRenderer";
 import { DisplayMessCardTool } from "../../src/tools/DisplayMessCardTool";
 import { QueryMessDetailsTool } from "../../src/tools/QueryMessDetailsTool";
-import { FoodAnnouncementsInboundAdapter } from "../../src/adapters/inbound/whatsapp/FoodAnnouncementsInboundAdapter";
+import { FoodAnnouncementInboundAdapter } from "../../src/adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
+import { StageIncomingFoodAnnouncement } from "../../src/core/use-cases/StageIncomingFoodAnnouncement";
+import { WhatsAppMessageNormalizer } from "../../src/adapters/inbound/whatsapp/router/WhatsAppMessageNormalizer";
+import { WhatsAppMessageContentExtractor } from "../../src/adapters/inbound/whatsapp/router/WhatsAppMessageContentExtractor";
+import { WhatsAppMessageRouter } from "../../src/adapters/inbound/whatsapp/router/WhatsAppMessageRouter";
 import { DeepseekTextExtractor } from "../../src/adapters/outbound/mess/extraction/DeepseekTextExtractor";
 import {
 	messMeals,
 	messMealLocationDetails,
 	whatsappGroupFoodAnnouncementsMessages,
 } from "../../src/adapters/outbound/mess/postgres/schema";
-import { dialogueTurns } from "../../src/adapters/outbound/chat-repository/postgres/schema";
+import { dialogueTurns } from "../../src/adapters/outbound/dialogue-turn-repository/postgres/schema";
 import { WAMessage } from "@whiskeysockets/baileys";
 
 describe("Mess System End-to-End Integration", () => {
@@ -43,36 +47,58 @@ describe("Mess System End-to-End Integration", () => {
 	} as unknown as LoggerPort;
 
 	describe("Composition Root Wiring (src/index.ts)", () => {
-		it("verifies that src/index.ts wires repositories, tools, and food announcements adapter", () => {
+		it("verifies that src/index.ts wires repositories, tools, router, and inbound adapters", () => {
 			const indexPath = path.resolve(__dirname, "../../src/index.ts");
 			const indexContent = fs.readFileSync(indexPath, "utf-8");
 
 			// Verify imports
 			expect(indexContent).toContain("PostgresMessRepository");
 			expect(indexContent).toContain("PostgresMessStagingRepository");
+			expect(indexContent).toContain("PostgresDialogueTurnRepository");
+			expect(indexContent).toContain("DialogueTurnContextRetrievalAdapter");
+			expect(indexContent).toContain("HandleIncomingUserMessage");
+			expect(indexContent).toContain("StageIncomingFoodAnnouncement");
 			expect(indexContent).toContain("DisplayMessCardTool");
 			expect(indexContent).toContain("QueryMessDetailsTool");
-			expect(indexContent).toContain("FoodAnnouncementsInboundAdapter");
+			expect(indexContent).toContain("FoodAnnouncementInboundAdapter");
+			expect(indexContent).toContain("DirectMessageInboundAdapter");
+			expect(indexContent).toContain("WhatsAppMessageNormalizer");
+			expect(indexContent).toContain("WhatsAppMessageRouter");
+			expect(indexContent).toContain("CatchAllLoggingHandler");
 			expect(indexContent).toContain("messSchema");
+			expect(indexContent).toContain("dialogueSchema");
 
 			// Verify instantiation & wiring
 			expect(indexContent).toMatch(/new\s+PostgresMessRepository\s*\(/);
 			expect(indexContent).toMatch(/new\s+PostgresMessStagingRepository\s*\(/);
+			expect(indexContent).toMatch(/new\s+PostgresDialogueTurnRepository\s*\(/);
+			expect(indexContent).toMatch(/new\s+DialogueTurnContextRetrievalAdapter\s*\(/);
+			expect(indexContent).toMatch(/new\s+HandleIncomingUserMessage\s*\(/);
+			expect(indexContent).toMatch(/new\s+StageIncomingFoodAnnouncement\s*\(/);
 			expect(indexContent).toMatch(/new\s+DisplayMessCardTool\s*\(/);
 			expect(indexContent).toMatch(/new\s+QueryMessDetailsTool\s*\(/);
-			expect(indexContent).toMatch(/registry\.register\s*\(\s*displayMessCardTool\s*\)/);
-			expect(indexContent).toMatch(/registry\.register\s*\(\s*queryMessDetailsTool\s*\)/);
+			expect(indexContent).toMatch(/registry\.register\s*\(\s*new\s+DisplayMessCardTool\s*\(/);
+			expect(indexContent).toMatch(/registry\.register\s*\(\s*new\s+QueryMessDetailsTool\s*\(/);
 
-			// Verify FoodAnnouncementsInboundAdapter wiring and startup
-			expect(indexContent).toMatch(/new\s+FoodAnnouncementsInboundAdapter\s*\(/);
+			// Verify router and inbound adapters wiring and startup
+			expect(indexContent).toMatch(/new\s+FoodAnnouncementInboundAdapter\s*\(/);
+			expect(indexContent).toMatch(/new\s+DirectMessageInboundAdapter\s*\(/);
+			expect(indexContent).toMatch(/new\s+WhatsAppMessageNormalizer\s*\(/);
+			expect(indexContent).toMatch(/new\s+WhatsAppMessageRouter\s*\(/);
+			expect(indexContent).toMatch(/(?:router)?\.register\s*\(\s*foodAnnouncementAdapter\s*\)/);
+			expect(indexContent).toMatch(/\.register\s*\(\s*directMessageAdapter\s*\)/);
+			expect(indexContent).toMatch(/\.register\s*\(\s*new\s+CatchAllLoggingHandler\s*\(/);
 			expect(indexContent).toMatch(/FOOD_ANNOUNCEMENTS_GROUP_JID/);
-			expect(indexContent).toMatch(/foodAnnouncementsAdapter\.start\s*\(\s*\)/);
+			expect(indexContent).toMatch(
+				/connectionManager\.subscribe\s*\(\s*["']messages\.upsert["'],\s*\(?upsert\)?\s*=>/,
+			);
+			expect(indexContent).toMatch(/router\.handleUpsert\s*\(\s*upsert\s*\)/);
 		});
 	});
 
 	describe("Runtime Flow & Database Invariants", () => {
 		let db: NodePgDatabase;
-		let chatRepository: PostgresChatRepository;
+		let chatRepository: PostgresDialogueTurnRepository;
 		let messRepository: PostgresMessRepository;
 		let stagingRepository: PostgresMessStagingRepository;
 		let registry: InMemoryToolRegistry;
@@ -196,7 +222,7 @@ describe("Mess System End-to-End Integration", () => {
 			};
 
 			db = drizzle(pool);
-			chatRepository = new PostgresChatRepository(db, mockLogger);
+			chatRepository = new PostgresDialogueTurnRepository(db, mockLogger);
 			messRepository = new PostgresMessRepository(db, mockLogger);
 			stagingRepository = new PostgresMessStagingRepository(db, mockLogger);
 
@@ -258,7 +284,7 @@ describe("Mess System End-to-End Integration", () => {
 			};
 		});
 
-		it("executes DisplayMessCardTool in AgentLoop and ProcessIncomingMessage with early termination and check constraint satisfaction", async () => {
+		it("executes DisplayMessCardTool in AgentLoop and HandleIncomingUserMessage with early termination and check constraint satisfaction", async () => {
 			// LLM emits a tool call for display_mess_card
 			const llmMock: LLMPort = {
 				generateResponse: vi.fn().mockResolvedValue({
@@ -281,7 +307,7 @@ describe("Mess System End-to-End Integration", () => {
 				systemPrompt: "You are a helpful assistant.",
 			});
 
-			const useCase = new ProcessIncomingMessage(
+			const useCase = new HandleIncomingUserMessage(
 				senderMock,
 				chatRepository,
 				contextRetrievalMock,
@@ -380,7 +406,7 @@ describe("Mess System End-to-End Integration", () => {
 				systemPrompt: "You are a helpful assistant.",
 			});
 
-			const useCase = new ProcessIncomingMessage(
+			const useCase = new HandleIncomingUserMessage(
 				senderMock,
 				chatRepository,
 				contextRetrievalMock,
@@ -413,7 +439,7 @@ describe("Mess System End-to-End Integration", () => {
 			);
 		});
 
-		it("stages inbound food announcement messages into PostgreSQL database via FoodAnnouncementsInboundAdapter", async () => {
+		it("stages inbound food announcement messages into PostgreSQL database via FoodAnnouncementInboundAdapter", async () => {
 			let registeredHandler: ((upsert: any) => Promise<void>) | null = null;
 			const fakeConnectionManager = {
 				subscribe: vi.fn().mockImplementation((event: string, handler: any) => {
@@ -427,15 +453,23 @@ describe("Mess System End-to-End Integration", () => {
 				.fn()
 				.mockResolvedValue(Buffer.from("test-weekly-menu-pdf-bytes"));
 
-			const adapter = new FoodAnnouncementsInboundAdapter({
+			const useCase = new StageIncomingFoodAnnouncement(stagingRepository, mockLogger);
+			const adapter = new FoodAnnouncementInboundAdapter({
 				targetGroupJid: FOOD_GROUP_JID,
-				stagingRepository,
-				connectionManager: fakeConnectionManager as any,
+				useCase,
 				logger: mockLogger,
-				downloadMedia: fakeDownloadMedia as any,
 			});
+			const contentExtractor = new WhatsAppMessageContentExtractor(
+				mockLogger,
+				fakeDownloadMedia as any,
+			);
+			const normalizer = new WhatsAppMessageNormalizer(mockLogger, contentExtractor);
+			const router = new WhatsAppMessageRouter(normalizer, mockLogger);
+			router.register(adapter);
+			fakeConnectionManager.subscribe("messages.upsert", (upsert: any) =>
+				router.handleUpsert(upsert),
+			);
 
-			adapter.start();
 			expect(fakeConnectionManager.subscribe).toHaveBeenCalledWith(
 				"messages.upsert",
 				expect.any(Function),
@@ -460,7 +494,7 @@ describe("Mess System End-to-End Integration", () => {
 				},
 			} as unknown as WAMessage;
 
-			await registeredHandler!({ messages: [incomingWAMessage] });
+			await registeredHandler!({ type: "notify", messages: [incomingWAMessage] });
 
 			// Verify record is staged in database table
 			const staged = await db
@@ -498,14 +532,19 @@ describe("Mess System End-to-End Integration", () => {
 				}),
 			};
 
-			const adapter = new FoodAnnouncementsInboundAdapter({
+			const useCase = new StageIncomingFoodAnnouncement(stagingRepository, mockLogger);
+			const adapter = new FoodAnnouncementInboundAdapter({
 				targetGroupJid: FOOD_GROUP_JID,
-				stagingRepository,
-				connectionManager: fakeConnectionManager as any,
+				useCase,
 				logger: mockLogger,
 			});
-
-			adapter.start();
+			const contentExtractor = new WhatsAppMessageContentExtractor(mockLogger);
+			const normalizer = new WhatsAppMessageNormalizer(mockLogger, contentExtractor);
+			const router = new WhatsAppMessageRouter(normalizer, mockLogger);
+			router.register(adapter);
+			fakeConnectionManager.subscribe("messages.upsert", (upsert: any) =>
+				router.handleUpsert(upsert),
+			);
 			expect(registeredHandler).not.toBeNull();
 
 			// 2. Inbound WhatsApp announcement containing combo message (location seating + timing extension)
@@ -525,7 +564,7 @@ describe("Mess System End-to-End Integration", () => {
 				},
 			} as unknown as WAMessage;
 
-			await registeredHandler!({ messages: [incomingWAMessage] });
+			await registeredHandler!({ type: "notify", messages: [incomingWAMessage] });
 
 			// Verify staged in whatsappGroupFoodAnnouncementsMessages
 			const staged = await stagingRepository.getMessageById(messageId);

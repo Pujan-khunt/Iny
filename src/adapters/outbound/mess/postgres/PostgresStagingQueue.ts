@@ -5,6 +5,7 @@ import {
 	ListStagedMessagesOptions,
 	NewStagedAnnouncementMessage,
 	StagedAnnouncementMessage,
+	StageMessageResult,
 } from "../../../../core/ports/MessStagingRepositoryPort";
 import { whatsappGroupFoodAnnouncementsMessages, type DbFoodAnnouncementStatus } from "./schema";
 
@@ -72,9 +73,9 @@ export class PostgresStagingQueue {
 	/**
 	 * Stages an inbound food announcement message into the staging table.
 	 */
-	async stageMessage(message: NewStagedAnnouncementMessage): Promise<void> {
+	async stageMessage(message: NewStagedAnnouncementMessage): Promise<StageMessageResult> {
 		this.logger.debug("Staging inbound message", { id: message.id });
-		await this.db
+		const rows = await this.db
 			.insert(whatsappGroupFoodAnnouncementsMessages)
 			.values({
 				id: message.id,
@@ -88,7 +89,10 @@ export class PostgresStagingQueue {
 				receivedAt: message.receivedAt ?? new Date(),
 				processedAt: null,
 			})
-			.onConflictDoNothing();
+			.onConflictDoNothing()
+			.returning({ id: whatsappGroupFoodAnnouncementsMessages.id });
+
+		return rows.length > 0 ? "staged" : "already_staged";
 	}
 
 	/**

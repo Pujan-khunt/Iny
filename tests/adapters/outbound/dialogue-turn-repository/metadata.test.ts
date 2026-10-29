@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { extractTurnMetadata } from "../../../../../src/adapters/outbound/chat-repository/postgres/metadata";
-import { DialogueTurn } from "../../../../../src/core/entities/DialogueTurn";
+import { extractTurnMetadata } from "../../../../src/adapters/outbound/dialogue-turn-repository/postgres/metadata";
+import { DialogueTurn } from "../../../../src/core/entities/DialogueTurn";
 
 describe("extractTurnMetadata", () => {
 	it("should extract user query, assistant response, and empty toolNames for standard turns", () => {

@@ -1,11 +1,11 @@
 import { UserMessage } from "../entities/Message";
 import { DialogueTurnFactory } from "../entities/DialogueTurn";
 import { MessageSenderPort } from "../ports/MessageSenderPort";
-import { ChatRepositoryPort } from "../ports/ChatRepositoryPort";
+import { DialogueTurnRepositoryPort } from "../ports/DialogueTurnRepositoryPort";
 import { ContextRetrievalPort } from "../ports/ContextRetrievalPort";
 import { ToolRegistryPort } from "../ports/ToolRegistryPort";
 import { LoggerPort } from "../ports/LoggerPort";
-import { AgentLoop, AgentLoopResult } from "./AgentLoop";
+import { AgentLoop, AgentLoopResult } from "../services/AgentLoop";
 import {
 	LLMError,
 	LLMAuthenticationError,
@@ -15,28 +15,28 @@ import {
 } from "../errors/LLMErrors";
 
 /**
- * Orchestrating use case that processes incoming user messages.
+ * Orchestrating use case that coordinates processing an incoming user message.
  * Coordinates conversation context retrieval, agent reasoning loop execution,
  * transport delivery, and dialogue turn persistence.
  */
-export class ProcessIncomingMessage {
+export class HandleIncomingUserMessage {
 	/**
 	 * Initializes the use case with its required ports and collaborators.
 	 *
 	 * @param sender Transport port used to transmit outbound text responses.
-	 * @param chatRepository Persistence port used to store completed dialogue turns.
+	 * @param dialogueTurnRepository Persistence port used to store completed dialogue turns.
 	 * @param contextRetrieval Port used to retrieve historical context messages for the user.
 	 * @param agentLoop Domain service executing the ReAct agent reasoning loop.
 	 * @param toolRegistry Registry providing active tool definitions to the LLM.
 	 * @param logger Leveled structured logger port.
 	 */
 	constructor(
-		private sender: MessageSenderPort,
-		private chatRepository: ChatRepositoryPort,
-		private contextRetrieval: ContextRetrievalPort,
-		private agentLoop: AgentLoop,
-		private toolRegistry: ToolRegistryPort,
-		private logger: LoggerPort,
+		private readonly sender: MessageSenderPort,
+		private readonly dialogueTurnRepository: DialogueTurnRepositoryPort,
+		private readonly contextRetrieval: ContextRetrievalPort,
+		private readonly agentLoop: AgentLoop,
+		private readonly toolRegistry: ToolRegistryPort,
+		private readonly logger: LoggerPort,
 	) {}
 
 	/**
@@ -44,7 +44,7 @@ export class ProcessIncomingMessage {
 	 * 1. Context Retrieval: Loads historical messages via ContextRetrievalPort.
 	 * 2. Reasoning: Runs the autonomous AgentLoop with active tools.
 	 * 3. Delivery: Dispatches the assistant's final response via MessageSenderPort.
-	 * 4. Persistence: Saves the completed dialogue turn to ChatRepositoryPort.
+	 * 4. Persistence: Saves the completed dialogue turn to DialogueTurnRepositoryPort.
 	 *
 	 * @param message The verified inbound user message.
 	 */
@@ -80,7 +80,7 @@ export class ProcessIncomingMessage {
 				startedAt,
 				completedAt,
 			});
-			await this.chatRepository.saveTurn(turn);
+			await this.dialogueTurnRepository.saveTurn(turn);
 			log.info("Message processed successfully");
 		} catch (persistenceError) {
 			log.error("Failed to persist dialogue turn", persistenceError);

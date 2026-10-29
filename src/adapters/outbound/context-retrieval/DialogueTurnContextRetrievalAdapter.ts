@@ -1,26 +1,26 @@
 import { ContextRetrievalPort } from "../../../core/ports/ContextRetrievalPort";
-import { ChatRepositoryPort } from "../../../core/ports/ChatRepositoryPort";
+import { DialogueTurnRepositoryPort } from "../../../core/ports/DialogueTurnRepositoryPort";
 import { LoggerPort } from "../../../core/ports/LoggerPort";
 import { Message } from "../../../core/entities/Message";
 
-export interface ChatRepositoryContextRetrievalConfig {
+export interface DialogueTurnContextRetrievalConfig {
 	maxTurns?: number;
 	ttlMs?: number;
 }
 
 /**
- * Outbound adapter implementing ContextRetrievalPort backed by ChatRepositoryPort.
+ * Outbound adapter implementing ContextRetrievalPort backed by DialogueTurnRepositoryPort.
  * Retrieves recent dialogue turns, optionally filters by TTL, flattens turns into Message[],
  * and degrades gracefully with an empty array if the repository throws.
  */
-export class ChatRepositoryContextRetrievalAdapter implements ContextRetrievalPort {
+export class DialogueTurnContextRetrievalAdapter implements ContextRetrievalPort {
 	private readonly maxTurns: number;
 	private readonly ttlMs?: number;
 
 	constructor(
-		private chatRepository: ChatRepositoryPort,
+		private turnRepository: DialogueTurnRepositoryPort,
 		private logger: LoggerPort,
-		config?: ChatRepositoryContextRetrievalConfig,
+		config?: DialogueTurnContextRetrievalConfig,
 	) {
 		this.maxTurns = config?.maxTurns ?? 10;
 		this.ttlMs = config?.ttlMs;
@@ -28,7 +28,7 @@ export class ChatRepositoryContextRetrievalAdapter implements ContextRetrievalPo
 
 	async retrieveContext(userId: string): Promise<Message[]> {
 		try {
-			const turns = await this.chatRepository.getRecentTurns(userId, this.maxTurns);
+			const turns = await this.turnRepository.getRecentTurns(userId, this.maxTurns);
 			if (this.ttlMs !== undefined) {
 				const cutoffTime = Date.now() - this.ttlMs;
 				const freshTurns = turns.filter((turn) => turn.completedAt.getTime() >= cutoffTime);

@@ -1,6 +1,6 @@
 import { eq, desc } from "drizzle-orm";
 import type { PgDatabase } from "drizzle-orm/pg-core";
-import { ChatRepositoryPort } from "../../../../core/ports/ChatRepositoryPort";
+import { DialogueTurnRepositoryPort } from "../../../../core/ports/DialogueTurnRepositoryPort";
 import { DialogueTurn } from "../../../../core/entities/DialogueTurn";
 import { Message } from "../../../../core/entities/Message";
 import { LoggerPort } from "../../../../core/ports/LoggerPort";
@@ -9,11 +9,11 @@ import { assertValidDialogueTurn } from "./validation";
 import { extractTurnMetadata } from "./metadata";
 
 /**
- * Outbound adapter implementing ChatRepositoryPort backed by PostgreSQL and Drizzle ORM.
+ * Outbound adapter implementing DialogueTurnRepositoryPort backed by PostgreSQL and Drizzle ORM.
  * Persists dialogue turns under the Hybrid Envelope pattern with relational metadata extraction
  * and enforces domain invariants at both the adapter and database levels.
  */
-export class PostgresChatRepository implements ChatRepositoryPort {
+export class PostgresDialogueTurnRepository implements DialogueTurnRepositoryPort {
 	/**
 	 * @param db Drizzle PostgreSQL database client.
 	 * @param logger Leveled structured logger port.

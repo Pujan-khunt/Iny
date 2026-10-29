@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { runDatabaseMigrations } from "../../../../../src/adapters/outbound/chat-repository/postgres/migrator";
-import { LoggerPort } from "../../../../../src/core/ports/LoggerPort";
+import { runDatabaseMigrations } from "../../../../src/adapters/outbound/dialogue-turn-repository/postgres/migrator";
+import { LoggerPort } from "../../../../src/core/ports/LoggerPort";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 

@@ -10,6 +10,7 @@ import {
 	NewStagedAnnouncementMessage,
 	StagedAnnouncementMessage,
 	StagedMealLookupRecord,
+	StageMessageResult,
 } from "../../../../core/ports/MessStagingRepositoryPort";
 import { PostgresMealCommitter } from "./PostgresMealCommitter";
 import { PostgresMealRollback } from "./PostgresMealRollback";
@@ -41,7 +42,7 @@ export class PostgresMessStagingRepository implements MessStagingRepositoryPort 
 		return this.queue.listStagedMessages(options);
 	}
 
-	async stageMessage(message: NewStagedAnnouncementMessage): Promise<void> {
+	async stageMessage(message: NewStagedAnnouncementMessage): Promise<StageMessageResult> {
 		return this.queue.stageMessage(message);
 	}
 

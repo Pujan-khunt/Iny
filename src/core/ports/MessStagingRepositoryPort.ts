@@ -2,6 +2,11 @@ import { MealSlot, Vendor, MealChangeType } from "../entities/MessMeal";
 
 export type StagedMessageStatus = "pending" | "processed" | "ignored";
 
+/**
+ * Result of staging an announcement message in the staging repository.
+ */
+export type StageMessageResult = "staged" | "already_staged";
+
 export interface StagedAnnouncementMessage {
 	id: string;
 	senderAddress: string;
@@ -137,8 +142,13 @@ export interface MessStagingRepositoryPort {
 	listStagedMessages(options?: ListStagedMessagesOptions): Promise<StagedAnnouncementMessage[]>;
 	/** Retrieves a staged message by its unique identifier. */
 	getMessageById(id: string): Promise<StagedAnnouncementMessage | null>;
-	/** Stages an incoming food announcement message. */
-	stageMessage(message: NewStagedAnnouncementMessage): Promise<void>;
+	/**
+	 * Stages an incoming food announcement message.
+	 *
+	 * @param message Message payload to stage.
+	 * @returns "staged" if newly inserted, or "already_staged" if duplicate exists.
+	 */
+	stageMessage(message: NewStagedAnnouncementMessage): Promise<StageMessageResult>;
 	/** Marks a staged message as ignored. */
 	markIgnored(id: string): Promise<void>;
 	/** Retrieves operational mess meals for date, slot, and optional vendor. */

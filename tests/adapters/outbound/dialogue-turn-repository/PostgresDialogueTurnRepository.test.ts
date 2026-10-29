@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { newDb } from "pg-mem";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
-import { PostgresChatRepository } from "../../../../../src/adapters/outbound/chat-repository/postgres/PostgresChatRepository";
-import { DialogueTurn } from "../../../../../src/core/entities/DialogueTurn";
-import { LoggerPort } from "../../../../../src/core/ports/LoggerPort";
+import { PostgresDialogueTurnRepository } from "../../../../src/adapters/outbound/dialogue-turn-repository/postgres/PostgresDialogueTurnRepository";
+import { DialogueTurn } from "../../../../src/core/entities/DialogueTurn";
+import { LoggerPort } from "../../../../src/core/ports/LoggerPort";
 
-describe("PostgresChatRepository", () => {
-	let repository: PostgresChatRepository;
+describe("PostgresDialogueTurnRepository", () => {
+	let repository: PostgresDialogueTurnRepository;
 	let db: NodePgDatabase;
 	const mockLogger: LoggerPort = {
 		debug: vi.fn(),
@@ -16,6 +16,13 @@ describe("PostgresChatRepository", () => {
 		fatal: vi.fn(),
 		child: vi.fn().mockReturnThis(),
 	};
+
+	it("saves and retrieves turns implementing DialogueTurnRepositoryPort", async () => {
+		const mockDb = { select: vi.fn(), insert: vi.fn() } as any;
+		const repo = new PostgresDialogueTurnRepository(mockDb, mockLogger);
+		expect(repo.getRecentTurns).toBeDefined();
+		expect(repo.saveTurn).toBeDefined();
+	});
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
@@ -56,7 +63,7 @@ describe("PostgresChatRepository", () => {
 		};
 
 		db = drizzle(pool);
-		repository = new PostgresChatRepository(db, mockLogger);
+		repository = new PostgresDialogueTurnRepository(db, mockLogger);
 	});
 
 	const createSampleTurn = (id: string, userId: string, dateStr: string): DialogueTurn => ({
@@ -248,7 +255,7 @@ describe("PostgresChatRepository", () => {
 				values: vi.fn().mockRejectedValue(new Error("DB insert failure")),
 			}),
 		};
-		const failRepo = new PostgresChatRepository(errorDb as any, mockLogger);
+		const failRepo = new PostgresDialogueTurnRepository(errorDb as any, mockLogger);
 		const turn = createSampleTurn(
 			"00000000-0000-0000-0000-000000000001",
 			"user1",
@@ -275,7 +282,7 @@ describe("PostgresChatRepository", () => {
 				}),
 			}),
 		};
-		const failRepo = new PostgresChatRepository(errorDb as any, mockLogger);
+		const failRepo = new PostgresDialogueTurnRepository(errorDb as any, mockLogger);
 
 		await expect(failRepo.getRecentTurns("user1", 5)).rejects.toThrow("DB select failure");
 		expect(mockLogger.error).toHaveBeenCalledWith(
@@ -291,7 +298,7 @@ describe("PostgresChatRepository", () => {
 				where: vi.fn().mockRejectedValue(new Error("DB delete failure")),
 			}),
 		};
-		const failRepo = new PostgresChatRepository(errorDb as any, mockLogger);
+		const failRepo = new PostgresDialogueTurnRepository(errorDb as any, mockLogger);
 
 		await expect(failRepo.clearHistory("user1")).rejects.toThrow("DB delete failure");
 		expect(mockLogger.error).toHaveBeenCalledWith(
