@@ -11,8 +11,8 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/core/entities/ToolCallRequest.ts`: Discriminated union of `ValidToolCallRequest` and `MalformedToolCallRequest` modeling parsed LLM function invocations.
   - `src/core/entities/DialogueTurn.ts`: Encapsulates a complete, turn-atomic interaction boundary (`UserMessage`, intermediate tool calls and results, final `AssistantTextMessage`, `startedAt`, and `completedAt`). Exposes `DialogueTurnFactory`.
   - `src/core/entities/MessMeal.ts`: Pure domain entities and interfaces modeling campus dining: `MessMeal`, `MessMealLocationDetail`, `MessMealTimingExtension`, `MessMealChange`, `ResolvedMessMeal`, and meal slot types.
-  - `src/core/prompts/SystemPrompt.ts`: Pure domain system prompt composition module defining SST campus persona, official WhatsApp markdown formatting invariants, mess-scoped tool execution discipline, 4-quadrant routing guidelines, and the canonical non-empty `SYSTEM_PROMPT` constant.
-  - `src/core/utils/Temporal.ts`: Pure domain utilities encapsulating IST timezone offset arithmetic (`Asia/Kolkata`), date resolution (`getISTDateString`, `getCurrentMealSlot`, `resolveTargetMealDate`), and temporal prompt formatting.
+  - `src/core/prompts/SystemPrompt.ts`: Pure domain system prompt composition module defining SST campus persona, official WhatsApp markdown formatting invariants, live food facts lookup mandate, response brevity contracts (<=25 words direct, <=45 words info), negative boundaries (no nutritional/taste/cancellation speculation, no unsolicited closers), 4-quadrant routing guidelines, and the canonical non-empty `SYSTEM_PROMPT` constant.
+  - `src/core/utils/Temporal.ts`: Pure domain utilities encapsulating IST timezone offset arithmetic (`Asia/Kolkata`), date resolution (`getISTDateString`, `getCurrentMealSlot`, `resolveTargetMealDate`), historical message timestamp formatting (`formatHistoricalMessageTimeIST`), and temporal prompt formatting.
 - **Use Cases & Domain Services**: Application-specific business rules:
   - `src/core/use-cases/HandleIncomingUserMessage.ts`: 4-phase orchestrator separating Conversation Context Retrieval, Reasoning, Delivery, and Persistence phases. Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
   - `src/core/use-cases/StageIncomingFoodAnnouncement.ts`: Staging orchestrator validating incoming food announcements against zero-trust domain invariants, delegating persistence to `MessStagingRepositoryPort`, and logging structured audit events.
@@ -30,7 +30,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
 - **Tools**: Declarative tool extensions available to the LLM:
   - `src/tools/BaseTool.ts`: Abstract base class using the Template Method pattern, declarative Zod schemas, automatic JSON Schema generation, and self-correcting error string returns.
   - `src/tools/CalculatorTool.ts`: Safe arithmetic evaluation tool using recursive descent parsing (zero `eval`).
-  - `src/tools/DisplayMessCardTool.ts`: Terminal mess card tool (`isTerminal: true`) depending strictly on `MessCardPresenterPort` and `MessRepositoryPort`.
+  - `src/tools/DisplayMessCardTool.ts`: Terminal mess card tool (`isTerminal: true`) depending strictly on `MessCardPresenterPort` and `MessRepositoryPort`, returning deterministic terminal notices for unpopulated menus to prevent LLM cancellation hallucinations.
   - `src/tools/QueryMessDetailsTool.ts`: Granular multi-turn query tool (`isTerminal: false`) depending on `MessCardPresenterPort` and `MessRepositoryPort`.
 - **Inbound Adapters**: Entry points that trigger core use cases:
   - `src/adapters/inbound/whatsapp/router/WhatsAppMessageRouter.ts`: Multi-handler priority router dispatching normalized messages to first-matching registered handlers with error isolation and configurable upsert mode filtering (`notify`, `append`).
@@ -66,7 +66,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
     - `ExtractorUtils.ts`: Strips markdown fences, normalizes client resolution, and captures `rawResponse` and Zod issues.
   - `src/adapters/outbound/mess/formatting/MessCardRenderer.ts`: Driven adapter implementing `MessCardPresenterPort` for WhatsApp card presentation.
   - `src/adapters/outbound/llm/DeepseekAdapter.ts`: Lean coordinator delegating to pure collaborators:
-    - `DeepseekRequestMapper.ts`: Pure message and system prompt translation to OpenAI-compatible format with DeepSeek `reasoning_content` preservation.
+    - `DeepseekRequestMapper.ts`: Pure message and system prompt translation to OpenAI-compatible format with DeepSeek `reasoning_content` preservation and historical user message IST timestamp prefixing (`[Sent: YYYY-MM-DD HH:mm IST]`).
     - `DeepseekToolMapper.ts`: Pure translation of domain tool definitions to OpenAI function tool schemas.
     - `DeepseekToolCallParser.ts`: Pure parser extracting `ValidToolCallRequest` and `MalformedToolCallRequest` domain entities.
     - `DeepseekResponseParser.ts`: Pure OpenAI response parser extracting completion text, chain-of-thought `reasoning`, and delegating tool call extraction.
@@ -76,7 +76,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/outbound/dialogue-turn-repository/postgres/validation.ts`: Pure assertion validating dialogue turn structural and temporal invariants.
   - `src/adapters/outbound/dialogue-turn-repository/postgres/metadata.ts`: Pure extractor mapping domain `DialogueTurn` entities into first-class relational columns (`userQuery`, `assistantResponse`, `toolNames`, `reasoning`).
   - `src/adapters/outbound/dialogue-turn-repository/postgres/migrator.ts`: Startup database migration runner executing Drizzle migrations before service startup.
-  - `src/adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter.ts`: Outbound adapter implementing `ContextRetrievalPort` backed by `DialogueTurnRepositoryPort`, flattening turns into `Message[]` with optional TTL filtering and graceful error fallback.
+  - `src/adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter.ts`: Outbound adapter implementing `ContextRetrievalPort` backed by `DialogueTurnRepositoryPort`, pruning raw historical tool calls and outputs while preserving conversational messages, with 24-hour default TTL filtering and graceful error fallback.
   - `src/adapters/outbound/logger/PinoLoggerAdapter.ts`: Structured logging wrapper around Pino with unambiguous signature routing.
   - `src/adapters/outbound/tool-registry/InMemoryToolRegistry.ts`: In-memory tool storage exposing clean tool definitions.
 - **Shared Adapter Collaborators**: Reusable access control and identity validation components:

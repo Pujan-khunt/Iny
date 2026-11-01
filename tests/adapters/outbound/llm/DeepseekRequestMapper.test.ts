@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mapDomainMessagesToOpenAI } from "../../../../src/adapters/outbound/llm/DeepseekRequestMapper";
 import {
 	Message,
+	MessageFactory,
 	AssistantTextMessage,
 	ToolResultMessage,
 } from "../../../../src/core/entities/Message";
@@ -165,6 +166,82 @@ describe("DeepseekRequestMapper", () => {
 				role: "tool",
 				tool_call_id: "c1",
 				content: "4",
+			});
+		});
+
+		it("prefixes historical UserMessages with [Sent: YYYY-MM-DD HH:mm IST] but leaves the latest UserMessage untouched", () => {
+			const historicalUser = MessageFactory.createUser({
+				userId: "user-1",
+				content: "Today's lunch",
+				timestamp: new Date("2026-10-30T07:19:00.000Z"), // 12:49 IST
+			});
+			const assistantReply = MessageFactory.createAssistantText({
+				userId: "user-1",
+				content: "Here is Friday lunch",
+			});
+			const currentUser = MessageFactory.createUser({
+				userId: "user-1",
+				content: "Today's lunch",
+				timestamp: new Date("2026-10-31T07:03:00.000Z"), // 12:33 IST
+			});
+
+			const result = mapDomainMessagesToOpenAI("System Prompt", [
+				historicalUser,
+				assistantReply,
+				currentUser,
+			]);
+
+			expect(result[1]).toEqual({
+				role: "user",
+				content: "[Sent: 2026-10-30 12:49 IST] Today's lunch",
+			});
+			expect(result[3]).toEqual({
+				role: "user",
+				content: "Today's lunch",
+			});
+		});
+
+		it("leaves the active UserMessage untouched during multi-turn tool execution when followed by assistant tool calls and tool results", () => {
+			const historicalUser = MessageFactory.createUser({
+				userId: "user-1",
+				content: "Yesterday's query",
+				timestamp: new Date("2026-10-30T07:19:00.000Z"),
+			});
+			const historicalReply = MessageFactory.createAssistantText({
+				userId: "user-1",
+				content: "Yesterday's answer",
+			});
+			const activeUser = MessageFactory.createUser({
+				userId: "user-1",
+				content: "Active query",
+				timestamp: new Date("2026-10-31T07:03:00.000Z"),
+			});
+			const activeToolCall = MessageFactory.createAssistantToolCall({
+				userId: "user-1",
+				toolCalls: [{ type: "valid", id: "call_1", name: "query_mess_details", arguments: {} }],
+			});
+			const activeToolResult = MessageFactory.createToolResult({
+				userId: "user-1",
+				toolCallId: "call_1",
+				name: "query_mess_details",
+				content: '{"menu": "test"}',
+			});
+
+			const result = mapDomainMessagesToOpenAI("System Prompt", [
+				historicalUser,
+				historicalReply,
+				activeUser,
+				activeToolCall,
+				activeToolResult,
+			]);
+
+			expect(result[1]).toEqual({
+				role: "user",
+				content: "[Sent: 2026-10-30 12:49 IST] Yesterday's query",
+			});
+			expect(result[3]).toEqual({
+				role: "user",
+				content: "Active query",
 			});
 		});
 

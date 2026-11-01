@@ -3,7 +3,11 @@ import { DialogueTurnContextRetrievalAdapter } from "../../../../src/adapters/ou
 import { DialogueTurnRepositoryPort } from "../../../../src/core/ports/DialogueTurnRepositoryPort";
 import { LoggerPort } from "../../../../src/core/ports/LoggerPort";
 import { DialogueTurn } from "../../../../src/core/entities/DialogueTurn";
-import { UserMessage, AssistantTextMessage } from "../../../../src/core/entities/Message";
+import {
+	UserMessage,
+	AssistantTextMessage,
+	MessageFactory,
+} from "../../../../src/core/entities/Message";
 
 describe("DialogueTurnContextRetrievalAdapter", () => {
 	let mockTurnRepository: DialogueTurnRepositoryPort;
@@ -117,5 +121,40 @@ describe("DialogueTurnContextRetrievalAdapter", () => {
 			error,
 			{ userId: "user1" },
 		);
+	});
+
+	it("prunes raw ToolResultMessage and AssistantToolCallMessage from completed historical turns", async () => {
+		const turn: DialogueTurn = {
+			id: "turn-1",
+			userId: "user-1",
+			startedAt: new Date("2026-10-30T07:00:00Z"),
+			completedAt: new Date("2026-10-30T07:01:00Z"),
+			messages: [
+				MessageFactory.createUser({ userId: "user-1", content: "menu" }),
+				MessageFactory.createAssistantToolCall({
+					userId: "user-1",
+					toolCalls: [{ id: "call-1", name: "display_mess_card", type: "valid", arguments: {} }],
+				}),
+				MessageFactory.createToolResult({
+					userId: "user-1",
+					toolCallId: "call-1",
+					name: "display_mess_card",
+					content: "🍽️ Lunch Menu (Fri, 30 Oct)",
+				}),
+				MessageFactory.createAssistantText({
+					userId: "user-1",
+					content: "🍽️ Lunch Menu (Fri, 30 Oct)",
+				}),
+			],
+		};
+
+		vi.mocked(mockTurnRepository.getRecentTurns).mockResolvedValue([turn]);
+		const adapter = new DialogueTurnContextRetrievalAdapter(mockTurnRepository, mockLogger);
+		const messages = await adapter.retrieveContext("user-1");
+
+		expect(messages).toHaveLength(2);
+		expect(messages[0].role).toBe("user");
+		expect(messages[1].role).toBe("assistant");
+		expect(messages[1]).toHaveProperty("content", "🍽️ Lunch Menu (Fri, 30 Oct)");
 	});
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { DisplayMessCardTool } from "../../src/tools/DisplayMessCardTool";
 import { MessRepositoryPort } from "../../src/core/ports/MessRepositoryPort";
-import { ResolvedMealInfo, MessMeal } from "../../src/core/entities/MessMeal";
+import { ResolvedMealInfo, MessMeal, MealSlot } from "../../src/core/entities/MessMeal";
 import { defaultMessCardPresenter } from "../../src/adapters/outbound/mess/formatting/MessCardRenderer";
 
 describe("DisplayMessCardTool", () => {
@@ -218,7 +218,7 @@ describe("DisplayMessCardTool", () => {
 	});
 
 	describe("Fallback and Error Handling", () => {
-		it("returns non-terminal message when no meals are scheduled", async () => {
+		it("returns deterministic terminal notice when no meals are loaded for requested slot", async () => {
 			vi.mocked(mockMessRepo.getResolvedMeal).mockResolvedValue({
 				mealDate: "2026-10-08",
 				mealSlot: "lunch",
@@ -236,8 +236,61 @@ describe("DisplayMessCardTool", () => {
 				mealSlot: "lunch",
 			});
 
-			expect(result.isTerminal).toBe(false);
-			expect(result.content).toContain("No menu scheduled");
+			expect(result.isTerminal).toBe(true);
+			expect(result.content).toBe(
+				"ℹ️ No menu data is currently loaded for the mess lunch on 2026-10-08.",
+			);
+		});
+
+		it("returns deterministic terminal notice when no meals are loaded for single-vendor slot", async () => {
+			vi.mocked(mockMessRepo.getResolvedMeal).mockResolvedValue({
+				mealDate: "2026-11-01",
+				mealSlot: "breakfast",
+				meals: [],
+				locationDetail: null,
+				timingExtensions: [],
+				mealChanges: [],
+			});
+
+			const tool = new DisplayMessCardTool(
+				mockMessRepo,
+				defaultMessCardPresenter,
+				() => new Date("2026-10-31T17:53:00Z"),
+			);
+			const result = await tool.execute({
+				mealDate: "2026-11-01",
+				mealSlot: "breakfast",
+				vendor: "cheftalk_regular",
+			});
+
+			expect(result.isTerminal).toBe(true);
+			expect(result.content).toBe(
+				"ℹ️ No menu data is currently loaded for Cheftalk Regular breakfast on 2026-11-01.",
+			);
+		});
+
+		it("returns deterministic terminal notice when no meals are loaded for full-day digest", async () => {
+			vi.mocked(mockMessRepo.getResolvedMeal).mockResolvedValue({
+				mealDate: "2026-11-01",
+				mealSlot: undefined as unknown as MealSlot,
+				meals: [],
+				locationDetail: null,
+				timingExtensions: [],
+				mealChanges: [],
+			});
+
+			const tool = new DisplayMessCardTool(
+				mockMessRepo,
+				defaultMessCardPresenter,
+				() => new Date("2026-10-31T17:53:00Z"),
+			);
+			const result = await tool.execute({
+				mealDate: "2026-11-01",
+				vendor: "tcb",
+			});
+
+			expect(result.isTerminal).toBe(true);
+			expect(result.content).toBe("ℹ️ No menu data is currently loaded for TCB on 2026-11-01.");
 		});
 
 		it("returns error when invalid mealDate format is provided", async () => {
