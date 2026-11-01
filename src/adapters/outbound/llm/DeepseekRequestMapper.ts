@@ -7,6 +7,7 @@ import {
 	AssistantToolCallMessage,
 	ToolResultMessage,
 } from "../../../core/entities/Message";
+import { formatHistoricalMessageTimeIST } from "../../../core/utils/Temporal";
 
 export type DeepseekAssistantMessageParam = OpenAI.Chat.ChatCompletionAssistantMessageParam & {
 	reasoning_content?: string | null;
@@ -23,22 +24,34 @@ export function mapDomainMessagesToOpenAI(
 	systemPrompt: string,
 	messages: Message[],
 ): OpenAI.Chat.ChatCompletionMessageParam[] {
+	const lastUserIndex = findLastUserIndex(messages);
 	return [
 		{ role: "system", content: systemPrompt },
-		...messages.map((msg) => mapSingleMessage(msg)),
+		...messages.map((msg, index) => mapSingleMessage(msg, index === lastUserIndex)),
 	];
+}
+
+/**
+ * Finds the index of the latest UserMessage in the chronological sequence.
+ */
+function findLastUserIndex(messages: Message[]): number {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		if (messages[i].role === "user") return i;
+	}
+	return -1;
 }
 
 /**
  * Maps an individual domain message into an OpenAI ChatCompletion message parameter.
  *
  * @param msg The domain message to map.
+ * @param isLatest Whether this is the latest (active) message in the chronological sequence.
  * @returns The corresponding OpenAI ChatCompletion message parameter.
  */
-function mapSingleMessage(msg: Message): OpenAI.Chat.ChatCompletionMessageParam {
+function mapSingleMessage(msg: Message, isLatest: boolean): OpenAI.Chat.ChatCompletionMessageParam {
 	switch (msg.role) {
 		case "user":
-			return mapUserMessage(msg);
+			return mapUserMessage(msg, isLatest);
 		case "assistant":
 			return mapAssistantMessage(msg);
 		case "tool":
@@ -50,11 +63,16 @@ function mapSingleMessage(msg: Message): OpenAI.Chat.ChatCompletionMessageParam 
 
 /**
  * Maps a UserMessage entity to an OpenAI user message parameter.
+ * Historical messages are prefixed with their IST send timestamp.
  */
-function mapUserMessage(msg: UserMessage): OpenAI.Chat.ChatCompletionUserMessageParam {
+function mapUserMessage(
+	msg: UserMessage,
+	isLatest: boolean,
+): OpenAI.Chat.ChatCompletionUserMessageParam {
+	const prefix = isLatest ? "" : `[Sent: ${formatHistoricalMessageTimeIST(msg.timestamp)}] `;
 	return {
 		role: "user",
-		content: msg.content,
+		content: `${prefix}${msg.content}`,
 	};
 }
 
@@ -72,16 +90,11 @@ function mapAssistantMessage(msg: AssistantMessage): DeepseekAssistantMessagePar
  * Maps an AssistantTextMessage entity to an OpenAI/DeepSeek assistant message parameter.
  */
 function mapAssistantTextMessage(msg: AssistantTextMessage): DeepseekAssistantMessageParam {
-	const assistantMsg: DeepseekAssistantMessageParam = {
+	return {
 		role: "assistant",
 		content: msg.content,
+		...(typeof msg.reasoning === "string" ? { reasoning_content: msg.reasoning } : {}),
 	};
-
-	if (typeof msg.reasoning === "string") {
-		assistantMsg.reasoning_content = msg.reasoning;
-	}
-
-	return assistantMsg;
 }
 
 /**
@@ -91,7 +104,7 @@ function mapAssistantTextMessage(msg: AssistantTextMessage): DeepseekAssistantMe
  */
 function mapAssistantToolCallMessage(msg: AssistantToolCallMessage): DeepseekAssistantMessageParam {
 	const hasContent = typeof msg.content === "string" && msg.content.trim() !== "";
-	const assistantMsg: DeepseekAssistantMessageParam = {
+	return {
 		role: "assistant",
 		content: hasContent ? msg.content : null,
 		tool_calls: msg.toolCalls.map((tc) => ({
@@ -102,13 +115,8 @@ function mapAssistantToolCallMessage(msg: AssistantToolCallMessage): DeepseekAss
 				arguments: tc.type === "valid" ? JSON.stringify(tc.arguments) : tc.rawArguments,
 			},
 		})),
+		...(typeof msg.reasoning === "string" ? { reasoning_content: msg.reasoning } : {}),
 	};
-
-	if (typeof msg.reasoning === "string") {
-		assistantMsg.reasoning_content = msg.reasoning;
-	}
-
-	return assistantMsg;
 }
 
 /**

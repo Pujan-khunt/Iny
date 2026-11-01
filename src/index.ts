@@ -65,6 +65,7 @@ const agentLoop = new AgentLoop(deepseekAdapter, registry, {
 });
 const contextRetrieval = new DialogueTurnContextRetrievalAdapter(dialogueTurnRepository, logger, {
 	maxTurns: config.MAX_HISTORY_TURNS,
+	ttlMs: config.HISTORY_TTL_HOURS * 60 * 60 * 1000,
 });
 const useCase = new HandleIncomingUserMessage(
 	messageSender,
@@ -74,10 +75,8 @@ const useCase = new HandleIncomingUserMessage(
 	registry,
 	logger,
 );
-const stageFoodAnnouncement = new StageIncomingFoodAnnouncement(
-	messStagingRepository,
-	logMod("food-announcements"),
-);
+const foodLog = logMod("food-announcements");
+const stageFoodAnnouncement = new StageIncomingFoodAnnouncement(messStagingRepository, foodLog);
 const directMessageAdapter = new DirectMessageInboundAdapter(
 	useCase,
 	accessControl,
@@ -86,7 +85,7 @@ const directMessageAdapter = new DirectMessageInboundAdapter(
 const foodAnnouncementAdapter = new FoodAnnouncementInboundAdapter({
 	targetGroupJid: config.FOOD_ANNOUNCEMENTS_GROUP_JID,
 	useCase: stageFoodAnnouncement,
-	logger: logMod("food-announcements"),
+	logger: foodLog,
 });
 const contentExtractor = new WhatsAppMessageContentExtractor(logMod("content-extractor"));
 const normalizer = new WhatsAppMessageNormalizer(logMod("normalizer"), contentExtractor);
@@ -115,8 +114,7 @@ const handleFatal = (name: string) => (err: unknown) => {
 	logger.fatal(name, err instanceof Error ? err : new Error(String(err)));
 	shutdown(name, 1);
 };
-process.on("SIGINT", () => shutdown("SIGINT", 0));
-process.on("SIGTERM", () => shutdown("SIGTERM", 0));
+["SIGINT", "SIGTERM"].forEach((sig) => process.on(sig, () => shutdown(sig, 0)));
 process.on("uncaughtException", handleFatal("Uncaught exception"));
 process.on("unhandledRejection", handleFatal("Unhandled promise rejection"));
 

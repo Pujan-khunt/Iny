@@ -34,6 +34,7 @@ describe("Config", () => {
 		expect(config.LOG_LEVEL).toBe("info");
 		expect(config.MAX_TOOL_ITERATIONS).toBe(5);
 		expect(config.MAX_HISTORY_TURNS).toBe(10);
+		expect(config.HISTORY_TTL_HOURS).toBe(24);
 	});
 
 	it("should correctly override defaults with provided custom variables", () => {
@@ -49,11 +50,13 @@ describe("Config", () => {
 			LOG_LEVEL: "debug",
 			MAX_TOOL_ITERATIONS: "10",
 			MAX_HISTORY_TURNS: "25",
+			HISTORY_TTL_HOURS: "48",
 		});
 
 		expect(config.DATABASE_URL).toBe("postgres://custom_user:pass@db.example.com:5432/custom_db");
 		expect(config.FOOD_ANNOUNCEMENTS_GROUP_JID).toBe("120363025343425345@g.us");
 		expect(config.DB_MAX_CONNECTIONS).toBe(25);
+		expect(config.HISTORY_TTL_HOURS).toBe(48);
 	});
 
 	it("should default ALLOWED_USERS and ALLOWED_USER_NAMES to empty array when omitted from environment", () => {
@@ -249,6 +252,7 @@ describe("Config", () => {
 			DB_MAX_CONNECTIONS: "",
 			MAX_TOOL_ITERATIONS: "  ",
 			MAX_HISTORY_TURNS: "",
+			HISTORY_TTL_HOURS: "   ",
 		});
 
 		expect(config.DEEPSEEK_BASE_URL).toBe("https://api.deepseek.com");
@@ -257,6 +261,7 @@ describe("Config", () => {
 		expect(config.DB_MAX_CONNECTIONS).toBe(10);
 		expect(config.MAX_TOOL_ITERATIONS).toBe(5);
 		expect(config.MAX_HISTORY_TURNS).toBe(10);
+		expect(config.HISTORY_TTL_HOURS).toBe(24);
 		expect(config.ALLOWED_USERS).toEqual([]);
 	});
 

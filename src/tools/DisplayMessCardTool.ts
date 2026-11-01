@@ -35,13 +35,21 @@ const displayMessCardSchema = z.object({
 
 type DisplayMessCardInput = z.infer<typeof displayMessCardSchema>;
 
+const VENDOR_LABELS: Record<Vendor, string> = {
+	cheftalk_regular: "Cheftalk Regular",
+	cheftalk_jain: "Cheftalk Jain",
+	tcb: "TCB",
+};
+
+const formatVendorLabel = (vendor?: Vendor): string =>
+	vendor ? VENDOR_LABELS[vendor] : "the mess";
+
+const formatEmptyNotice = (date: string, vendor?: Vendor, slot?: MealSlot): string =>
+	`ℹ️ No menu data is currently loaded for ${formatVendorLabel(vendor)}${slot ? ` ${slot}` : ""} on ${date}.`;
+
 /**
- * Terminal presentation tool serving 95% of standard meal and location lookups.
- * Routes dynamically across 4 presentation quadrants:
- * - Q1: Multi-Vendor Slot Digest (Slot provided, Vendor omitted)
- * - Q2: Single-Vendor Slot Detail (Slot provided, Vendor provided)
- * - Q3: Rollover Multi-Vendor Digest (Slot omitted, Vendor omitted)
- * - Q4: Single-Vendor Full-Day Digest (Slot omitted, Vendor provided)
+ * Terminal presentation tool serving standard meal and location lookups across 4 quadrants:
+ * Q1 Multi-Vendor Slot, Q2 Single-Vendor Slot, Q3 Rollover Digest, Q4 Single-Vendor Full-Day.
  */
 export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> {
 	readonly name = "display_mess_card";
@@ -83,10 +91,7 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 		});
 
 		if (resolved.meals.length === 0) {
-			return {
-				content: "No menu scheduled for the requested meal.",
-				isTerminal: false,
-			};
+			return { content: formatEmptyNotice(targetDate, vendor), isTerminal: true };
 		}
 
 		return {
@@ -108,8 +113,8 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 			(args.vendor && !resolved.meals.some((m) => m.vendor === args.vendor))
 		) {
 			return {
-				content: "No menu scheduled for the requested meal.",
-				isTerminal: false,
+				content: formatEmptyNotice(targetDate, args.vendor, targetSlot),
+				isTerminal: true,
 			};
 		}
 
@@ -118,10 +123,7 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 			? this.presenter.renderSingleVendorSlotDetail(resolved, args.vendor, ended)
 			: this.presenter.renderMultiVendorSlotDigest(resolved, ended);
 
-		return {
-			content,
-			isTerminal: true,
-		};
+		return { content, isTerminal: true };
 	}
 
 	private resolveSlotTarget(

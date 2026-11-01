@@ -1,12 +1,15 @@
 import { ContextRetrievalPort } from "../../../core/ports/ContextRetrievalPort";
 import { DialogueTurnRepositoryPort } from "../../../core/ports/DialogueTurnRepositoryPort";
 import { LoggerPort } from "../../../core/ports/LoggerPort";
-import { Message } from "../../../core/entities/Message";
+import { Message, UserMessage, AssistantTextMessage } from "../../../core/entities/Message";
 
 export interface DialogueTurnContextRetrievalConfig {
 	maxTurns?: number;
 	ttlMs?: number;
 }
+
+const isConversationalMessage = (msg: Message): msg is UserMessage | AssistantTextMessage =>
+	msg.role === "user" || (msg.role === "assistant" && msg.toolCalls === undefined);
 
 /**
  * Outbound adapter implementing ContextRetrievalPort backed by DialogueTurnRepositoryPort.
@@ -29,12 +32,12 @@ export class DialogueTurnContextRetrievalAdapter implements ContextRetrievalPort
 	async retrieveContext(userId: string): Promise<Message[]> {
 		try {
 			const turns = await this.turnRepository.getRecentTurns(userId, this.maxTurns);
-			if (this.ttlMs !== undefined) {
-				const cutoffTime = Date.now() - this.ttlMs;
-				const freshTurns = turns.filter((turn) => turn.completedAt.getTime() >= cutoffTime);
-				return freshTurns.flatMap((turn) => turn.messages);
-			}
-			return turns.flatMap((turn) => turn.messages);
+			const cutoffTime = this.ttlMs !== undefined ? Date.now() - this.ttlMs : undefined;
+			const rawTurns =
+				cutoffTime !== undefined
+					? turns.filter((turn) => turn.completedAt.getTime() >= cutoffTime)
+					: turns;
+			return rawTurns.flatMap((turn) => turn.messages.filter(isConversationalMessage));
 		} catch (error) {
 			this.logger.warn(
 				"Failed to load conversation history from database, proceeding with empty context",

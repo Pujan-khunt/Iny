@@ -4,6 +4,7 @@ import {
 	getISTDateString,
 	getISTMinutes,
 	buildTemporallyGroundedSystemPrompt,
+	formatHistoricalMessageTimeIST,
 } from "../../../src/core/utils/Temporal";
 
 describe("Temporal Utility", () => {
@@ -116,6 +117,20 @@ describe("Temporal Utility", () => {
 			const groundedPrompt = buildTemporallyGroundedSystemPrompt(basePrompt);
 			expect(groundedPrompt).toContain("System instructions\n\n[Current Time (IST): ");
 			expect(groundedPrompt.length).toBeGreaterThan(basePrompt.length);
+		});
+	});
+
+	describe("formatHistoricalMessageTimeIST", () => {
+		it("formats UTC date to deterministic YYYY-MM-DD HH:mm IST string", () => {
+			// 2026-10-30 07:19:00 UTC = 2026-10-30 12:49:00 IST
+			const utcDate = new Date("2026-10-30T07:19:00.000Z");
+			expect(formatHistoricalMessageTimeIST(utcDate)).toBe("2026-10-30 12:49 IST");
+		});
+
+		it("pads single digit months, days, hours, and minutes with zeros", () => {
+			// 2026-05-04 03:05:00 UTC = 2026-05-04 08:35:00 IST
+			const utcDate = new Date("2026-05-04T03:05:00.000Z");
+			expect(formatHistoricalMessageTimeIST(utcDate)).toBe("2026-05-04 08:35 IST");
 		});
 	});
 });

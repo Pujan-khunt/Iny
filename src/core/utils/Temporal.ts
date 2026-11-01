@@ -51,6 +51,18 @@ export function getISTMinutes(date: Date): number {
 }
 
 /**
+ * Formats a message timestamp into a standardized 'YYYY-MM-DD HH:mm IST' string.
+ */
+export function formatHistoricalMessageTimeIST(date: Date): string {
+	const { year, month, day, hours, minutes } = getISTDateParts(date);
+	const mm = String(month).padStart(2, "0");
+	const dd = String(day).padStart(2, "0");
+	const hh = String(hours).padStart(2, "0");
+	const min = String(minutes).padStart(2, "0");
+	return `${year}-${mm}-${dd} ${hh}:${min} IST`;
+}
+
+/**
  * Formats a message timestamp into a standardized Indian Standard Time (IST) string.
  */
 function formatMessageTimeIST(timestamp?: Date | number | string): string {
