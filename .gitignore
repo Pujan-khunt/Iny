@@ -9,12 +9,14 @@ dist/
 
 # Worktrees & Git
 .worktrees/
+.superpowers/
 
 # Test & Coverage
 coverage/
 .vitest/
 
 # Logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
