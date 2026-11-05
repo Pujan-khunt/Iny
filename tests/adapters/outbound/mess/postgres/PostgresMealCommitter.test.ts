@@ -1,5 +1,12 @@
+import { randomUUID } from "node:crypto";
+import { PostgresOperationalWriter } from "../../../../../src/adapters/outbound/mess/postgres/PostgresOperationalWriter";
+import { PostgresSwapWriter } from "../../../../../src/adapters/outbound/mess/postgres/PostgresSwapWriter";
+import { PostgresMessWriteGuard } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessWriteGuard";
+import { PostgresMessOperationAudit } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessOperationAudit";
+import { PostgresMessProvenance } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessProvenance";
+import { PostgresMessCommitPreparation } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessCommitPreparation";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { newDb } from "pg-mem";
+import { DataType, newDb } from "pg-mem";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { PostgresMealCommitter } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMealCommitter";
 import { LoggerPort } from "../../../../../src/core/ports/LoggerPort";
@@ -21,6 +28,21 @@ describe("PostgresMealCommitter", () => {
 		vi.clearAllMocks();
 
 		const memDb = newDb();
+		// pg-mem only verifies writer/audit persistence; real PostgreSQL covers guards and locks.
+		memDb.public.registerFunction({
+			name: "gen_random_uuid",
+			returns: DataType.uuid,
+			implementation: randomUUID,
+			impure: true,
+		});
+		memDb.public.none(`
+		 CREATE TABLE food_announcement_ingestions (message_id text PRIMARY KEY, original_created_at timestamptz);
+		 CREATE TABLE mess_ingestion_operation_audits (
+		 operation_id uuid PRIMARY KEY DEFAULT gen_random_uuid(), source_message_id text NOT NULL,
+		 original_created_at timestamptz, mode text NOT NULL, affected_fact_keys text[] NOT NULL,
+		 extraction_evidence jsonb, review_evidence jsonb, corrections jsonb, before_images jsonb NOT NULL,
+		 after_images jsonb NOT NULL, created_at timestamptz DEFAULT now(), reversed_at timestamptz, reversal_reason text);
+		`);
 		memDb.public.none(`
       CREATE TYPE meal_slot AS ENUM ('breakfast', 'lunch', 'dinner');
       CREATE TYPE vendor AS ENUM ('cheftalk_regular', 'cheftalk_jain', 'tcb');
@@ -107,7 +129,24 @@ describe("PostgresMealCommitter", () => {
 		};
 
 		db = drizzle(pool);
-		committer = new PostgresMealCommitter(db as any, mockLogger);
+		committer = new PostgresMealCommitter(
+			db as any,
+			mockLogger,
+			new PostgresOperationalWriter(),
+			new PostgresSwapWriter(),
+			Object.assign(
+				new PostgresMessWriteGuard(new PostgresMessOperationAudit(new PostgresMessProvenance())),
+				{
+					lock: async () => {},
+					checkOrder: async () => ({ outcome: "accepted" as const }),
+					checkSwapSnapshots: async () => ({ outcome: "accepted" as const }),
+				},
+			),
+			Object.assign(new PostgresMessOperationAudit(new PostgresMessProvenance()), {
+				manualDisposition: async () => {},
+			}),
+			new PostgresMessCommitPreparation(),
+		);
 	});
 
 	it("commits operational meals atomically and retrieves via getMealsByDateAndSlot", async () => {

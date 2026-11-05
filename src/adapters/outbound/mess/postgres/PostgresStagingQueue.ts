@@ -7,7 +7,15 @@ import {
 	StagedAnnouncementMessage,
 	StageMessageResult,
 } from "../../../../core/ports/MessStagingRepositoryPort";
-import { whatsappGroupFoodAnnouncementsMessages, type DbFoodAnnouncementStatus } from "./schema";
+import {
+	foodAnnouncementIngestions,
+	messIngestionOperationAudits,
+	whatsappGroupFoodAnnouncementsMessages,
+	type DbFoodAnnouncementStatus,
+} from "./schema";
+import type { PostgresMessWriteGuard } from "./PostgresMessWriteGuard";
+import type { PostgresMessOperationAudit } from "./PostgresMessOperationAudit";
+import type { MessIngestionAudit } from "../../../../core/entities/MessCommit";
 
 /**
  * Handles database operations for the food announcement staging queue.
@@ -17,7 +25,24 @@ export class PostgresStagingQueue {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		private readonly db: PgDatabase<any, any, any>,
 		private readonly logger: LoggerPort,
+		private readonly guard: PostgresMessWriteGuard,
+		private readonly audit: PostgresMessOperationAudit,
 	) {}
+
+	/** Returns persisted decision and all operation evidence, without mutating terminal history. */
+	async getIngestionAudit(messageId: string): Promise<MessIngestionAudit | null> {
+		const [automatic] = await this.db
+			.select()
+			.from(foodAnnouncementIngestions)
+			.where(eq(foodAnnouncementIngestions.messageId, messageId));
+		const operations = await this.db
+			.select()
+			.from(messIngestionOperationAudits)
+			.where(eq(messIngestionOperationAudits.sourceMessageId, messageId))
+			.orderBy(messIngestionOperationAudits.createdAt, messIngestionOperationAudits.operationId);
+		if (!automatic && !operations.length && !(await this.getMessageById(messageId))) return null;
+		return { automatic: automatic ?? null, operations };
+	}
 
 	private buildDateConditions(dateStr: string): SQL[] {
 		if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
@@ -113,9 +138,13 @@ export class PostgresStagingQueue {
 	 */
 	async markIgnored(id: string): Promise<void> {
 		this.logger.info("Marking staged message as ignored", { id });
-		await this.db
-			.update(whatsappGroupFoodAnnouncementsMessages)
-			.set({ status: "ignored" })
-			.where(eq(whatsappGroupFoodAnnouncementsMessages.id, id));
+		await this.db.transaction(async (tx) => {
+			await this.guard.lock(tx);
+			await this.audit.manualDisposition(tx, "manual_override", id);
+			await tx
+				.update(whatsappGroupFoodAnnouncementsMessages)
+				.set({ status: "ignored" })
+				.where(eq(whatsappGroupFoodAnnouncementsMessages.id, id));
+		});
 	}
 }
