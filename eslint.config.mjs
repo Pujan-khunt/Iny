@@ -95,11 +95,6 @@ export default tseslint.config(
 		files: [
 			"src/adapters/inbound/cli/InteractiveJsonEditor.ts",
 			"src/adapters/inbound/cli/MediaPreviewer.ts",
-			"src/adapters/inbound/cli/TriageCliController.ts",
-			"src/adapters/outbound/mess/extraction/DeepseekTextExtractor.ts",
-			"src/adapters/outbound/mess/extraction/DeepseekVisionExtractor.ts",
-			"src/adapters/outbound/mess/extraction/ExtractorUtils.ts",
-			"src/adapters/outbound/mess/extraction/PdfRasterizer.ts",
 			"src/adapters/outbound/mess/formatting/MessCardRenderer.ts",
 			"src/adapters/outbound/whatsapp/BaileysConnectionManager.ts",
 			"src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts",
