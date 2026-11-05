@@ -232,6 +232,7 @@ describe.skipIf(!databaseUrl)(
 						sdk,
 						new PdfRasterizer(promisify(execFile)),
 						"test-model",
+						logger,
 					);
 					return {
 						logger,

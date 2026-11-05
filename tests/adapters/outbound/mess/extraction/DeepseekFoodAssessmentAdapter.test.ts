@@ -7,6 +7,7 @@ import { WeeklyMenuValidator } from "../../../../../src/core/services/WeeklyMenu
 import { MenuDishNormalizer } from "../../../../../src/core/services/MenuDishNormalizer";
 import { AnnouncementEvidenceValidator } from "../../../../../src/core/services/AnnouncementEvidenceValidator";
 import { DeepseekFoodAssessmentAdapter } from "../../../../../src/adapters/outbound/mess/extraction/DeepseekFoodAssessmentAdapter";
+import type { LoggerPort } from "../../../../../src/core/ports/LoggerPort";
 
 const text = "Today lunch in hostel for all batches";
 function source(overrides: Partial<FoodAnnouncementSource> = {}): FoodAnnouncementSource {
@@ -95,12 +96,21 @@ function fixture(queue: unknown[] = [extraction(), accepted]) {
 			elapsedMs: 12,
 		})),
 	};
+	const logger = {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+		fatal: vi.fn(),
+		child: vi.fn(),
+	} as unknown as LoggerPort;
 	const adapter = new DeepseekFoodAssessmentAdapter(
 		{ chat: { completions: { create } } } as unknown as OpenAI,
 		pdf,
 		"explicit-vision",
+		logger,
 	);
-	return { adapter, create, calls, pdf };
+	return { adapter, create, calls, pdf, logger };
 }
 describe("DeepseekFoodAssessmentAdapter", () => {
 	it("verifies the same original source in a fresh request and preserves raw output", async () => {
@@ -138,6 +148,7 @@ describe("DeepseekFoodAssessmentAdapter", () => {
 			{ chat: { completions: { create: f.create } } } as unknown as OpenAI,
 			f.pdf,
 			"explicit-vision",
+			f.logger,
 			250_000,
 		);
 		const signal = new AbortController().signal;

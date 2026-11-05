@@ -11,7 +11,13 @@ import type { LoggerPort } from "../../../../src/core/ports/LoggerPort";
 
 function setup(execute = vi.fn().mockResolvedValue(null)) {
 	vi.useFakeTimers();
-	const logger = { error: vi.fn() } as unknown as LoggerPort;
+	const logger = {
+		error: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		debug: vi.fn(),
+		fatal: vi.fn(),
+	} as unknown as LoggerPort;
 	const worker = new FoodIngestionWorker(
 		{ execute } as unknown as ProcessNextFoodAnnouncement,
 		logger,
@@ -145,7 +151,13 @@ describe("FoodIngestionWorker", () => {
 			});
 			return null;
 		});
-		const logger = { error: vi.fn() } as unknown as LoggerPort;
+		const logger = {
+			error: vi.fn(),
+			info: vi.fn(),
+			warn: vi.fn(),
+			debug: vi.fn(),
+			fatal: vi.fn(),
+		} as unknown as LoggerPort;
 		const worker = new FoodIngestionWorker(
 			{ execute } as unknown as ProcessNextFoodAnnouncement,
 			logger,
@@ -213,13 +225,20 @@ it("propagates the worker deadline through processing and strict assessment to P
 	});
 	const create = vi.fn();
 	const sdk = { chat: { completions: { create } } } as unknown as OpenAI;
+	const logger = {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+		fatal: vi.fn(),
+	} as unknown as LoggerPort;
 	const assessment = new DeepseekFoodAssessmentAdapter(
 		sdk,
 		new PdfRasterizer(runner),
 		"test-model",
+		logger,
 	);
 	const repository = { claimNext, fail } as unknown as FoodIngestionRepositoryPort;
-	const logger = { error: vi.fn() } as unknown as LoggerPort;
 	const process = new ProcessNextFoodAnnouncement(
 		repository,
 		assessment,

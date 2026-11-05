@@ -595,7 +595,10 @@ describe.skipIf(!databaseUrl)("food transport provenance through atomic admissio
 		const message = raw("media", {
 			message: { imageMessage: { caption: "Today dinner changed", mimetype: "image/jpeg" } },
 		});
-		downloader.mockRejectedValueOnce(new Error("disconnected"));
+		downloader
+			.mockRejectedValueOnce(new Error("disconnected"))
+			.mockRejectedValueOnce(new Error("disconnected"))
+			.mockRejectedValueOnce(new Error("disconnected"));
 		await router.handleUpsert({ type: "notify", messages: [message] });
 		expect(await client`SELECT * FROM whatsapp_group_food_announcements_messages`).toHaveLength(0);
 		expect(await client`SELECT * FROM food_announcement_ingestions`).toHaveLength(0);

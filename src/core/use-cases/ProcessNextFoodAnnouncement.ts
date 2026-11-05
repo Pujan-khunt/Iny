@@ -3,7 +3,10 @@ import type { FoodIngestionRepositoryPort } from "../ports/FoodIngestionReposito
 import type { FoodAssessmentPort } from "../ports/FoodAssessmentPort";
 import type { LoggerPort } from "../ports/LoggerPort";
 import { FoodCandidateValidator } from "../services/FoodCandidateValidator";
-import { classifyProcessingFailure } from "../services/FoodProcessingFailure";
+import {
+	buildRejectionDiagnostics,
+	classifyProcessingFailure,
+} from "../services/FoodProcessingFailure";
 import { MenuDishNormalizer } from "../services/MenuDishNormalizer";
 import type { MealSwapResolver } from "../services/MealSwapResolver";
 
@@ -12,7 +15,6 @@ type Rejection = Extract<Food.FoodDecision, { outcome: "rejected" }>;
 
 /** Coordinates one leased food message without owning transaction or inference infrastructure. */
 export class ProcessNextFoodAnnouncement {
-	/** @param repository Fenced persistence. @param assessment Strict source assessment. @param swaps Read-only prerequisite resolver. @param logger Structured failure diagnostics. */
 	constructor(
 		private readonly repository: FoodIngestionRepositoryPort,
 		private readonly assessment: FoodAssessmentPort,
@@ -20,11 +22,11 @@ export class ProcessNextFoodAnnouncement {
 		private readonly logger: LoggerPort,
 	) {}
 
-	/** @param signal Invocation deadline/cancellation. @returns One fenced result or null if idle. @throws Claim or failure-persistence errors. */
+	/** Claims and processes one leased food announcement or returns null if idle. */
 	async execute(signal: AbortSignal): Promise<Food.FoodDecision | Food.RetryScheduled | null> {
 		const work = await this.repository.claimNext();
 		if (!work) return null;
-		this.logger.info?.("Claimed food announcement candidate", {
+		this.logger.info("Claimed food announcement candidate", {
 			messageId: work.lease.messageId,
 			type: work.source.messageType,
 			attempt: work.lease.attempt,
@@ -47,20 +49,18 @@ export class ProcessNextFoodAnnouncement {
 				phase = "reject";
 				return await this.reject(work.lease, result, validated);
 			}
-			const assessment = validated.value;
 			phase = "resolve_swaps";
+			const candidate = validated.value.candidate;
 			const swaps = await this.swaps.resolve(
-				assessment.candidate.kind === "operational_announcement"
-					? assessment.candidate.announcement.swaps
-					: [],
+				candidate.kind === "operational_announcement" ? candidate.announcement.swaps : [],
 			);
 			signal.throwIfAborted();
 			if (!swaps.ok) {
 				phase = "reject";
-				return await this.reject(work.lease, assessment, swaps);
+				return await this.reject(work.lease, validated.value, swaps);
 			}
 			phase = "accept";
-			return await this.accept(work.lease, assessment, swaps.value);
+			return await this.accept(work.lease, validated.value, swaps.value);
 		} catch (error) {
 			return this.fail(work.lease, error, phase, signal);
 		}
@@ -72,7 +72,7 @@ export class ProcessNextFoodAnnouncement {
 		swaps: Food.ValidatedFoodCommit["resolvedSwaps"],
 	): Promise<Food.FoodDecision> {
 		const decision = await this.repository.accept(lease, this.commit(assessment, swaps));
-		this.logger.info?.("Food announcement accepted and committed", {
+		this.logger.info("Food announcement accepted and committed", {
 			messageId: lease.messageId,
 			kind: assessment.candidate.kind,
 		});
@@ -95,17 +95,7 @@ export class ProcessNextFoodAnnouncement {
 		result: Food.FoodAssessmentResult,
 		rejection: Pick<Rejection, "reason" | "detail">,
 	): Promise<Food.FoodDecision> {
-		const { rawExtraction, rawVerification, model, promptVersion } = result;
-		const diagnostics =
-			result.kind === "candidate"
-				? {
-						candidate: result.candidate,
-						evidence: result.evidence,
-						verification: result.verification,
-						recognizedType: result.candidate.kind,
-					}
-				: { recognizedType: result.recognizedType };
-		this.logger.warn?.("Food announcement rejected", {
+		this.logger.warn("Food announcement rejected", {
 			messageId: lease.messageId,
 			reason: rejection.reason,
 			detail: rejection.detail,
@@ -114,7 +104,7 @@ export class ProcessNextFoodAnnouncement {
 			outcome: "rejected",
 			reason: rejection.reason,
 			detail: rejection.detail,
-			diagnostics: { rawExtraction, rawVerification, model, promptVersion, ...diagnostics },
+			diagnostics: buildRejectionDiagnostics(result),
 		});
 	}
 
@@ -128,7 +118,7 @@ export class ProcessNextFoodAnnouncement {
 		if (failure.code === "unexpected_failure") {
 			this.logger.error("Food processing failed.", error, { messageId: lease.messageId, phase });
 		} else {
-			this.logger.warn?.("Food processing failed attempt", {
+			this.logger.warn("Food processing failed attempt", {
 				messageId: lease.messageId,
 				phase,
 				failure,
@@ -137,7 +127,7 @@ export class ProcessNextFoodAnnouncement {
 		try {
 			const outcome = await this.repository.fail(lease, failure);
 			if (outcome.outcome === "retry_scheduled") {
-				this.logger.info?.("Food announcement retry scheduled", {
+				this.logger.info("Food announcement retry scheduled", {
 					messageId: lease.messageId,
 					nextAttemptAt: outcome.nextAttemptAt,
 				});

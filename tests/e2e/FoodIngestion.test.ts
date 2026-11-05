@@ -247,7 +247,12 @@ describe.skipIf(!databaseUrl)(
 				new PostgresFoodFinalizer(db, guard, committer),
 			);
 			const fake = sdk(replies);
-			const assessment = new DeepseekFoodAssessmentAdapter(fake.client, pdf, "offline-fixture");
+			const assessment = new DeepseekFoodAssessmentAdapter(
+				fake.client,
+				pdf,
+				"offline-fixture",
+				logger,
+			);
 			const processor = new ProcessNextFoodAnnouncement(
 				repo,
 				assessment,

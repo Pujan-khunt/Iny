@@ -55,9 +55,9 @@ const assessment = new DeepseekFoodAssessmentAdapter(
 	new OpenAI({ apiKey: config.DEEPSEEK_API_KEY, baseURL: config.DEEPSEEK_BASE_URL, maxRetries: 0 }),
 	new PdfRasterizer(promisify(execFile)),
 	config.DEEPSEEK_MODEL,
+	logMod("food-assessment"),
 	config.FOOD_ASSESSMENT_TIMEOUT_MS,
 	300,
-	logMod("food-assessment"),
 );
 const processFood = new ProcessFood(
 	food,
