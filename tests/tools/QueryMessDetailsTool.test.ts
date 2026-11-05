@@ -80,4 +80,60 @@ describe("QueryMessDetailsTool", () => {
 			vendor: "cheftalk_regular",
 		});
 	});
+
+	it("defaults mealSlot to 'all' and queries all slots (mealSlot: undefined) when omitted", async () => {
+		const fixedNow = new Date("2026-10-08T06:30:00Z");
+		const tool = new QueryMessDetailsTool(mockMessRepo, () => fixedNow);
+
+		const result = await tool.execute({});
+
+		expect(result.isTerminal).toBe(false);
+		expect(mockMessRepo.getResolvedMeal).toHaveBeenCalledWith({
+			mealDate: "2026-10-08",
+			mealSlot: undefined,
+			vendor: undefined,
+		});
+	});
+
+	it("resolves next upcoming meal slot when mealSlot is 'upcoming'", async () => {
+		// 10:00 AM IST on 2026-10-08 -> active/upcoming slot is lunch
+		const fixedNow = new Date("2026-10-08T04:30:00Z");
+		const tool = new QueryMessDetailsTool(mockMessRepo, () => fixedNow);
+
+		const result = await tool.execute({
+			mealSlot: "upcoming",
+		});
+
+		expect(result.isTerminal).toBe(false);
+		expect(mockMessRepo.getResolvedMeal).toHaveBeenCalledWith({
+			mealDate: "2026-10-08",
+			mealSlot: "lunch",
+			vendor: undefined,
+		});
+	});
+
+	it("resolves caller userDefaultVendor when accessControl and userId are provided", async () => {
+		const mockAccess = {
+			authenticate: vi.fn(),
+			getUser: vi.fn().mockResolvedValue({
+				phoneNumber: "919876543210",
+				defaultVendor: "tcb",
+			}),
+			setDefaultVendor: vi.fn(),
+		};
+
+		const tool = new QueryMessDetailsTool(mockMessRepo, mockAccess as any);
+		const result = await tool.execute(
+			{
+				mealDate: "2026-10-08",
+				mealSlot: "lunch",
+			},
+			{ userId: "919876543210" },
+		);
+
+		expect(result.isTerminal).toBe(false);
+		const parsed = JSON.parse(result.content);
+		expect(parsed.userDefaultVendor).toBe("tcb");
+		expect(parsed.mealSlot).toBe("lunch");
+	});
 });

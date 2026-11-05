@@ -1,8 +1,14 @@
 import { z } from "zod";
 import { BaseTool } from "./BaseTool";
-import { ToolResult } from "../core/ports/ToolRegistryPort";
+import { ToolExecutionContext, ToolResult } from "../core/ports/ToolRegistryPort";
 import { MessRepositoryPort } from "../core/ports/MessRepositoryPort";
-import { getISTDateString } from "../core/entities/MessMeal";
+import { AccessControlPort } from "../core/ports/AccessControlPort";
+import {
+	MealSlot,
+	Vendor,
+	determineNextUpcomingSlot,
+	getISTDateString,
+} from "../core/entities/MessMeal";
 
 const queryMessDetailsSchema = z.object({
 	mealDate: z
@@ -13,10 +19,10 @@ const queryMessDetailsSchema = z.object({
 			"ISO calendar date in YYYY-MM-DD format. Omit to query current or upcoming meal date.",
 		),
 	mealSlot: z
-		.enum(["breakfast", "lunch", "dinner"])
-		.optional()
+		.enum(["breakfast", "lunch", "dinner", "all", "upcoming"])
+		.default("all")
 		.describe(
-			'Meal slot: "breakfast", "lunch", or "dinner". Omit to query all slots for the date.',
+			'Meal slot: "breakfast", "lunch", or "dinner" for specific meals; "all" (default) to inspect dishes across all slots of the day; "upcoming" for the current/upcoming active meal.',
 		),
 	vendor: z
 		.enum(["cheftalk_regular", "cheftalk_jain", "tcb"])
@@ -39,26 +45,70 @@ export class QueryMessDetailsTool extends BaseTool<typeof queryMessDetailsSchema
 	readonly schema = queryMessDetailsSchema as typeof queryMessDetailsSchema &
 		Record<string, unknown>;
 
+	private readonly accessControl?: AccessControlPort;
+	private readonly getCurrentTime: () => Date;
+
 	constructor(
 		private readonly messRepository: MessRepositoryPort,
-		private readonly getCurrentTime: () => Date = () => new Date(),
+		accessControlOrTime?: AccessControlPort | (() => Date),
+		getCurrentTime?: () => Date,
 	) {
 		super();
+		const isFn = typeof accessControlOrTime === "function";
+		this.accessControl = isFn ? undefined : accessControlOrTime;
+		this.getCurrentTime = isFn ? accessControlOrTime : (getCurrentTime ?? (() => new Date()));
 	}
 
-	protected async run(args: QueryMessDetailsInput): Promise<ToolResult> {
+	protected async run(
+		args: QueryMessDetailsInput,
+		context?: ToolExecutionContext,
+	): Promise<ToolResult> {
 		const now = this.getCurrentTime();
-		const targetDate = args.mealDate ?? getISTDateString(now);
+		const { targetDate, targetSlot } = this.resolveTarget(args, now);
+		const userDefaultVendor = await this.resolveUserDefaultVendor(context?.userId);
 
 		const resolved = await this.messRepository.getResolvedMeal({
 			mealDate: targetDate,
-			mealSlot: args.mealSlot,
+			mealSlot: targetSlot,
 			vendor: args.vendor,
 		});
 
+		const payload = userDefaultVendor ? { userDefaultVendor, ...resolved } : resolved;
+
 		return {
-			content: JSON.stringify(resolved),
+			content: JSON.stringify(payload),
 			isTerminal: false,
+		};
+	}
+
+	private async resolveUserDefaultVendor(userId?: string): Promise<Vendor | undefined> {
+		if (userId && this.accessControl) {
+			const user = await this.accessControl.getUser(userId);
+			return user?.defaultVendor ?? "cheftalk_regular";
+		}
+		return undefined;
+	}
+
+	private resolveTarget(
+		args: QueryMessDetailsInput,
+		now: Date,
+	): { targetDate: string; targetSlot?: MealSlot } {
+		if (args.mealSlot === "upcoming") {
+			const upcoming = determineNextUpcomingSlot(now);
+			return {
+				targetDate: args.mealDate ?? upcoming.mealDate,
+				targetSlot: upcoming.mealSlot,
+			};
+		}
+		if (args.mealSlot === "all") {
+			return {
+				targetDate: args.mealDate ?? getISTDateString(now),
+				targetSlot: undefined,
+			};
+		}
+		return {
+			targetDate: args.mealDate ?? getISTDateString(now),
+			targetSlot: args.mealSlot,
 		};
 	}
 }

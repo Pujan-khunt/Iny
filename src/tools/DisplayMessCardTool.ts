@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { BaseTool } from "./BaseTool";
-import { ToolResult } from "../core/ports/ToolRegistryPort";
+import { ToolExecutionContext, ToolResult } from "../core/ports/ToolRegistryPort";
 import { MessRepositoryPort } from "../core/ports/MessRepositoryPort";
 import { MessCardPresenterPort } from "../core/ports/MessCardPresenterPort";
+import { AccessControlPort } from "../core/ports/AccessControlPort";
+import { VENDOR_DISPLAY_NAMES } from "../adapters/outbound/mess/formatting/MessCardRenderer";
 import {
 	MealSlot,
 	Vendor,
@@ -16,130 +18,131 @@ const displayMessCardSchema = z.object({
 		.string()
 		.regex(/^\d{4}-\d{2}-\d{2}$/, "Must be ISO YYYY-MM-DD")
 		.optional()
-		.describe(
-			'ISO calendar date in YYYY-MM-DD format. Omit for current or upcoming meals. Provide ONLY when the user explicitly specifies a calendar date (e.g. "tomorrow", "Monday", "2026-10-27").',
-		),
+		.describe("Provide ONLY when the user explicitly specifies a calendar date (YYYY-MM-DD)."),
 	mealSlot: z
-		.enum(["breakfast", "lunch", "dinner"])
-		.optional()
+		.enum(["breakfast", "lunch", "dinner", "all", "upcoming"])
+		.default("upcoming")
 		.describe(
-			'Meal slot: "breakfast", "lunch", or "dinner". Provide ONLY if explicitly mentioned by name. Omit for general queries ("menu", "food", "what is there to eat?") to trigger automatic cutoff and rollover.',
+			'Meal slot: "breakfast", "lunch", or "dinner" for specific meals; "all" when the user asks for a full day menu / all slots; "upcoming" (default) for current/upcoming active meal rollover.',
 		),
 	vendor: z
 		.enum(["cheftalk_regular", "cheftalk_jain", "tcb"])
 		.optional()
-		.describe(
-			'Mess caterer: "cheftalk_regular", "cheftalk_jain", or "tcb" (The Craving Brew / Uniworld). Omit if no caterer is specified to display all caterers.',
-		),
+		.describe('Caterer: "cheftalk_regular", "cheftalk_jain", "tcb" (The Craving Brew / Uniworld).'),
 });
 
 type DisplayMessCardInput = z.infer<typeof displayMessCardSchema>;
 
-const VENDOR_LABELS: Record<Vendor, string> = {
-	cheftalk_regular: "Cheftalk Regular",
-	cheftalk_jain: "Cheftalk Jain",
-	tcb: "TCB",
-};
-
-const formatVendorLabel = (vendor?: Vendor): string =>
-	vendor ? VENDOR_LABELS[vendor] : "the mess";
-
 const formatEmptyNotice = (date: string, vendor?: Vendor, slot?: MealSlot): string =>
-	`ℹ️ No menu data is currently loaded for ${formatVendorLabel(vendor)}${slot ? ` ${slot}` : ""} on ${date}.`;
+	`ℹ️ No menu data is currently loaded for ${vendor ? VENDOR_DISPLAY_NAMES[vendor] : "the mess"}${slot ? ` ${slot}` : ""} on ${date}.`;
 
 /**
- * Terminal presentation tool serving standard meal and location lookups across 4 quadrants:
- * Q1 Multi-Vendor Slot, Q2 Single-Vendor Slot, Q3 Rollover Digest, Q4 Single-Vendor Full-Day.
+ * Terminal presentation tool serving mess meals with automatic cutoff and upcoming meal rollover.
  */
 export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> {
 	readonly name = "display_mess_card";
 	readonly description =
-		"Renders formatted WhatsApp mess meal cards across 4 presentation quadrants: " +
-		'(1) Slot query (e.g. "what\'s for lunch") -> pass mealSlot; ' +
+		"Renders formatted WhatsApp mess meal cards: " +
+		'(1) Slot query or all vendors (e.g. "what\'s for lunch", "all vendor lunch") -> pass mealSlot and omit vendor to render all caterers in one card; ' +
 		'(2) Single-vendor slot (e.g. "cheftalk lunch") -> pass mealSlot and vendor; ' +
-		'(3) Generic menu (e.g. "menu", "food", "what to eat") -> pass {} (omit all args) for automatic cutoff/rollover; ' +
-		'(4) Single-vendor full-day (e.g. "tcb menu") -> pass vendor (omit mealSlot). ' +
+		'(3) Generic menu or single-vendor menu (e.g. "menu", "food", "cheftalk menu") -> pass mealSlot: "upcoming" (default) for automatic cutoff and upcoming meal rollover; ' +
+		'(4) Full day menu (e.g. "cheftalk full day menu", "all slots for cheftalk") -> pass mealSlot: "all" and vendor. ' +
 		"Output is terminal. Call at most once per turn; never call speculatively in parallel.";
 	readonly schema = displayMessCardSchema as typeof displayMessCardSchema & Record<string, unknown>;
+
+	private readonly accessControl?: AccessControlPort;
+	private readonly getCurrentTime: () => Date;
 
 	constructor(
 		private readonly messRepository: MessRepositoryPort,
 		private readonly presenter: MessCardPresenterPort,
-		private readonly getCurrentTime: () => Date = () => new Date(),
+		accessControlOrTime?: AccessControlPort | (() => Date),
+		getCurrentTime?: () => Date,
 	) {
 		super();
+		const isFn = typeof accessControlOrTime === "function";
+		this.accessControl = isFn ? undefined : accessControlOrTime;
+		this.getCurrentTime = isFn ? accessControlOrTime : (getCurrentTime ?? (() => new Date()));
 	}
 
-	protected async run(args: DisplayMessCardInput): Promise<ToolResult> {
+	protected async run(
+		args: DisplayMessCardInput,
+		context?: ToolExecutionContext,
+	): Promise<ToolResult> {
 		const now = this.getCurrentTime();
-		if (!args.mealSlot && args.vendor) {
-			return this.handleFullDayDigest(args.mealDate, args.vendor, now);
+		if (args.mealSlot === "all") {
+			const vendor = args.vendor ?? (await this.resolveUserDefaultVendor(context?.userId));
+			return this.handleFullDay(args.mealDate, vendor, now);
 		}
-		return this.handleSlotQuery(args, now);
+		return this.handleSlotQuery(args, now, context);
 	}
 
-	private async handleFullDayDigest(
-		mealDate: string | undefined,
+	private async handleFullDay(
+		date: string | undefined,
 		vendor: Vendor,
 		now: Date,
 	): Promise<ToolResult> {
-		const targetDate = mealDate ?? getISTDateString(now);
-		const resolved = await this.messRepository.getResolvedMeal({
+		const targetDate = date ?? getISTDateString(now);
+		const res = await this.messRepository.getResolvedMeal({
 			mealDate: targetDate,
 			vendor,
 			mealSlot: undefined,
 		});
-
-		if (resolved.meals.length === 0) {
+		if (res.meals.length === 0 || !res.meals.some((m) => m.vendor === vendor)) {
 			return { content: formatEmptyNotice(targetDate, vendor), isTerminal: true };
 		}
-
-		return {
-			content: this.presenter.renderSingleVendorFullDayDigest(resolved, vendor, now),
-			isTerminal: true,
-		};
+		const content = this.presenter.renderSingleVendorFullDayDigest(res, vendor, now);
+		return { content, isTerminal: true };
 	}
 
-	private async handleSlotQuery(args: DisplayMessCardInput, now: Date): Promise<ToolResult> {
+	private async handleSlotQuery(
+		args: DisplayMessCardInput,
+		now: Date,
+		context?: ToolExecutionContext,
+	): Promise<ToolResult> {
+		const userDefault = this.accessControl
+			? await this.resolveUserDefaultVendor(context?.userId)
+			: undefined;
+		const isUpcoming = args.mealSlot === "upcoming";
+		const vendor = args.vendor ?? (isUpcoming ? userDefault : undefined);
 		const { targetDate, targetSlot } = this.resolveSlotTarget(args, now);
-		const resolved = await this.messRepository.getResolvedMeal({
+		const res = await this.messRepository.getResolvedMeal({
 			mealDate: targetDate,
 			mealSlot: targetSlot,
-			vendor: args.vendor,
+			vendor,
 		});
 
-		if (
-			resolved.meals.length === 0 ||
-			(args.vendor && !resolved.meals.some((m) => m.vendor === args.vendor))
-		) {
-			return {
-				content: formatEmptyNotice(targetDate, args.vendor, targetSlot),
-				isTerminal: true,
-			};
+		if (res.meals.length === 0 || (vendor && !res.meals.some((m) => m.vendor === vendor))) {
+			return { content: formatEmptyNotice(targetDate, vendor, targetSlot), isTerminal: true };
 		}
 
 		const ended = isMealEnded(targetDate, targetSlot, now);
-		const content = args.vendor
-			? this.presenter.renderSingleVendorSlotDetail(resolved, args.vendor, ended)
-			: this.presenter.renderMultiVendorSlotDigest(resolved, ended);
+		const content = vendor
+			? this.presenter.renderSingleVendorSlotDetail(res, vendor, ended, userDefault, now)
+			: this.presenter.renderMultiVendorSlotDigest(res, ended, now);
 
 		return { content, isTerminal: true };
+	}
+
+	private async resolveUserDefaultVendor(userId?: string): Promise<Vendor> {
+		if (userId && this.accessControl) {
+			const user = await this.accessControl.getUser(userId);
+			if (user?.defaultVendor) return user.defaultVendor;
+		}
+		return "cheftalk_regular";
 	}
 
 	private resolveSlotTarget(
 		args: DisplayMessCardInput,
 		now: Date,
 	): { targetDate: string; targetSlot: MealSlot } {
-		if (!args.mealSlot) {
+		if (args.mealSlot === "upcoming") {
 			const upcoming = determineNextUpcomingSlot(now);
-			return {
-				targetDate: args.mealDate ?? upcoming.mealDate,
-				targetSlot: upcoming.mealSlot,
-			};
+			return { targetDate: args.mealDate ?? upcoming.mealDate, targetSlot: upcoming.mealSlot };
 		}
 		return {
 			targetDate: args.mealDate ?? getISTDateString(now),
-			targetSlot: args.mealSlot,
+			targetSlot: args.mealSlot as MealSlot,
 		};
 	}
 }

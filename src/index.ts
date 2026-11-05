@@ -25,6 +25,7 @@ import { PostgresMessRepository } from "./adapters/outbound/mess/postgres/Postgr
 import { defaultMessCardPresenter } from "./adapters/outbound/mess/formatting/MessCardRenderer";
 import { DisplayMessCardTool } from "./tools/DisplayMessCardTool";
 import { QueryMessDetailsTool } from "./tools/QueryMessDetailsTool";
+import { SetDefaultMessTool } from "./tools/SetDefaultMessTool";
 import { runDatabaseMigrations } from "./adapters/outbound/dialogue-turn-repository/postgres/migrator";
 import { PostgresAccessControlAdapter } from "./adapters/outbound/access-control/postgres/PostgresAccessControlAdapter";
 import { PostgresBaileysSessionManager } from "./adapters/outbound/whatsapp/PostgresBaileysSessionManager";
@@ -70,11 +71,12 @@ const worker = new FoodIngestionWorker(
 	logMod("food-worker"),
 	config.FOOD_WORKER_DEADLINE_MS,
 );
-[
-	new DisplayMessCardTool(messRepository, defaultMessCardPresenter),
-	new QueryMessDetailsTool(messRepository),
-].forEach((tool) => registry.register(tool));
 const access = new PostgresAccessControlAdapter(db, logMod("access-control"));
+[
+	new DisplayMessCardTool(messRepository, defaultMessCardPresenter, access),
+	new QueryMessDetailsTool(messRepository, access),
+	new SetDefaultMessTool(access),
+].forEach((tool) => registry.register(tool));
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
 	baseURL: config.DEEPSEEK_BASE_URL,
 	model: config.DEEPSEEK_MODEL,

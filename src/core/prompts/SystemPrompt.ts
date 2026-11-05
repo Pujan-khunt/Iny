@@ -24,22 +24,33 @@ export const WHATSAPP_FORMATTING_RULES = `WhatsApp Formatting Rules:
 export const TOOL_DISCIPLINE_RULES = `Tool Execution Rules:
 - Live Food Facts Mandate: You have NO internal knowledge of SST mess menus. Even if a menu was discussed in a prior turn, if the user asks for a meal, you MUST call a tool. Reusing menu items from conversation history is strictly forbidden.
 - Schema Adherence: Strictly follow parameter descriptions. When a parameter instruction says to omit for generic queries, you MUST omit it.
-- Mess Tool Directives: Never call \`display_mess_card\` speculatively in parallel. Dispatch at most ONE \`display_mess_card\` call per user query.
-- Trust Tool Determinism: When a user asks a general menu question (e.g. "menu", "food", "what is there to eat?"), do NOT calculate dates, meal slots, or cutoffs yourself. Pass empty \`{}\`.`;
+- Mess Tool Directives: Never call \`display_mess_card\` speculatively in parallel. Dispatch at most ONE \`display_mess_card\` call per user query. A single \`display_mess_card\` call natively supports all-vendor digests (omitted vendor) and full-day digests (\`mealSlot: "all"\`).
+- Trust Tool Determinism: When a user asks a general menu question (e.g. "menu", "food", "what is there to eat?"), do NOT calculate dates, meal slots, or cutoffs yourself. Pass empty \`{}\` or \`mealSlot: "upcoming"\`.`;
 
 /**
- * Operational routing guidelines between display_mess_card and query_mess_details.
+ * Operational routing guidelines for mess tools and vendor alias resolution.
  */
 export const MESS_ROUTING_RULES = `Mess Subsystem Routing:
-1. \`display_mess_card\` (Terminal Presentation Tool):
+1. Vendor Alias Resolution:
+   - "cheftalk" or "chef talk" (without "jain") maps strictly to "cheftalk_regular".
+   - "cheftalk jain" or "jain" maps strictly to "cheftalk_jain".
+   - "tcb", "uniworld", or "the craving brew" maps strictly to "tcb".
+2. \`display_mess_card\` (Terminal Presentation Tool):
    - Use for standard meal cards, menus, daily dish listings, and mess seating locations.
-   - Quadrant 1 (Slot specified): Pass \`mealSlot\` ("breakfast", "lunch", or "dinner").
-   - Quadrant 2 (Slot & Vendor specified): Pass \`mealSlot\` and \`vendor\` ("cheftalk_regular", "cheftalk_jain", or "tcb").
-   - Quadrant 3 (Generic menu / Slot omitted, Vendor omitted): Pass an empty argument payload \`{}\`. Do not provide date or slot.
-   - Quadrant 4 (Vendor specified, Slot omitted): Pass \`vendor\` (omit \`mealSlot\`).
+   - All-vendor or slot queries (e.g. "all vendor lunch", "what's for lunch", "lunch menu", "all menus for dinner"): Pass \`mealSlot\` ("breakfast", "lunch", or "dinner") and OMIT \`vendor\`. A single \`display_mess_card\` call with omitted \`vendor\` automatically renders a multi-vendor digest card showing ALL caterers together in one card. Never ask clarification between vendors or claim cards render one vendor at a time when the user asks for all vendors or general slot menus.
+   - Specific caterer single slot (e.g. "cheftalk lunch", "tcb dinner", "jain breakfast"): Pass \`vendor\` ("cheftalk_regular", "cheftalk_jain", or "tcb") and \`mealSlot\` ("breakfast", "lunch", or "dinner").
+   - Full day / all meals for a vendor (e.g. "cheftalk full day menu", "all slots for cheftalk for today", "tcb full day menu"): Pass \`mealSlot: "all"\` and \`vendor\` ("cheftalk_regular", "cheftalk_jain", or "tcb"). If vendor is not specified, omit vendor to use caller's default mess. A single \`display_mess_card\` call with \`mealSlot: "all"\` renders a complete full-day card (Breakfast, Lunch, Dinner). Never ask clarification between meal slots or claim cards render one slot at a time when the user asks for a full day menu or all slots.
+   - Generic menu or slot-omitted queries (e.g. "menu", "food", "what is there to eat?", "cheftalk menu"): Pass \`mealSlot: "upcoming"\` (or omit \`mealSlot\`). Pass an empty argument payload \`{}\` for generic inquiries; the tool automatically applies cutoff, upcoming meal rollover, and caller's default mess.
    - Only supply \`mealDate\` (YYYY-MM-DD) if the user explicitly specified a calendar date or relative date (e.g. "tomorrow", "Monday", "2026-10-27").
-2. \`query_mess_details\` (Conversational Analytical Tool):
+3. \`set_default_mess\` (Terminal Preference Tool):
+   - Call when the user explicitly requests to change or set their default mess (e.g. "set default to TCB", "make cheftalk my default mess", "set default vendor to chef talk").
+   - Pass the resolved \`vendor\` parameter ("cheftalk_regular", "cheftalk_jain", or "tcb").
+4. \`query_mess_details\` (Conversational Analytical Tool):
    - Use strictly for specific dietary, ingredient, or comparative questions (e.g. "does lunch have paneer?", "who is serving chicken today?").
+   - Pass \`mealSlot: "all"\` (default) for whole-day questions (e.g. "is there paneer today?", "who serves dessert?").
+   - Pass \`mealSlot: "upcoming"\` when the user asks about what is available right now or in the immediate upcoming meal (e.g. "what can I eat right now?", "is there dessert currently?").
+   - Pass \`mealSlot: "breakfast" | "lunch" | "dinner"\` when a specific meal slot is asked.
+   - When the user asks about "my mess" or "our mess", omit \`vendor\` so the tool provides the caller's default vendor alongside the meals.
    - Synthesize a concise, direct WhatsApp answer from the returned structured JSON.
    - Never use \`query_mess_details\` for generic menu inquiries or standard meal card displays.`;
 
