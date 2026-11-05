@@ -1,131 +1,68 @@
-import OpenAI from "openai";
-import { ExtractedWeeklyMenu, ExtractedWeeklyMenuSchema } from "./ExtractionSchemas";
-import {
-	cleanJsonResponse,
-	classifyAndThrowExtractorError,
-	resolveOpenAiClient,
-} from "./ExtractorUtils";
+import type OpenAI from "openai";
+import { ExtractedWeeklyMenuSchema } from "../../../common/mess/ExtractionSchemas";
+import type {
+	MenuExtractionPort,
+	ExtractWeeklyMenuOptions,
+} from "../../../../core/ports/MenuExtractionPort";
+import type { MenuExtractionResult } from "../../../../core/entities/MessAnnouncement";
+import { MenuDishNormalizer } from "../../../../core/services/MenuDishNormalizer";
+import { weeklyMenuPrompt } from "./WeeklyMenuPrompt";
+import { cleanJsonResponse, classifyAndThrowExtractorError } from "./ExtractorUtils";
 
-export interface DeepseekVisionExtractorOptions {
-	client?: OpenAI;
-	apiKey?: string;
-	baseURL?: string;
-	model?: string;
-}
-
-export interface ExtractWeeklyMenuOptions {
-	mimeType?: string;
-	textContext?: string;
-}
-
-export class DeepseekVisionExtractor {
-	private readonly client: OpenAI;
-	private readonly model: string;
-
+/** Extracts raw weekly menus and approved spelling corrections for manual review. */
+export class DeepseekVisionExtractor implements MenuExtractionPort {
+	/**
+	 * Injects external dependencies without constructing an SDK client.
+	 * @param client Configured SDK client shared by the administrative entrypoint.
+	 * @param model Explicit provider model name used for every request.
+	 */
 	constructor(
-		clientOrApiKeyOrOptions: OpenAI | string | DeepseekVisionExtractorOptions,
-		options?: { baseURL?: string; model?: string },
-	) {
-		const resolved = resolveOpenAiClient(clientOrApiKeyOrOptions, options);
-		this.client = resolved.client;
-		this.model = resolved.model;
-	}
+		private readonly client: OpenAI,
+		private readonly model: string,
+	) {}
 
 	/**
-	 * Multimodal extraction of 7-day weekly menu (21 slots total) from an image buffer.
-	 *
-	 * @param input Raw image Buffer or object containing imageBuffer, mimeType, and optional textContext.
-	 * @param options Additional options such as mimeType and textContext.
+	 * Extracts a complete weekly menu from image bytes with optional caption/document context.
+	 * @param image Complete original image bytes or a rendered PDF page.
+	 * @param options Source MIME type and optional caption/document context.
+	 * @returns Independent raw and normalized menus with approved correction provenance.
+	 * @throws Typed provider, JSON, or schema errors with available raw response evidence.
 	 */
 	async extractWeeklyMenu(
-		input: Buffer | { imageBuffer: Buffer; mimeType?: string; textContext?: string },
+		image: Uint8Array,
 		options?: ExtractWeeklyMenuOptions,
-	): Promise<ExtractedWeeklyMenu> {
-		let imageBuffer: Buffer;
-		let mimeType: string;
-		let textContext: string | undefined;
-
-		if (Buffer.isBuffer(input)) {
-			imageBuffer = input;
-			mimeType = options?.mimeType ?? "image/png";
-			textContext = options?.textContext;
-		} else {
-			imageBuffer = input.imageBuffer;
-			mimeType = input.mimeType ?? options?.mimeType ?? "image/png";
-			textContext = input.textContext ?? options?.textContext;
-		}
-
-		const base64Image = imageBuffer.toString("base64");
-		const dataUrl = `data:${mimeType};base64,${base64Image}`;
-
-		const systemPrompt = `You are an expert OCR and menu parsing assistant for campus mess menus.
-Analyze the provided mess menu image and extract the full weekly menu.
-
-Requirements:
-1. Vendor must be one of: "cheftalk_regular", "cheftalk_jain", "tcb".
-   - If the menu mentions Cheftalk Jain, vendor is "cheftalk_jain".
-   - If the menu mentions Cheftalk (general or regular), vendor is "cheftalk_regular".
-   - If the menu mentions TCB or Uniworld, vendor is "tcb".
-2. Convert all calendar dates into strict ISO format YYYY-MM-DD (e.g. 2026-10-04). Never use DD/MM/YYYY or text month names.
-3. Every day across the 7-day span must contain exactly 3 slots: "breakfast", "lunch", "dinner" (strictly 21 meal slots total).
-4. Do NOT include snacks.
-5. "items" for each meal must be a non-empty array of dish strings (e.g. ["Poha", "Tea", "Apple"]).
-6. Return ONLY a valid JSON object adhering to:
-{
-  "vendor": "cheftalk_regular" | "cheftalk_jain" | "tcb",
-  "meals": [
-    {
-      "mealDate": "YYYY-MM-DD",
-      "mealSlot": "breakfast" | "lunch" | "dinner",
-      "items": ["dish1", "dish2"]
-    }
-  ]
-}`;
-
-		let userPrompt =
-			"Extract the complete 7-day weekly menu (strictly 21 slots: breakfast, lunch, dinner for each day) from this image.";
-		if (textContext) {
-			userPrompt += `\n\nEmbedded document text context:\n${textContext}`;
-		}
-
+	): Promise<MenuExtractionResult> {
 		let content: string | undefined;
 		try {
-			const completion = await this.client.chat.completions.create({
-				model: this.model,
-				messages: [
-					{
-						role: "system",
-						content: systemPrompt,
-					},
-					{
-						role: "user",
-						content: [
-							{
-								type: "text",
-								text: userPrompt,
-							},
-							{
-								type: "image_url",
-								image_url: {
-									url: dataUrl,
-								},
-							},
-						],
-					},
-				],
-				response_format: { type: "json_object" },
-			});
-
+			const completion = await this.client.chat.completions.create(this.request(image, options));
 			content = completion.choices[0]?.message?.content ?? undefined;
-			if (!content) {
-				throw new Error("LLM returned empty response during menu extraction");
-			}
-
-			const cleaned = cleanJsonResponse(content);
-			const parsedJson = JSON.parse(cleaned);
-			return ExtractedWeeklyMenuSchema.parse(parsedJson);
+			if (!content) throw new Error("LLM returned empty response during menu extraction");
+			const rawMenu = ExtractedWeeklyMenuSchema.parse(JSON.parse(cleanJsonResponse(content)));
+			return MenuDishNormalizer.normalize(rawMenu);
 		} catch (error) {
 			classifyAndThrowExtractorError(error, content);
 		}
+	}
+
+	private request(
+		image: Uint8Array,
+		options?: ExtractWeeklyMenuOptions,
+	): OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming {
+		const prompt = weeklyMenuPrompt(options?.textContext);
+		const dataUrl = `data:${options?.mimeType ?? "image/png"};base64,${Buffer.from(image).toString("base64")}`;
+		return {
+			model: this.model,
+			messages: [
+				{ role: "system", content: prompt.system },
+				{
+					role: "user",
+					content: [
+						{ type: "text", text: prompt.user },
+						{ type: "image_url", image_url: { url: dataUrl } },
+					],
+				},
+			],
+			response_format: { type: "json_object" },
+		};
 	}
 }

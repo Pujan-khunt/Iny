@@ -1,8 +1,12 @@
-import OpenAI from "openai";
 import { z } from "zod";
 import { LLMError, LLMResponseError } from "../../../../core/errors/LLMErrors";
 import { translateAndThrowDeepseekError } from "../../llm/DeepseekErrorTranslator";
 
+/**
+ * Removes an optional JSON markdown fence.
+ * @param raw Original provider response text.
+ * @returns Trimmed JSON content, retaining the payload text unchanged.
+ */
 export function cleanJsonResponse(raw: string): string {
 	const trimmed = raw.trim();
 	const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -12,10 +16,16 @@ export function cleanJsonResponse(raw: string): string {
 	return trimmed;
 }
 
-export function classifyAndThrowExtractorError(error: any, rawResponse?: string): never {
+/**
+ * Translates schema, JSON, and provider failures while preserving diagnostic evidence.
+ * @param error Original extraction failure.
+ * @param rawResponse Unmodified response content, when available.
+ * @throws LLMError or a specific subclass; never returns.
+ */
+export function classifyAndThrowExtractorError(error: unknown, rawResponse?: string): never {
 	if (error instanceof LLMError) {
 		if (rawResponse && !error.rawResponse) {
-			(error as any).rawResponse = rawResponse;
+			(error as LLMError & { rawResponse?: string }).rawResponse = rawResponse;
 		}
 		throw error;
 	}
@@ -32,52 +42,4 @@ export function classifyAndThrowExtractorError(error: any, rawResponse?: string)
 		});
 	}
 	translateAndThrowDeepseekError(error, rawResponse);
-}
-
-export function resolveOpenAiClient(
-	clientOrApiKeyOrOptions:
-		OpenAI | string | { client?: OpenAI; apiKey?: string; baseURL?: string; model?: string },
-	options?: { baseURL?: string; model?: string },
-): { client: OpenAI; model: string } {
-	if (typeof clientOrApiKeyOrOptions === "string") {
-		return {
-			client: new OpenAI({
-				apiKey: clientOrApiKeyOrOptions,
-				baseURL: options?.baseURL ?? "https://api.deepseek.com",
-			}),
-			model: options?.model ?? "deepseek-flash",
-		};
-	}
-
-	if (
-		typeof clientOrApiKeyOrOptions === "object" &&
-		clientOrApiKeyOrOptions !== null &&
-		"chat" in clientOrApiKeyOrOptions
-	) {
-		return {
-			client: clientOrApiKeyOrOptions as OpenAI,
-			model: options?.model ?? "deepseek-flash",
-		};
-	}
-
-	if (typeof clientOrApiKeyOrOptions === "object" && clientOrApiKeyOrOptions !== null) {
-		const opts = clientOrApiKeyOrOptions;
-		if (opts.client) {
-			return {
-				client: opts.client,
-				model: opts.model ?? options?.model ?? "deepseek-flash",
-			};
-		}
-		if (opts.apiKey) {
-			return {
-				client: new OpenAI({
-					apiKey: opts.apiKey,
-					baseURL: opts.baseURL ?? options?.baseURL ?? "https://api.deepseek.com",
-				}),
-				model: opts.model ?? options?.model ?? "deepseek-flash",
-			};
-		}
-	}
-
-	throw new Error("Either an OpenAI client instance or apiKey is required");
 }
