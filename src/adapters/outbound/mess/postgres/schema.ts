@@ -9,6 +9,8 @@ import {
 	uniqueIndex,
 	customType,
 	check,
+	integer,
+	jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { MealSlot, Vendor, MealChangeType } from "../../../../core/entities/MessMeal";
@@ -167,3 +169,98 @@ export type NewWhatsappGroupFoodAnnouncementsMessageRow =
 export type _AssertMealSlot = MealSlot extends DbMealSlot ? true : never;
 export type _AssertVendor = Vendor extends DbVendor ? true : never;
 export type _AssertChangeType = MealChangeType extends DbMealChangeType ? true : never;
+
+/** Persistent per-group activation boundary, created only by runtime initialization. */
+export const foodIngestionSettings = pgTable(
+	"food_ingestion_settings",
+	{
+		groupJid: text("group_jid").primaryKey(),
+		activatedAt: timestamp("activated_at", { withTimezone: true, precision: 3 })
+			.defaultNow()
+			.notNull(),
+		rulesVersion: text("rules_version").notNull().default("1"),
+	},
+	(table) => [check("chk_food_settings_identity", sql`length(${table.groupJid}) > 0`)],
+);
+
+/** Durable source provenance, work fencing, assessment evidence, and terminal decisions. */
+export const foodAnnouncementIngestions = pgTable(
+	"food_announcement_ingestions",
+	{
+		messageId: text("message_id")
+			.primaryKey()
+			.references(() => whatsappGroupFoodAnnouncementsMessages.id),
+		groupJid: text("group_jid").notNull(),
+		deliveryMode: text("delivery_mode", { enum: ["notify", "append"] }).notNull(),
+		originalCreatedAt: timestamp("original_created_at", { withTimezone: true }),
+		capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+		eligibilityReason: text("eligibility_reason").notNull(),
+		state: text("state", {
+			enum: ["queued", "processing", "accepted", "rejected", "failed", "ineligible"],
+		}).notNull(),
+		attemptCount: integer("attempt_count").notNull().default(0),
+		nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+		leaseToken: uuid("lease_token"),
+		leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+		decisionReason: text("decision_reason"),
+		decisionDetail: text("decision_detail"),
+		candidate: jsonb("candidate"),
+		evidence: jsonb("evidence"),
+		verification: jsonb("verification"),
+		corrections: jsonb("corrections"),
+		model: text("model"),
+		promptVersion: text("prompt_version"),
+		recognizedType: text("recognized_type"),
+		rawExtraction: text("raw_extraction"),
+		rawVerification: text("raw_verification"),
+		completedAt: timestamp("completed_at", { withTimezone: true }),
+	},
+	(table) => [
+		check(
+			"chk_food_ingestion_identity",
+			sql`length(${table.messageId}) > 0 AND length(${table.groupJid}) > 0`,
+		),
+		check("chk_food_ingestion_delivery", sql`${table.deliveryMode} IN ('notify', 'append')`),
+		check(
+			"chk_food_ingestion_state",
+			sql`${table.state} IN ('queued', 'processing', 'accepted', 'rejected', 'failed', 'ineligible')`,
+		),
+		check("chk_food_ingestion_attempts", sql`${table.attemptCount} >= 0`),
+		check(
+			"chk_food_ingestion_lease",
+			sql`(${table.state} = 'processing' AND ${table.leaseToken} IS NOT NULL AND ${table.leaseExpiresAt} IS NOT NULL) OR (${table.state} != 'processing' AND ${table.leaseToken} IS NULL AND ${table.leaseExpiresAt} IS NULL)`,
+		),
+		check(
+			"chk_food_ingestion_completion",
+			sql`(${table.state} IN ('accepted', 'rejected', 'failed', 'ineligible')) = (${table.completedAt} IS NOT NULL)`,
+		),
+		index("idx_food_ingestion_runnable")
+			.on(table.state, table.nextAttemptAt)
+			.where(sql`${table.state} IN ('queued', 'processing')`),
+	],
+);
+
+/** Immutable write evidence and snapshots; explicit reversal metadata never enrolls work. */
+export const messIngestionOperationAudits = pgTable(
+	"mess_ingestion_operation_audits",
+	{
+		operationId: uuid("operation_id").primaryKey().defaultRandom(),
+		sourceMessageId: text("source_message_id").notNull(),
+		originalCreatedAt: timestamp("original_created_at", { withTimezone: true }),
+		mode: text("mode", { enum: ["manual", "automatic"] }).notNull(),
+		affectedFactKeys: text("affected_fact_keys").array().notNull(),
+		extractionEvidence: jsonb("extraction_evidence"),
+		reviewEvidence: jsonb("review_evidence"),
+		corrections: jsonb("corrections"),
+		beforeImages: jsonb("before_images").notNull(),
+		afterImages: jsonb("after_images").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		reversedAt: timestamp("reversed_at", { withTimezone: true }),
+		reversalReason: text("reversal_reason"),
+	},
+	(table) => [
+		check("chk_mess_audit_mode", sql`${table.mode} IN ('manual', 'automatic')`),
+		index("idx_mess_audit_source").on(table.sourceMessageId),
+		index("idx_mess_audit_fact_keys").using("gin", table.affectedFactKeys),
+	],
+);

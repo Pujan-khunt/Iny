@@ -43,6 +43,13 @@
       "when": 1791799856362,
       "tag": "0005_soft_scalphunter",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793554555651,
+      "tag": "0006_automated_food_ingestion",
+      "breakpoints": true
     }
   ]
 }
