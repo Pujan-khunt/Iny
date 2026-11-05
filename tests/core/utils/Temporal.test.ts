@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+	isValidISODate,
+	shiftISODate,
 	getISTDateParts,
 	getISTDateString,
 	getISTMinutes,
@@ -132,5 +134,50 @@ describe("Temporal Utility", () => {
 			const utcDate = new Date("2026-05-04T03:05:00.000Z");
 			expect(formatHistoricalMessageTimeIST(utcDate)).toBe("2026-05-04 08:35 IST");
 		});
+	});
+});
+
+describe("strict calendar dates", () => {
+	it.each(["2024-02-29", "2000-02-29", "2026-11-01", "0099-01-01"])(
+		"accepts the real ISO calendar date %s",
+		(value) => {
+			expect(isValidISODate(value)).toBe(true);
+		},
+	);
+	it.each([
+		"2026-02-29",
+		"1900-02-29",
+		"2026-11-31",
+		"2026-00-01",
+		"2026-13-01",
+		"2026-01-00",
+		"2026-1-01",
+		"2026-01-1",
+		"2026-11-01T00:00:00Z",
+		" 2026-11-01",
+		"nonsense",
+	])("rejects the invalid ISO calendar date %s", (value) => {
+		expect(isValidISODate(value)).toBe(false);
+	});
+	it.each([
+		["2026-12-31", 1, "2027-01-01"],
+		["2024-03-01", -1, "2024-02-29"],
+		["2026-03-01", -1, "2026-02-28"],
+		["2026-11-01", 0, "2026-11-01"],
+		["0099-12-31", 1, "0100-01-01"],
+	])("shifts %s by %s calendar days", (value, days, expected) => {
+		expect(shiftISODate(value as string, days as number)).toBe(expected);
+	});
+	it.each(["2026-02-29", "2026-1-01", "not-a-date"])(
+		"throws for invalid shift input %s",
+		(value) => {
+			expect(() => shiftISODate(value, 1)).toThrow(RangeError);
+		},
+	);
+	it.each([0.5, NaN, Infinity])("throws for noninteger shift %s", (days) => {
+		expect(() => shiftISODate("2026-11-01", days)).toThrow(RangeError);
+	});
+	it("throws when a shift leaves the four-digit ISO calendar", () => {
+		expect(() => shiftISODate("9999-12-31", 1)).toThrow(RangeError);
 	});
 });

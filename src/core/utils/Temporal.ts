@@ -84,3 +84,35 @@ export function buildTemporallyGroundedSystemPrompt(
 	const istString = formatMessageTimeIST(timestamp);
 	return `${baseSystemPrompt}\n\n[Current Time (IST): ${istString}]`;
 }
+
+/** Returns true only for a real calendar date formatted exactly as YYYY-MM-DD. */
+export function isValidISODate(value: string): boolean {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+	const [year, month, day] = value.split("-").map(Number);
+	const date = new Date(`${value}T00:00:00.000Z`);
+	return (
+		date.getUTCFullYear() === year && date.getUTCMonth() + 1 === month && date.getUTCDate() === day
+	);
+}
+
+/**
+ * Shifts a strict ISO date by integer calendar days, independent of timezone.
+ * Throws RangeError for invalid dates, noninteger offsets, or calendar overflow.
+ */
+export function shiftISODate(value: string, days: number): string {
+	if (!isValidISODate(value) || !Number.isInteger(days)) {
+		throw new RangeError("Expected a valid ISO date and integer day offset.");
+	}
+	const date = new Date(`${value}T00:00:00.000Z`);
+	date.setUTCDate(date.getUTCDate() + days);
+	const result = date.toISOString().slice(0, 10);
+	if (!isValidISODate(result)) throw new RangeError("Date exceeds ISO calendar bounds.");
+	return result;
+}
+
+/** Returns integer calendar days from one strict ISO date to another; invalid dates throw. */
+export function daysBetweenISODates(from: string, to: string): number {
+	if (!isValidISODate(from) || !isValidISODate(to))
+		throw new RangeError("Expected valid ISO dates.");
+	return (Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / 86400000;
+}
