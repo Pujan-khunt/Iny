@@ -296,7 +296,7 @@ describe("Production Dialogue Quality Regression Replay", () => {
 
 			expect(result.isTerminal).toBe(true);
 			expect(result.content).toBe(
-				"ℹ️ No menu data is currently loaded for Cheftalk Regular breakfast on 2026-11-01.",
+				"ℹ️ No menu data is currently loaded for Cheftalk breakfast on 2026-11-01.",
 			);
 			expect(result.content.toLowerCase()).not.toContain("not serving");
 			expect(result.content.toLowerCase()).not.toContain("cancelled");
@@ -341,7 +341,7 @@ describe("Production Dialogue Quality Regression Replay", () => {
 			expect(senderMock.sendMessage).toHaveBeenCalledTimes(1);
 			const sentText = (senderMock.sendMessage as any).mock.calls[0][1];
 			expect(sentText).toBe(
-				"ℹ️ No menu data is currently loaded for Cheftalk Regular breakfast on 2026-11-01.",
+				"ℹ️ No menu data is currently loaded for Cheftalk breakfast on 2026-11-01.",
 			);
 			expect(sentText.toLowerCase()).not.toContain("not serving");
 			expect(sentText.toLowerCase()).not.toContain("cancelled");
@@ -464,7 +464,7 @@ describe("Production Dialogue Quality Regression Replay", () => {
 			expect(mockCreate).toHaveBeenCalledTimes(1);
 			expect(senderMock.sendMessage).toHaveBeenCalledTimes(1);
 			const sentText = (senderMock.sendMessage as any).mock.calls[0][1];
-			expect(sentText).toContain("Cheftalk Regular");
+			expect(sentText).toContain("Cheftalk");
 			expect(sentText).toContain("Dum Aloo");
 		});
 	});

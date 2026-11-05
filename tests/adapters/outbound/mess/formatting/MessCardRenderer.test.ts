@@ -108,7 +108,7 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 			];
 			const banner = renderActiveUpdatesBanner(changes);
 			expect(banner).toBe(
-				"📢 *Active Updates:* Kadai Paneer replacing Paneer Butter Masala at Cheftalk Regular",
+				"📢 *Active Updates:* Kadai Paneer replacing Paneer Butter Masala at Cheftalk",
 			);
 		});
 
@@ -126,7 +126,7 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 				},
 			];
 			const banner = renderActiveUpdatesBanner(changes);
-			expect(banner).toBe("📢 *Active Updates:* Ice Cream added at TCB (Uniworld)");
+			expect(banner).toBe("📢 *Active Updates:* Ice Cream added at TCB");
 		});
 	});
 
@@ -152,14 +152,34 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 	});
 
 	describe("formatCardHeader", () => {
-		it("formats normal header with short weekday and day month", () => {
-			const header = formatCardHeader("Lunch Menu", "2026-10-07", false);
-			expect(header).toBe("🍽️ *Lunch Menu* (Wed, 7 Oct)");
+		it("formats today header with Today prefix", () => {
+			const refNow = new Date("2026-10-07T06:30:00Z"); // 2026-10-07 IST
+			const header = formatCardHeader("Lunch Menu", "2026-10-07", false, refNow);
+			expect(header).toBe("🍽️ *Lunch Menu*\n📅 Today, Wed, 7 Oct");
 		});
 
 		it("formats ended header with *(Ended)* tag", () => {
-			const header = formatCardHeader("Lunch Menu", "2026-10-07", true);
-			expect(header).toBe("🍽️ *Lunch Menu* *(Ended)* (Wed, 7 Oct)");
+			const refNow = new Date("2026-10-07T06:30:00Z");
+			const header = formatCardHeader("Lunch Menu", "2026-10-07", true, refNow);
+			expect(header).toBe("🍽️ *Lunch Menu* *(Ended)*\n📅 Today, Wed, 7 Oct");
+		});
+
+		it("formats tomorrow header with Tomorrow prefix", () => {
+			const refNow = new Date("2026-10-06T06:30:00Z"); // 2026-10-06 IST
+			const header = formatCardHeader("Lunch Menu", "2026-10-07", false, refNow);
+			expect(header).toBe("🍽️ *Lunch Menu*\n📅 Tomorrow, Wed, 7 Oct");
+		});
+
+		it("formats yesterday header with Yesterday prefix", () => {
+			const refNow = new Date("2026-10-08T06:30:00Z"); // 2026-10-08 IST
+			const header = formatCardHeader("Lunch Menu", "2026-10-07", false, refNow);
+			expect(header).toBe("🍽️ *Lunch Menu*\n📅 Yesterday, Wed, 7 Oct");
+		});
+
+		it("formats fallback header without relative prefix when > 1 day away", () => {
+			const refNow = new Date("2026-10-10T06:30:00Z"); // 2026-10-10 IST
+			const header = formatCardHeader("Lunch Menu", "2026-10-07", false, refNow);
+			expect(header).toBe("🍽️ *Lunch Menu*\n📅 Wed, 7 Oct");
 		});
 	});
 
@@ -220,6 +240,7 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 		});
 
 		it("renders full multi-vendor slot digest matching Section 7.4 spec reference", () => {
+			const refNow = new Date("2026-10-07T06:30:00Z");
 			const mockInfo: ResolvedMealInfo = {
 				mealDate: "2026-10-07",
 				mealSlot: "lunch",
@@ -236,12 +257,23 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 				mealChanges: [],
 			};
 
-			const rendered = renderMultiVendorSlotDigest(mockInfo, false);
+			const rendered = renderMultiVendorSlotDigest(mockInfo, false, refNow);
 			expect(rendered).toBe(
-				"🍽️ *Lunch Menu* (Wed, 7 Oct)\n\n" +
-					"🍛 *Cheftalk Regular:* Rajma Masala, Jeera Rice, Roti, Boondi Raita\n" +
-					"🥗 *Cheftalk Jain:* Yellow Dal, Jeera Rice, Roti, Cucumber Raita\n" +
-					"☕ *TCB (Uniworld):* Chole Bhature, Veg Pulao, Gulab Jamun\n\n" +
+				"🍽️ *Lunch Menu*\n📅 Today, Wed, 7 Oct\n\n" +
+					"🍛 *Cheftalk:*\n" +
+					"• Rajma Masala\n" +
+					"• Jeera Rice\n" +
+					"• Roti\n" +
+					"• Boondi Raita\n\n" +
+					"🥗 *Cheftalk Jain:*\n" +
+					"• Yellow Dal\n" +
+					"• Jeera Rice\n" +
+					"• Roti\n" +
+					"• Cucumber Raita\n\n" +
+					"☕ *TCB:*\n" +
+					"• Chole Bhature\n" +
+					"• Veg Pulao\n" +
+					"• Gulab Jamun\n\n" +
 					"📍 *Location:* College (All batches)",
 			);
 		});
@@ -270,6 +302,7 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 
 	describe("renderSingleVendorSlotDetail (Q2)", () => {
 		it("renders vertical bullet list of dishes for the vendor", () => {
+			const refNow = new Date("2026-10-07T06:30:00Z");
 			const mockInfo: ResolvedMealInfo = {
 				mealDate: "2026-10-07",
 				mealSlot: "lunch",
@@ -302,9 +335,15 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 				mealChanges: [],
 			};
 
-			const rendered = renderSingleVendorSlotDetail(mockInfo, "cheftalk_regular", false);
+			const rendered = renderSingleVendorSlotDetail(
+				mockInfo,
+				"cheftalk_regular",
+				false,
+				undefined,
+				refNow,
+			);
 			expect(rendered).toBe(
-				"🍽️ *Lunch — Cheftalk Regular* (Wed, 7 Oct)\n\n" +
+				"🍽️ *Cheftalk Lunch*\n📅 Today, Wed, 7 Oct\n\n" +
 					"• Rajma Masala\n" +
 					"• Jeera Rice\n" +
 					"• Butter Roti\n" +
@@ -336,6 +375,59 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 
 			const rendered = renderSingleVendorSlotDetail(mockInfo, "cheftalk_regular", true);
 			expect(rendered).toContain("*(Ended)*");
+		});
+
+		it("appends contextual default tip when requested vendor differs from userDefaultVendor", () => {
+			const mockInfo: ResolvedMealInfo = {
+				mealDate: "2026-10-07",
+				mealSlot: "dinner",
+				meals: [
+					{
+						id: "m-1",
+						mealDate: "2026-10-07",
+						mealSlot: "dinner",
+						vendor: "tcb",
+						items: ["Chole", "Rice"],
+						ingestedAt: new Date(),
+					},
+				],
+				locationDetail: null,
+				timingExtensions: [],
+				mealChanges: [],
+			};
+
+			const rendered = renderSingleVendorSlotDetail(mockInfo, "tcb", false, "cheftalk_regular");
+			expect(rendered).toContain(
+				'\n\n_Tip: Say "set default to TCB" to make this your default vendor._',
+			);
+		});
+
+		it("omits contextual default tip when requested vendor matches userDefaultVendor or userDefaultVendor is omitted", () => {
+			const mockInfo: ResolvedMealInfo = {
+				mealDate: "2026-10-07",
+				mealSlot: "dinner",
+				meals: [
+					{
+						id: "m-1",
+						mealDate: "2026-10-07",
+						mealSlot: "dinner",
+						vendor: "tcb",
+						items: ["Chole", "Rice"],
+						ingestedAt: new Date(),
+					},
+				],
+				locationDetail: null,
+				timingExtensions: [],
+				mealChanges: [],
+			};
+
+			// Same vendor as default
+			const renderedSame = renderSingleVendorSlotDetail(mockInfo, "tcb", false, "tcb");
+			expect(renderedSame).not.toContain("_Tip: Say");
+
+			// userDefaultVendor omitted
+			const renderedNoDefault = renderSingleVendorSlotDetail(mockInfo, "tcb", false);
+			expect(renderedNoDefault).not.toContain("_Tip: Say");
 		});
 	});
 
@@ -387,10 +479,10 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 			const rendered = renderSingleVendorFullDayDigest(mockInfo, "tcb", morningIST);
 
 			expect(rendered).toBe(
-				"🍽️ *TCB (Uniworld) — Full Day Menu* (Wed, 7 Oct)\n\n" +
-					"🌅 *Breakfast:* Poha, Jalebi, Mint Chutney, Tea / Coffee\n" +
-					"🍛 *Lunch:* Chole Bhature, Veg Pulao, Curd, Gulab Jamun\n" +
-					"🌙 *Dinner:* Veg Biryani, Mirchi Salan, Raita, Ice Cream\n\n" +
+				"🍽️ *TCB Full Day Menu*\n📅 Today, Wed, 7 Oct\n\n" +
+					"🌅 *Breakfast:*\n• Poha\n• Jalebi\n• Mint Chutney\n• Tea / Coffee\n\n" +
+					"🍛 *Lunch:*\n• Chole Bhature\n• Veg Pulao\n• Curd\n• Gulab Jamun\n\n" +
+					"🌙 *Dinner:*\n• Veg Biryani\n• Mirchi Salan\n• Raita\n• Ice Cream\n\n" +
 					"📍 *Lunch Location:* College (All batches)",
 			);
 		});
@@ -401,10 +493,14 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 			const rendered = renderSingleVendorFullDayDigest(mockInfo, "tcb", afternoonIST);
 
 			expect(rendered).toContain(
-				"🌅 *Breakfast* *(Ended):* Poha, Jalebi, Mint Chutney, Tea / Coffee",
+				"🌅 *Breakfast* *(Ended):*\n• Poha\n• Jalebi\n• Mint Chutney\n• Tea / Coffee",
 			);
-			expect(rendered).toContain("🍛 *Lunch:* Chole Bhature, Veg Pulao, Curd, Gulab Jamun");
-			expect(rendered).toContain("🌙 *Dinner:* Veg Biryani, Mirchi Salan, Raita, Ice Cream");
+			expect(rendered).toContain(
+				"🍛 *Lunch:*\n• Chole Bhature\n• Veg Pulao\n• Curd\n• Gulab Jamun",
+			);
+			expect(rendered).toContain(
+				"🌙 *Dinner:*\n• Veg Biryani\n• Mirchi Salan\n• Raita\n• Ice Cream",
+			);
 		});
 	});
 });

@@ -487,14 +487,12 @@ describe("Mess System End-to-End Integration", () => {
 			const sentMessageText = (senderMock.sendMessage as any).mock.calls[0][1];
 			expect(sentMessageText).toContain("🍽️ *Lunch Menu*");
 			expect(sentMessageText).toContain(
-				"🍛 *Cheftalk Regular:* Rajma Masala, Jeera Rice, Roti, Boondi Raita",
+				"🍛 *Cheftalk:*\n• Rajma Masala\n• Jeera Rice\n• Roti\n• Boondi Raita",
 			);
 			expect(sentMessageText).toContain(
-				"🥗 *Cheftalk Jain:* Yellow Dal, Jeera Rice, Roti, Cucumber Raita",
+				"🥗 *Cheftalk Jain:*\n• Yellow Dal\n• Jeera Rice\n• Roti\n• Cucumber Raita",
 			);
-			expect(sentMessageText).toContain(
-				"☕ *TCB (Uniworld):* Chole Bhature, Veg Pulao, Gulab Jamun",
-			);
+			expect(sentMessageText).toContain("☕ *TCB:*\n• Chole Bhature\n• Veg Pulao\n• Gulab Jamun");
 			expect(sentMessageText).toContain("📍 *Location:*");
 			expect(sentMessageText).toContain("• *Hostel:* Batches 2027, 2028");
 			expect(sentMessageText).toContain("• *College:* Batches 2025, 2026");
