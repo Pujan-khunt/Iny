@@ -3,13 +3,13 @@ import type {
 	ResolvedMealSwapInput,
 } from "../../../core/ports/MessStagingRepositoryPort";
 import type {
-	ExtractedWeeklyMenu,
-	ExtractedLocationDetail,
-	ExtractedTimingExtension,
-	ExtractedMealChange,
-	ExtractedMealSwap,
-	ExtractedCompositeAnnouncement,
-} from "../../outbound/mess/extraction/ExtractionSchemas";
+	StagedWeeklyMenu,
+	LocationUpdate,
+	TimingUpdate,
+	DishUpdate,
+	StagedMealSwap,
+	StagedCompositeAnnouncement,
+} from "../../../core/entities/MessAnnouncement";
 import {
 	type AnsiTheme,
 	RAW_ANSI,
@@ -21,36 +21,37 @@ import {
 import { TriageWeeklyMenuRenderer } from "./TriageWeeklyMenuRenderer";
 import { TriageCompositeRenderer } from "./TriageCompositeRenderer";
 
+/** Terminal color preference for rendered cards. */
 export interface TriagePreviewRendererOptions {
 	enableAnsi?: boolean;
 }
 
+/** Renders manual triage values without extraction or persistence. */
 export class TriagePreviewRenderer {
 	private readonly ansi: AnsiTheme;
-	private readonly weeklyMenuRenderer: TriageWeeklyMenuRenderer;
-	private readonly compositeRenderer: TriageCompositeRenderer;
-
-	constructor(options?: TriagePreviewRendererOptions) {
+	/** Injects payload renderers and terminal color preference. */
+	constructor(
+		private readonly weeklyMenuRenderer: TriageWeeklyMenuRenderer,
+		private readonly compositeRenderer: TriageCompositeRenderer,
+		options?: TriagePreviewRendererOptions,
+	) {
 		this.ansi = options?.enableAnsi === false ? NO_ANSI : RAW_ANSI;
-		this.weeklyMenuRenderer = new TriageWeeklyMenuRenderer(options);
-		this.compositeRenderer = new TriageCompositeRenderer(options);
 	}
 
-	renderWeeklyMenuPreview(menu: ExtractedWeeklyMenu): string {
+	/** Returns a presentation card for the supplied core values. */
+	renderWeeklyMenuPreview(menu: StagedWeeklyMenu): string {
 		return this.weeklyMenuRenderer.render(menu);
 	}
 
-	renderLocationDetailPreview(
-		detail: ExtractedLocationDetail,
-		message?: StagedAnnouncementMessage,
-	): string {
+	/** Returns a presentation card for the supplied core values. */
+	renderLocationDetailPreview(detail: LocationUpdate, message?: StagedAnnouncementMessage): string {
 		const border = this.ansi.bold + DIVIDER_LINE + this.ansi.reset;
 		const hostel = detail.hostelBatches.length > 0 ? detail.hostelBatches.join(", ") : "None";
 		const college = detail.collegeBatches.length > 0 ? detail.collegeBatches.join(", ") : "None";
 
 		return [
 			border,
-			`${this.ansi.bold}${this.ansi.cyan}📍 ${detail.mealSlot.toUpperCase()} SEATING ALLOCATION PREVIEW${this.ansi.reset}`,
+			`${this.ansi.bold}${this.ansi.cyan}📍 ${(detail.mealSlot ?? "lunch").toUpperCase()} SEATING ALLOCATION PREVIEW${this.ansi.reset}`,
 			border,
 			`Message Timestamp: ${formatIstAmPm(message?.receivedAt)}`,
 			`Target Meal Date:  ${detail.mealDate} (${getDayOfWeekName(detail.mealDate)})`,
@@ -75,8 +76,9 @@ export class TriagePreviewRenderer {
 		].join("\n");
 	}
 
+	/** Returns a presentation card for the supplied core values. */
 	renderTimingExtensionPreview(
-		extension: ExtractedTimingExtension,
+		extension: TimingUpdate,
 		message?: StagedAnnouncementMessage,
 	): string {
 		const border = this.ansi.bold + DIVIDER_LINE + this.ansi.reset;
@@ -104,10 +106,8 @@ export class TriagePreviewRenderer {
 		].join("\n");
 	}
 
-	renderMealChangePreview(
-		change: ExtractedMealChange,
-		message?: StagedAnnouncementMessage,
-	): string {
+	/** Returns a presentation card for the supplied core values. */
+	renderMealChangePreview(change: DishUpdate, message?: StagedAnnouncementMessage): string {
 		const border = this.ansi.bold + DIVIDER_LINE + this.ansi.reset;
 
 		return [
@@ -135,10 +135,11 @@ export class TriagePreviewRenderer {
 		].join("\n");
 	}
 
+	/** Returns a presentation card for the supplied core values. */
 	renderCompositeAnnouncementCard(
-		composite: ExtractedCompositeAnnouncement,
+		composite: StagedCompositeAnnouncement,
 		resolvedSwaps?: ResolvedMealSwapInput[],
-		missingSwaps?: ExtractedMealSwap[],
+		missingSwaps?: StagedMealSwap[],
 	): string {
 		return this.compositeRenderer.render(composite, resolvedSwaps, missingSwaps);
 	}

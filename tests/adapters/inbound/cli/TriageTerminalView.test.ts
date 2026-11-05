@@ -1,3 +1,7 @@
+import { TriagePreviewRenderer } from "../../../../src/adapters/inbound/cli/TriagePreviewRenderer";
+import { TriageMenuRenderer } from "../../../../src/adapters/inbound/cli/TriageMenuRenderer";
+import { TriageWeeklyMenuRenderer } from "../../../../src/adapters/inbound/cli/TriageWeeklyMenuRenderer";
+import { TriageCompositeRenderer } from "../../../../src/adapters/inbound/cli/TriageCompositeRenderer";
 import { describe, it, expect } from "vitest";
 import {
 	TriageTerminalView,
@@ -5,14 +9,21 @@ import {
 } from "../../../../src/adapters/inbound/cli/TriageTerminalView";
 import type { StagedAnnouncementMessage } from "../../../../src/core/ports/MessStagingRepositoryPort";
 import type {
-	ExtractedWeeklyMenu,
-	ExtractedLocationDetail,
-	ExtractedTimingExtension,
-	ExtractedMealChange,
-} from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
+	StagedWeeklyMenu,
+	LocationUpdate,
+	TimingUpdate,
+	DishUpdate,
+} from "../../../../src/core/entities/MessAnnouncement";
 
 describe("TriageTerminalView", () => {
-	const view = new TriageTerminalView({ enableAnsi: false });
+	const view = new TriageTerminalView(
+		new TriageMenuRenderer({ enableAnsi: false }),
+		new TriagePreviewRenderer(
+			new TriageWeeklyMenuRenderer({ enableAnsi: false }),
+			new TriageCompositeRenderer({ enableAnsi: false }),
+			{ enableAnsi: false },
+		),
+	);
 
 	const mockMessage: StagedAnnouncementMessage = {
 		id: "3EB0A1B2C3D4E5F6",
@@ -110,7 +121,7 @@ describe("TriageTerminalView", () => {
 			"2026-10-09",
 			"2026-10-10",
 		];
-		const meals: ExtractedWeeklyMenu["meals"] = [];
+		const meals: StagedWeeklyMenu["meals"] = [];
 		for (const d of days) {
 			for (const s of slots) {
 				meals.push({
@@ -136,7 +147,7 @@ describe("TriageTerminalView", () => {
 			items: ["Dal Fry", "Roti"],
 		};
 
-		const weeklyMenu: ExtractedWeeklyMenu = {
+		const weeklyMenu: StagedWeeklyMenu = {
 			vendor: "cheftalk_regular",
 			meals,
 		};
@@ -155,7 +166,7 @@ describe("TriageTerminalView", () => {
 	});
 
 	it("renders location seating preview matching Spec 4.4", () => {
-		const locationData: ExtractedLocationDetail = {
+		const locationData: LocationUpdate = {
 			mealDate: "2026-10-08",
 			mealSlot: "lunch",
 			hostelBatches: ["UG1", "UG2", "PG1", "PhD"],
@@ -175,7 +186,7 @@ describe("TriageTerminalView", () => {
 	});
 
 	it("renders timing extension preview matching Spec 4.4", () => {
-		const timingData: ExtractedTimingExtension = {
+		const timingData: TimingUpdate = {
 			mealDate: "2026-10-08",
 			mealSlot: "dinner",
 			targetVendor: null,
@@ -193,7 +204,7 @@ describe("TriageTerminalView", () => {
 	});
 
 	it("renders meal change preview matching Spec 4.4", () => {
-		const changeData: ExtractedMealChange = {
+		const changeData: DishUpdate = {
 			mealDate: "2026-10-08",
 			mealSlot: "lunch",
 			targetVendor: "cheftalk_regular",
@@ -235,7 +246,10 @@ describe("TriageTerminalView", () => {
 	});
 
 	it("renders with ANSI codes by default and stripAnsi strips them", () => {
-		const ansiView = new TriageTerminalView();
+		const ansiView = new TriageTerminalView(
+			new TriageMenuRenderer(),
+			new TriagePreviewRenderer(new TriageWeeklyMenuRenderer(), new TriageCompositeRenderer()),
+		);
 		const table = ansiView.renderMessagesTable([mockMessage]);
 		expect(table).toContain("\x1b[");
 		const stripped = stripAnsi(table);
