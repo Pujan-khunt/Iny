@@ -58,6 +58,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "What is for lunch?", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -81,6 +83,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: true,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "Hello", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -104,6 +108,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "Group text", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -127,6 +133,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "image", text: "Photo", mimeType: "image/jpeg" },
 				downloadMedia: vi.fn(),
 			};
@@ -150,6 +158,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "   \t\n  ", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -173,6 +183,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -202,6 +214,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: "123456789012345@lid",
 				fromMe: false,
 				timestamp: now,
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "What is for lunch?", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -243,6 +257,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "Unauthorized message", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -282,6 +298,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: null, mimeType: null },
 				downloadMedia: vi.fn(),
 			};

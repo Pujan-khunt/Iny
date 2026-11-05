@@ -1,4 +1,30 @@
-import { describe, it, expect, vi } from "vitest";
+import { DirectMessageInboundAdapter } from "../../../../src/adapters/inbound/whatsapp/DirectMessageInboundAdapter";
+import { HandleIncomingUserMessage } from "../../../../src/core/use-cases/HandleIncomingUserMessage";
+import { AgentLoop } from "../../../../src/core/services/AgentLoop";
+import { InMemoryToolRegistry } from "../../../../src/adapters/outbound/tool-registry/InMemoryToolRegistry";
+import type { AccessControlPort } from "../../../../src/core/ports/AccessControlPort";
+import type { DialogueTurnRepositoryPort } from "../../../../src/core/ports/DialogueTurnRepositoryPort";
+import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import type { WAMessage } from "@whiskeysockets/baileys";
+import { StageIncomingFoodAnnouncement } from "../../../../src/core/use-cases/StageIncomingFoodAnnouncement";
+import { WhatsAppMessageNormalizer } from "../../../../src/adapters/inbound/whatsapp/router/WhatsAppMessageNormalizer";
+import { WhatsAppMessageContentExtractor } from "../../../../src/adapters/inbound/whatsapp/router/WhatsAppMessageContentExtractor";
+import { WhatsAppMessageRouter } from "../../../../src/adapters/inbound/whatsapp/router/WhatsAppMessageRouter";
+import { PostgresFoodAdmission } from "../../../../src/adapters/outbound/mess/postgres/PostgresFoodAdmission";
+import { PostgresFoodIngestionRepository } from "../../../../src/adapters/outbound/mess/postgres/PostgresFoodIngestionRepository";
+import { PostgresFoodWorkQueue } from "../../../../src/adapters/outbound/mess/postgres/PostgresFoodWorkQueue";
+import { PostgresFoodFinalizer } from "../../../../src/adapters/outbound/mess/postgres/PostgresFoodFinalizer";
+import { PostgresMealCommitter } from "../../../../src/adapters/outbound/mess/postgres/PostgresMealCommitter";
+import { PostgresMessWriteGuard } from "../../../../src/adapters/outbound/mess/postgres/PostgresMessWriteGuard";
+import { PostgresMessOperationAudit } from "../../../../src/adapters/outbound/mess/postgres/PostgresMessOperationAudit";
+import { PostgresMessProvenance } from "../../../../src/adapters/outbound/mess/postgres/PostgresMessProvenance";
+import { PostgresMessCommitPreparation } from "../../../../src/adapters/outbound/mess/postgres/PostgresMessCommitPreparation";
+import { PostgresOperationalWriter } from "../../../../src/adapters/outbound/mess/postgres/PostgresOperationalWriter";
+import { PostgresSwapWriter } from "../../../../src/adapters/outbound/mess/postgres/PostgresSwapWriter";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
 import { FoodAnnouncementInboundAdapter } from "../../../../src/adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
 import { NormalizedWhatsAppMessage } from "../../../../src/adapters/inbound/whatsapp/router/NormalizedWhatsAppMessage";
 
@@ -46,6 +72,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: {
 					type: "document",
 					text: "menu.pdf",
@@ -73,6 +101,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: { type: "image", text: "menu.jpg", mimeType: "image/jpeg" },
 				downloadMedia: vi.fn(),
 			};
@@ -96,6 +126,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: { type: "text", text: "Dinner is delayed", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -119,6 +151,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: { type: "text", text: "", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -149,6 +183,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: true,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: { type: "text", text: "Bot message", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -172,6 +208,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: { type: "text", text: "Direct message", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -185,6 +223,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: { type: "text", text: "Other group message", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -209,6 +249,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: { type: "unsupported", text: null, mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -238,6 +280,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: {
 					type: "document",
 					text: "menu.pdf",
@@ -258,14 +302,17 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				},
 			);
 			expect(mockUseCase.execute).toHaveBeenCalledWith({
-				id: "food-doc-1",
+				messageId: "food-doc-1",
+				groupJid: targetGroupJid,
+				deliveryMode: "notify",
+				originalCreatedAt: new Date(1793491200000),
+				capturedAt: expect.any(Date),
 				senderAddress: "919876543210@s.whatsapp.net",
 				senderAddressType: "pn",
 				messageType: "document",
 				textBody: "menu.pdf",
 				mediaMimeType: "application/pdf",
-				mediaBuffer: fakeBuffer,
-				receivedAt: new Date(msg.timestamp),
+				mediaBytes: fakeBuffer,
 			});
 		});
 
@@ -289,6 +336,8 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: { type: "image", text: "Menu photo", mimeType: "image/jpeg" },
 				downloadMedia,
 			};
@@ -305,14 +354,17 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				},
 			);
 			expect(mockUseCase.execute).toHaveBeenCalledWith({
-				id: "food-img-1",
+				messageId: "food-img-1",
+				groupJid: targetGroupJid,
+				deliveryMode: "notify",
+				originalCreatedAt: new Date(1793491200000),
+				capturedAt: expect.any(Date),
 				senderAddress: "123456789012345@lid",
 				senderAddressType: "lid",
 				messageType: "image",
 				textBody: "Menu photo",
 				mediaMimeType: "image/jpeg",
-				mediaBuffer: fakeBuffer,
-				receivedAt: new Date(msg.timestamp),
+				mediaBytes: fakeBuffer,
 			});
 		});
 
@@ -335,23 +387,245 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: 1793491200000,
+				upsertType: "notify",
 				content: { type: "text", text: "Lunch is ready", mimeType: null },
 				downloadMedia,
 			};
 
 			await adapter.handle(msg);
 
-			expect(downloadMedia).toHaveBeenCalled();
+			expect(downloadMedia).not.toHaveBeenCalled();
 			expect(mockUseCase.execute).toHaveBeenCalledWith({
-				id: "food-text-1",
+				messageId: "food-text-1",
+				groupJid: targetGroupJid,
+				deliveryMode: "notify",
+				originalCreatedAt: new Date(1793491200000),
+				capturedAt: expect.any(Date),
 				senderAddress: "919876543210@s.whatsapp.net",
 				senderAddressType: "pn",
 				messageType: "text",
 				textBody: "Lunch is ready",
 				mediaMimeType: null,
-				mediaBuffer: null,
-				receivedAt: new Date(msg.timestamp),
+				mediaBytes: null,
 			});
 		});
+	});
+});
+
+const databaseUrl = process.env.FOOD_INGESTION_TEST_DATABASE_URL;
+describe.skipIf(!databaseUrl)("food transport provenance through atomic admission", () => {
+	const group = "120363045678901234@g.us";
+	const schemaName = `iny_food_transport_${randomUUID().replaceAll("-", "")}`;
+	let admin: ReturnType<typeof postgres>;
+	let client: ReturnType<typeof postgres>;
+	let repository: PostgresFoodIngestionRepository;
+	let router: WhatsAppMessageRouter;
+	let sourceSeconds: number;
+	let downloader: ReturnType<typeof vi.fn>;
+	const logger = {
+		debug: vi.fn(),
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		fatal: vi.fn(),
+		child: vi.fn().mockReturnThis(),
+	};
+	const sender = { sendMessage: vi.fn().mockResolvedValue(undefined) };
+	function raw(id: string, overrides: Partial<WAMessage> = {}): WAMessage {
+		return {
+			key: { id, remoteJid: group, participant: "123456789012345:1@lid", fromMe: false },
+			message: { conversation: "Today dinner is at the hostel." },
+			messageTimestamp: sourceSeconds,
+			...overrides,
+		};
+	}
+	beforeAll(async () => {
+		admin = postgres(databaseUrl!, { max: 1, onnotice: () => {} });
+		await admin.unsafe(`CREATE SCHEMA "${schemaName}"`);
+		client = postgres(databaseUrl!, {
+			max: 3,
+			connection: { search_path: schemaName },
+			onnotice: () => {},
+		});
+		for (const name of ["0005_soft_scalphunter", "0006_automated_food_ingestion"]) {
+			const sql = await readFile(`drizzle/migrations/${name}.sql`, "utf8");
+			for (const statement of sql.split("--> statement-breakpoint")) {
+				await client.unsafe(statement.replaceAll('"public".', `"${schemaName}".`));
+			}
+		}
+		const db = drizzle(client);
+		const audit = new PostgresMessOperationAudit(new PostgresMessProvenance());
+		const guard = new PostgresMessWriteGuard(audit);
+		const committer = new PostgresMealCommitter(
+			db,
+			logger,
+			new PostgresOperationalWriter(),
+			new PostgresSwapWriter(),
+			guard,
+			audit,
+			new PostgresMessCommitPreparation(),
+		);
+		repository = new PostgresFoodIngestionRepository(
+			new PostgresFoodAdmission(db),
+			new PostgresFoodWorkQueue(db),
+			new PostgresFoodFinalizer(db, guard, committer),
+		);
+	});
+	afterAll(async () => {
+		if (client) await client.end();
+		if (admin) {
+			await admin.unsafe(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
+			await admin.end();
+		}
+	});
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		await client`TRUNCATE food_announcement_ingestions, food_ingestion_settings, whatsapp_group_food_announcements_messages CASCADE`;
+		const activated = await repository.initialize(group);
+		sourceSeconds = Math.ceil(activated.getTime() / 1000) + 1;
+		downloader = vi.fn().mockResolvedValue(Buffer.from("menu"));
+		const normalizer = new WhatsAppMessageNormalizer(
+			logger,
+			new WhatsAppMessageContentExtractor(logger, downloader as any),
+		);
+		const adapter = new FoodAnnouncementInboundAdapter({
+			targetGroupJid: group,
+			useCase: new StageIncomingFoodAnnouncement(repository, logger),
+			logger,
+		});
+		const registry = new InMemoryToolRegistry(logger);
+		const directUseCase = new HandleIncomingUserMessage(
+			sender,
+			{ saveTurn: async () => {} } as unknown as DialogueTurnRepositoryPort,
+			{ retrieveContext: async () => [] },
+			new AgentLoop(
+				{ generateResponse: async () => ({ type: "text", content: "DM response" }) },
+				registry,
+				{ systemPrompt: "Test assistant" },
+			),
+			registry,
+			logger,
+		);
+		const accessControl = {
+			authenticate: async () => ({ pnJid: "919876543210@s.whatsapp.net" }),
+		} as unknown as AccessControlPort;
+		router = new WhatsAppMessageRouter(normalizer, logger)
+			.register(adapter)
+			.register(new DirectMessageInboundAdapter(directUseCase, accessControl, logger));
+	});
+	it("retains a working DM send path while food messages never send", async () => {
+		await router.handleUpsert({
+			type: "notify",
+			messages: [
+				raw("dm", {
+					key: { id: "dm", remoteJid: "919876543210@s.whatsapp.net" },
+					messageTimestamp: undefined,
+				}),
+			],
+		});
+		expect(sender.sendMessage).toHaveBeenCalledExactlyOnceWith(
+			"919876543210@s.whatsapp.net",
+			"DM response",
+		);
+		expect(await client`SELECT * FROM food_announcement_ingestions`).toHaveLength(0);
+	});
+	it("preserves exact live original time and LID scope, and redelivery queues only one row", async () => {
+		await router.handleUpsert({ type: "notify", messages: [raw("live"), raw("live")] });
+		const rows = await client`SELECT * FROM food_announcement_ingestions`;
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			message_id: "live",
+			group_jid: group,
+			delivery_mode: "notify",
+			state: "queued",
+			attempt_count: 0,
+		});
+		expect(new Date(rows[0].original_created_at).getTime()).toBe(sourceSeconds * 1000);
+		const [staging] = await client`SELECT * FROM whatsapp_group_food_announcements_messages`;
+		expect(staging).toMatchObject({
+			sender_address: "123456789012345@lid",
+			sender_address_type: "lid",
+			text_body: "Today dinner is at the hostel.",
+		});
+		expect(downloader).not.toHaveBeenCalled();
+		expect(sender.sendMessage).not.toHaveBeenCalled();
+	});
+	it("captures append as ineligible even when subsequently delivered as notify", async () => {
+		await router.handleUpsert({ type: "append", messages: [raw("history")] });
+		await router.handleUpsert({ type: "notify", messages: [raw("history")] });
+		const rows = await client`SELECT * FROM food_announcement_ingestions`;
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			delivery_mode: "append",
+			state: "ineligible",
+			eligibility_reason: "append_delivery",
+		});
+		expect(await repository.claimNext()).toBeNull();
+		expect(sender.sendMessage).not.toHaveBeenCalled();
+	});
+	it("keeps missing original time null through admission despite the DM fallback", async () => {
+		await router.handleUpsert({
+			type: "notify",
+			messages: [raw("missing", { messageTimestamp: undefined })],
+		});
+		const [row] = await client`SELECT * FROM food_announcement_ingestions`;
+		expect(row).toMatchObject({
+			original_created_at: null,
+			state: "ineligible",
+			eligibility_reason: "missing_original_timestamp",
+		});
+		expect(await repository.claimNext()).toBeNull();
+	});
+	it("never captures bot-authored or wrong-group messages or downloads their media", async () => {
+		const attachment = { imageMessage: { caption: "Menu", mimetype: "image/jpeg" } };
+		await router.handleUpsert({
+			type: "notify",
+			messages: [
+				raw("bot", { key: { id: "bot", remoteJid: group, fromMe: true }, message: attachment }),
+				raw("wrong", { key: { id: "wrong", remoteJid: "other@g.us" }, message: attachment }),
+			],
+		});
+		expect(await client`SELECT * FROM food_announcement_ingestions`).toHaveLength(0);
+		expect(await client`SELECT * FROM whatsapp_group_food_announcements_messages`).toHaveLength(0);
+		expect(downloader).not.toHaveBeenCalled();
+		expect(sender.sendMessage).not.toHaveBeenCalled();
+	});
+	it("retries failed media download on redelivery without capturing the caption alone", async () => {
+		const message = raw("media", {
+			message: { imageMessage: { caption: "Today dinner changed", mimetype: "image/jpeg" } },
+		});
+		downloader.mockRejectedValueOnce(new Error("disconnected"));
+		await router.handleUpsert({ type: "notify", messages: [message] });
+		expect(await client`SELECT * FROM whatsapp_group_food_announcements_messages`).toHaveLength(0);
+		expect(await client`SELECT * FROM food_announcement_ingestions`).toHaveLength(0);
+		expect(logger.error).toHaveBeenCalledWith(
+			"Food announcement handling failed",
+			expect.any(Error),
+			{ messageId: "media", phase: "download" },
+		);
+		await router.handleUpsert({ type: "notify", messages: [message] });
+		const [row] = await client`SELECT * FROM whatsapp_group_food_announcements_messages`;
+		expect(row.media_buffer).toEqual(Buffer.from("menu"));
+		expect(
+			await client`SELECT * FROM food_announcement_ingestions WHERE state = 'queued'`,
+		).toHaveLength(1);
+		expect(sender.sendMessage).not.toHaveBeenCalled();
+	});
+	it("rolls back failed capture and admits the same transport ID on retry", async () => {
+		await client`ALTER TABLE food_announcement_ingestions ADD CONSTRAINT reject_capture CHECK (message_id <> 'retry')`;
+		await router.handleUpsert({ type: "notify", messages: [raw("retry")] });
+		expect(await client`SELECT * FROM whatsapp_group_food_announcements_messages`).toHaveLength(0);
+		expect(logger.error).toHaveBeenCalledWith(
+			"Food announcement capture failed",
+			expect.any(Error),
+			{ messageId: "retry", phase: "capture" },
+		);
+		await client`ALTER TABLE food_announcement_ingestions DROP CONSTRAINT reject_capture`;
+		await router.handleUpsert({ type: "notify", messages: [raw("retry")] });
+		expect(
+			await client`SELECT * FROM food_announcement_ingestions WHERE state = 'queued'`,
+		).toHaveLength(1);
+		expect(sender.sendMessage).not.toHaveBeenCalled();
 	});
 });

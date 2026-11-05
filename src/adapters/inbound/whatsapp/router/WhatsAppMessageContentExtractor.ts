@@ -18,6 +18,7 @@ export class WhatsAppMessageContentExtractor {
 	constructor(
 		private readonly logger: LoggerPort,
 		private readonly defaultDownloadMediaFn: typeof downloadMediaMessage = downloadMediaMessage,
+		private readonly retryDelaysMs: readonly number[] = [100, 200],
 	) {}
 
 	/**
@@ -67,16 +68,25 @@ export class WhatsAppMessageContentExtractor {
 		}
 
 		return async (): Promise<Buffer | null> => {
-			try {
-				const downloaded = await this.defaultDownloadMediaFn(raw, "buffer", {});
-				return Buffer.isBuffer(downloaded) ? downloaded : Buffer.from(downloaded as Uint8Array);
-			} catch (error) {
-				this.logger.warn("Failed to download media for message", error, {
-					messageId: raw.key.id,
-					remoteJid: raw.key.remoteJid,
-				});
-				return null;
+			let lastError: unknown;
+			const totalAttempts = this.retryDelaysMs.length + 1;
+			for (let attempt = 0; attempt < totalAttempts; attempt++) {
+				try {
+					const downloaded = await this.defaultDownloadMediaFn(raw, "buffer", {});
+					return Buffer.isBuffer(downloaded) ? downloaded : Buffer.from(downloaded as Uint8Array);
+				} catch (error) {
+					lastError = error;
+					const delay = this.retryDelaysMs[attempt];
+					if (delay !== undefined && delay > 0) {
+						await new Promise((resolve) => setTimeout(resolve, delay));
+					}
+				}
 			}
+			this.logger.warn("Failed to download media for message", lastError, {
+				messageId: raw.key.id,
+				remoteJid: raw.key.remoteJid,
+			});
+			return null;
 		};
 	}
 

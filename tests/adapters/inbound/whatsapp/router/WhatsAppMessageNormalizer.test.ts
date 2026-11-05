@@ -1,13 +1,14 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { WhatsAppMessageNormalizer } from "../../../../../src/adapters/inbound/whatsapp/router/WhatsAppMessageNormalizer";
 import { WhatsAppMessageContentExtractor } from "../../../../../src/adapters/inbound/whatsapp/router/WhatsAppMessageContentExtractor";
 import {
 	NormalizedWhatsAppMessage,
 	WhatsAppMessageHandler,
 } from "../../../../../src/adapters/inbound/whatsapp/router/NormalizedWhatsAppMessage";
-import { WAMessage } from "@whiskeysockets/baileys";
+import { WAMessage, proto } from "@whiskeysockets/baileys";
 
 describe("WhatsAppMessageNormalizer", () => {
+	afterEach(() => vi.useRealTimers());
 	const mockLogger = {
 		debug: vi.fn(),
 		info: vi.fn(),
@@ -20,9 +21,9 @@ describe("WhatsAppMessageNormalizer", () => {
 	const normalizer = new WhatsAppMessageNormalizer(mockLogger, contentExtractor);
 
 	it("returns null for malformed message missing key or id", () => {
-		expect(normalizer.normalize({} as any)).toBeNull();
-		expect(normalizer.normalize({ key: {} } as any)).toBeNull();
-		expect(normalizer.normalize({ key: { id: "msg-1" } } as any)).toBeNull();
+		expect(normalizer.normalize({} as any, "notify")).toBeNull();
+		expect(normalizer.normalize({ key: {} } as any, "notify")).toBeNull();
+		expect(normalizer.normalize({ key: { id: "msg-1" } } as any, "notify")).toBeNull();
 	});
 
 	it("normalizes direct text message with sender and companion LID resolution", () => {
@@ -36,7 +37,7 @@ describe("WhatsAppMessageNormalizer", () => {
 			message: { conversation: "Hello Iny" },
 			messageTimestamp: 1727223000,
 		};
-		const result = normalizer.normalize(raw);
+		const result = normalizer.normalize(raw, "notify");
 		expect(result).not.toBeNull();
 		expect(result?.messageId).toBe("msg-1");
 		expect(result?.chatJid).toBe("919876543210@s.whatsapp.net");
@@ -60,7 +61,7 @@ describe("WhatsAppMessageNormalizer", () => {
 			},
 			message: { conversation: "Hello" },
 		};
-		const result = normalizer.normalize(raw);
+		const result = normalizer.normalize(raw, "notify");
 		expect(result?.companionLidJid).toBeNull();
 	});
 
@@ -74,7 +75,7 @@ describe("WhatsAppMessageNormalizer", () => {
 			message: { extendedTextMessage: { text: "Hello from LID" } },
 			messageTimestamp: 1727223000,
 		};
-		const result = normalizer.normalize(raw);
+		const result = normalizer.normalize(raw, "notify");
 		expect(result).not.toBeNull();
 		expect(result?.chatType).toBe("direct");
 		expect(result?.senderType).toBe("lid");
@@ -95,7 +96,7 @@ describe("WhatsAppMessageNormalizer", () => {
 			message: { conversation: "Hello from LID with PN alt" },
 			messageTimestamp: 1727223000,
 		};
-		const result = normalizer.normalize(raw);
+		const result = normalizer.normalize(raw, "notify");
 		expect(result).not.toBeNull();
 		expect(result?.chatJid).toBe("123456789012345:1@lid");
 		expect(result?.senderJid).toBe("919876543210@s.whatsapp.net");
@@ -113,10 +114,64 @@ describe("WhatsAppMessageNormalizer", () => {
 			},
 			message: { conversation: "No timestamp" },
 		};
-		const result = normalizer.normalize(raw);
+		const result = normalizer.normalize(raw, "notify");
 		const after = Date.now();
 		expect(result?.timestamp).toBeGreaterThanOrEqual(Math.floor(before / 1000) * 1000);
 		expect(result?.timestamp).toBeLessThanOrEqual(Math.floor(after / 1000) * 1000 + 1000);
+	});
+
+	it.each([undefined, null, 0, -1, NaN, Infinity, -Infinity, 8640000000001])(
+		"keeps invalid source time %s null independently of the DM fallback",
+		(messageTimestamp) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date("2026-11-01T00:00:00.123Z"));
+			const result = normalizer.normalize(
+				{
+					key: { id: "invalid-time", remoteJid: "919876543210@s.whatsapp.net" },
+					message: { conversation: "Hello" },
+					messageTimestamp,
+				},
+				"append",
+			);
+			expect(result?.originalTimestamp).toBeNull();
+			expect(result?.timestamp).toBe(Date.parse("2026-11-01T00:00:00.123Z"));
+			expect(result?.upsertType).toBe("append");
+		},
+	);
+
+	it.each([
+		1793491200,
+		proto.WebMessageInfo.fromObject({ messageTimestamp: "1793491200" }).messageTimestamp,
+	])("preserves numeric and protobuf source timestamps", (messageTimestamp) => {
+		const result = normalizer.normalize(
+			{
+				key: { id: "valid-time", remoteJid: "919876543210@s.whatsapp.net" },
+				messageTimestamp,
+			},
+			"notify",
+		);
+		expect(result?.originalTimestamp).toBe(1793491200000);
+		expect(result?.timestamp).toBe(1793491200000);
+		expect(result?.upsertType).toBe("notify");
+	});
+
+	it("parses a protobuf timestamp once for both original and DM time", () => {
+		let reads = 0;
+		const result = normalizer.normalize(
+			{
+				key: { id: "once", remoteJid: "919876543210@s.whatsapp.net" },
+				messageTimestamp: {
+					toNumber: () => {
+						reads++;
+						return 1793491200;
+					},
+				} as any,
+			},
+			"notify",
+		);
+		expect(result?.originalTimestamp).toBe(1793491200000);
+		expect(result?.timestamp).toBe(1793491200000);
+		expect(reads).toBe(1);
 	});
 
 	it("normalizes group image announcement with lazy media closure", async () => {
@@ -138,7 +193,7 @@ describe("WhatsAppMessageNormalizer", () => {
 		const fakeMediaDownloader = vi.fn().mockResolvedValue(Buffer.from("image-bytes"));
 		const extractor = new WhatsAppMessageContentExtractor(mockLogger, fakeMediaDownloader);
 		const customNormalizer = new WhatsAppMessageNormalizer(mockLogger, extractor);
-		const result = customNormalizer.normalize(raw);
+		const result = customNormalizer.normalize(raw, "notify");
 		expect(result?.chatType).toBe("group");
 		expect(result?.chatJid).toBe("120363045678901234@g.us");
 		expect(result?.senderJid).toBe("919876543210@s.whatsapp.net");
@@ -171,7 +226,7 @@ describe("WhatsAppMessageNormalizer", () => {
 		const fakeMediaDownloader = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]));
 		const extractor = new WhatsAppMessageContentExtractor(mockLogger, fakeMediaDownloader);
 		const customNormalizer = new WhatsAppMessageNormalizer(mockLogger, extractor);
-		const result = customNormalizer.normalize(raw);
+		const result = customNormalizer.normalize(raw, "notify");
 		expect(result?.content.type).toBe("document");
 		expect(result?.content.text).toBe("Weekly Menu");
 		expect(result?.content.mimeType).toBe("application/pdf");
@@ -191,16 +246,40 @@ describe("WhatsAppMessageNormalizer", () => {
 			message: { imageMessage: { mimetype: "image/jpeg" } },
 		};
 		const failingDownloader = vi.fn().mockRejectedValue(new Error("Socket disconnected"));
-		const extractor = new WhatsAppMessageContentExtractor(mockLogger, failingDownloader);
+		const extractor = new WhatsAppMessageContentExtractor(mockLogger, failingDownloader, [5, 5]);
 		const customNormalizer = new WhatsAppMessageNormalizer(mockLogger, extractor);
-		const result = customNormalizer.normalize(raw);
+		const result = customNormalizer.normalize(raw, "notify");
 		const buffer = await result?.downloadMedia();
 		expect(buffer).toBeNull();
+		expect(failingDownloader).toHaveBeenCalledTimes(3);
 		expect(mockLogger.warn).toHaveBeenCalledWith(
 			"Failed to download media for message",
 			expect.any(Error),
 			expect.any(Object),
 		);
+	});
+
+	it("retries media download and succeeds when retry succeeds", async () => {
+		const raw: WAMessage = {
+			key: {
+				id: "msg-retry",
+				remoteJid: "120363045678901234@g.us",
+				participant: "919876543210@s.whatsapp.net",
+				fromMe: false,
+			},
+			message: { imageMessage: { mimetype: "image/jpeg" } },
+		};
+		const flakyDownloader = vi
+			.fn()
+			.mockRejectedValueOnce(new TypeError("fetch failed"))
+			.mockResolvedValueOnce(Buffer.from("success-bytes"));
+		const extractor = new WhatsAppMessageContentExtractor(mockLogger, flakyDownloader, [5, 5]);
+		const customNormalizer = new WhatsAppMessageNormalizer(mockLogger, extractor);
+		const result = customNormalizer.normalize(raw, "notify");
+		const buffer = await result?.downloadMedia();
+		expect(buffer?.toString()).toBe("success-bytes");
+		expect(flakyDownloader).toHaveBeenCalledTimes(2);
+		expect(mockLogger.warn).not.toHaveBeenCalled();
 	});
 
 	it("lazy media closure returns null without calling downloader for text messages", async () => {
@@ -215,7 +294,7 @@ describe("WhatsAppMessageNormalizer", () => {
 		const fakeMediaDownloader = vi.fn();
 		const extractor = new WhatsAppMessageContentExtractor(mockLogger, fakeMediaDownloader);
 		const customNormalizer = new WhatsAppMessageNormalizer(mockLogger, extractor);
-		const result = customNormalizer.normalize(raw);
+		const result = customNormalizer.normalize(raw, "notify");
 		const buffer = await result?.downloadMedia();
 		expect(buffer).toBeNull();
 		expect(fakeMediaDownloader).not.toHaveBeenCalled();
@@ -230,7 +309,7 @@ describe("WhatsAppMessageNormalizer", () => {
 			},
 			message: { conversation: "Broadcast announcement" },
 		};
-		const result = normalizer.normalize(raw);
+		const result = normalizer.normalize(raw, "notify");
 		expect(result?.chatType).toBe("broadcast");
 		expect(result?.chatJid).toBe("1234567890@broadcast");
 	});
@@ -244,7 +323,7 @@ describe("WhatsAppMessageNormalizer", () => {
 			},
 			message: { conversation: "Bot response" },
 		};
-		const result = normalizer.normalize(raw);
+		const result = normalizer.normalize(raw, "notify");
 		expect(result?.fromMe).toBe(true);
 	});
 
@@ -257,7 +336,7 @@ describe("WhatsAppMessageNormalizer", () => {
 			},
 			message: { audioMessage: { mimetype: "audio/ogg" } },
 		};
-		const result = normalizer.normalize(raw);
+		const result = normalizer.normalize(raw, "notify");
 		expect(result?.content.type).toBe("unsupported");
 		expect(result?.content.text).toBeNull();
 		expect(result?.content.mimeType).toBeNull();

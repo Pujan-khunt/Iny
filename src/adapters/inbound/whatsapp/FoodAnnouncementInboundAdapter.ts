@@ -9,6 +9,7 @@ import {
 	WhatsAppUpsertType,
 } from "./router/NormalizedWhatsAppMessage";
 
+/** Configured group scope and required food capture collaborators. */
 export interface FoodAnnouncementInboundAdapterOptions {
 	readonly targetGroupJid: string;
 	readonly useCase: StageIncomingFoodAnnouncement;
@@ -30,12 +31,14 @@ export class FoodAnnouncementInboundAdapter implements WhatsAppMessageHandler {
 	private readonly useCase: StageIncomingFoodAnnouncement;
 	private readonly logger: LoggerPort;
 
+	/** Receives configured group scope, atomic staging use case, and logging. */
 	constructor(options: FoodAnnouncementInboundAdapterOptions) {
 		this.targetGroupJid = options.targetGroupJid;
 		this.useCase = options.useCase;
 		this.logger = options.logger;
 	}
 
+	/** Accepts non-bot supported content exclusively from the configured group. */
 	matches(message: NormalizedWhatsAppMessage): boolean {
 		if (message.fromMe || message.chatType !== "group" || message.chatJid !== this.targetGroupJid) {
 			return false;
@@ -46,27 +49,51 @@ export class FoodAnnouncementInboundAdapter implements WhatsAppMessageHandler {
 		return message.content.type === "image" || message.content.type === "document";
 	}
 
+	/** Downloads matched media lazily and captures source provenance; failures reject with a phase. */
 	async handle(message: NormalizedWhatsAppMessage): Promise<void> {
-		const mediaBuffer = await message.downloadMedia();
-		if (mediaBuffer) {
-			this.logger.debug("Downloaded media attachment for food announcement", {
+		if (!this.matches(message)) return;
+		const capturedAt = new Date();
+		let phase = "download";
+		try {
+			const mediaBytes = message.content.type === "text" ? null : await message.downloadMedia();
+			if (message.content.type !== "text" && !mediaBytes?.byteLength)
+				throw new Error("Food announcement media download returned no content");
+			if (mediaBytes) {
+				this.logger.debug("Downloaded media attachment for food announcement", {
+					messageId: message.messageId,
+					mediaMimeType: message.content.mimeType,
+					bufferSize: mediaBytes.length,
+				});
+			}
+			phase = "capture";
+			await this.useCase.execute(this.source(message, mediaBytes, capturedAt));
+		} catch (error) {
+			this.logger.error("Food announcement handling failed", error, {
 				messageId: message.messageId,
-				mediaMimeType: message.content.mimeType,
-				bufferSize: mediaBuffer.length,
+				phase,
 			});
+			throw error;
 		}
+	}
 
-		const command: StageFoodAnnouncementCommand = {
-			id: message.messageId,
+	private source(
+		message: NormalizedWhatsAppMessage,
+		mediaBytes: Uint8Array | null,
+		capturedAt: Date,
+	): StageFoodAnnouncementCommand {
+		return {
+			messageId: message.messageId,
+			groupJid: message.chatJid,
 			senderAddress: message.senderJid,
 			senderAddressType: message.senderType,
+			deliveryMode: message.upsertType,
+			originalCreatedAt:
+				message.originalTimestamp === null ? null : new Date(message.originalTimestamp),
+			capturedAt,
 			messageType: message.content.type as "image" | "document" | "text",
 			textBody: message.content.text,
 			mediaMimeType: message.content.mimeType,
-			mediaBuffer,
-			receivedAt: new Date(message.timestamp),
+			mediaBytes,
 		};
-
-		await this.useCase.execute(command);
 	}
 }

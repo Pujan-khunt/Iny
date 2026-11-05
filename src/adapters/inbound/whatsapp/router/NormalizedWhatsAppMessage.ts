@@ -23,6 +23,7 @@ export interface ResolvedWhatsAppIdentity {
 	readonly companionLidJid: string | null;
 }
 
+/** Transport envelope retaining original provenance and the DM compatibility timestamp. */
 export interface NormalizedWhatsAppMessage {
 	/** Unique stanza message identifier (e.g. wamid or Baileys ID). */
 	readonly messageId: string;
@@ -47,7 +48,11 @@ export interface NormalizedWhatsAppMessage {
 	readonly companionLidJid: string | null;
 	/** True if the message was authored by the connected bot identity. */
 	readonly fromMe: boolean;
-	/** Message creation epoch timestamp in milliseconds. */
+	/** Actual transport delivery mode, retained independently of handler routing. */
+	readonly upsertType: WhatsAppUpsertType;
+	/** Valid source creation epoch milliseconds, or null if missing or invalid. */
+	readonly originalTimestamp: number | null;
+	/** Message creation epoch milliseconds, falling back to current time for DMs. */
 	readonly timestamp: number;
 	/** Extracted content payload metadata. */
 	readonly content: {
@@ -63,6 +68,7 @@ export interface NormalizedWhatsAppMessage {
 	readonly downloadMedia: () => Promise<Buffer | null>;
 }
 
+/** Routes matching normalized messages through the handler's declared delivery modes. */
 export interface WhatsAppMessageHandler {
 	readonly name: string;
 	/**

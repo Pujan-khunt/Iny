@@ -46,7 +46,7 @@ export class WhatsAppMessageRouter {
 	}
 
 	private async dispatchMessage(raw: WAMessage, upsertType: WhatsAppUpsertType): Promise<void> {
-		const normalized = this.normalizer.normalize(raw);
+		const normalized = this.normalizer.normalize(raw, upsertType);
 		if (!normalized) {
 			return;
 		}

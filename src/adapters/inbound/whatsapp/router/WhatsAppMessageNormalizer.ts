@@ -5,6 +5,7 @@ import {
 	NormalizedWhatsAppMessage,
 	ResolvedWhatsAppIdentity,
 	WhatsAppChatType,
+	WhatsAppUpsertType,
 } from "./NormalizedWhatsAppMessage";
 import { WhatsAppMessageContentExtractor } from "./WhatsAppMessageContentExtractor";
 
@@ -28,9 +29,10 @@ export class WhatsAppMessageNormalizer {
 	 * Normalizes a raw Baileys message into a clean, uniform domain representation.
 	 *
 	 * @param raw - The incoming raw Baileys WAMessage stanza.
+	 * @param upsertType - Actual delivery mode from the transport event.
 	 * @returns The normalized message, or null if key or chat metadata is missing or invalid.
 	 */
-	normalize(raw: WAMessage): NormalizedWhatsAppMessage | null {
+	normalize(raw: WAMessage, upsertType: WhatsAppUpsertType): NormalizedWhatsAppMessage | null {
 		if (!raw?.key?.id || !raw.key.remoteJid) {
 			this.logger.debug("Ignored malformed raw message missing key or id", {
 				messageId: raw?.key?.id,
@@ -43,6 +45,7 @@ export class WhatsAppMessageNormalizer {
 		const chatType = this.resolveChatType(chatJid);
 		const identity = this.resolveIdentity(raw, chatJid, chatType);
 		const content = this.contentExtractor.extractContent(raw);
+		const originalTimestamp = this.resolveTimestamp(raw.messageTimestamp);
 
 		const normalized: NormalizedWhatsAppMessage = {
 			messageId: raw.key.id,
@@ -52,7 +55,9 @@ export class WhatsAppMessageNormalizer {
 			senderType: identity.senderType,
 			companionLidJid: identity.companionLidJid,
 			fromMe: Boolean(raw.key.fromMe),
-			timestamp: this.resolveTimestamp(raw.messageTimestamp),
+			upsertType,
+			originalTimestamp,
+			timestamp: originalTimestamp ?? Date.now(),
 			content,
 			downloadMedia: this.contentExtractor.buildLazyMediaClosure(raw, content.type),
 		};
@@ -129,12 +134,13 @@ export class WhatsAppMessageNormalizer {
 	 * Resolves the message epoch timestamp in milliseconds from raw Baileys seconds.
 	 *
 	 * @param rawTimestamp - Raw Baileys message timestamp (Protobuf Long, number, or null).
-	 * @returns Standard JavaScript epoch timestamp in milliseconds.
+	 * @returns Source epoch milliseconds, or null when missing, invalid, or outside the Date range.
 	 */
-	private resolveTimestamp(rawTimestamp: WAMessage["messageTimestamp"]): number {
-		const rawNumber = toNumber(rawTimestamp);
-		const parsed = Number(rawNumber);
-		const seconds = Number.isFinite(parsed) && parsed > 0 ? parsed : Math.floor(Date.now() / 1000);
-		return seconds * 1000;
+	private resolveTimestamp(rawTimestamp: WAMessage["messageTimestamp"]): number | null {
+		const seconds = toNumber(rawTimestamp);
+		const milliseconds = seconds * 1000;
+		return Number.isFinite(seconds) && seconds > 0 && milliseconds <= 8640000000000000
+			? milliseconds
+			: null;
 	}
 }
