@@ -55,4 +55,9 @@ export interface LoggerPort {
 	 * @returns New LoggerPort instance inheriting parent settings with bound context.
 	 */
 	child(bindings: LogContext): LoggerPort;
+
+	/**
+	 * Flushes any pending buffered logs to persistent storage if supported.
+	 */
+	flush?(): Promise<void>;
 }

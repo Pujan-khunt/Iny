@@ -225,6 +225,22 @@ describe("PinoLoggerAdapter", () => {
 			expect((lines[1].err as Record<string, unknown>).message).toBe("boom");
 		});
 
+		it("flushes and closes file stream when flush is called", async () => {
+			const multiAdapter = PinoLoggerAdapter.createWithMultistream({
+				level: "info",
+				toFile: true,
+				logFilePath: testFile,
+				prettyConsole: false,
+			});
+
+			multiAdapter.info("flush test message");
+			await multiAdapter.flush();
+
+			expect(fs.existsSync(testFile)).toBe(true);
+			const content = fs.readFileSync(testFile, "utf-8").trim();
+			expect(content).toContain("flush test message");
+		});
+
 		it("creates adapter from config with file logging disabled", () => {
 			const adapter = PinoLoggerAdapter.createFromConfig({
 				LOG_LEVEL: "info",
@@ -232,6 +248,17 @@ describe("PinoLoggerAdapter", () => {
 				LOG_DIR: testDir,
 				LOG_RETENTION_DAYS: 7,
 				LOG_PRETTY_CONSOLE: false,
+			});
+			expect(adapter).toBeInstanceOf(PinoLoggerAdapter);
+		});
+
+		it("creates adapter from config with file logging disabled and pretty console enabled", () => {
+			const adapter = PinoLoggerAdapter.createFromConfig({
+				LOG_LEVEL: "info",
+				LOG_TO_FILE: false,
+				LOG_DIR: testDir,
+				LOG_RETENTION_DAYS: 7,
+				LOG_PRETTY_CONSOLE: true,
 			});
 			expect(adapter).toBeInstanceOf(PinoLoggerAdapter);
 		});

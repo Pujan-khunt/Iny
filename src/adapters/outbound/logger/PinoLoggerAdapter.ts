@@ -21,23 +21,33 @@ export interface LoggerRuntimeConfig {
 
 export class PinoLoggerAdapter implements LoggerPort {
 	private pino: pino.Logger;
+	private fileStream?: fs.WriteStream;
 
-	constructor(level: string = "info", baseLogger?: pino.Logger) {
+	constructor(level: string = "info", baseLogger?: pino.Logger, fileStream?: fs.WriteStream) {
 		this.pino = baseLogger ?? pino({ level });
+		this.fileStream = fileStream;
+	}
+
+	async flush(): Promise<void> {
+		if (!this.fileStream) return;
+		await new Promise<void>((resolve) => {
+			this.fileStream?.end(() => resolve());
+		});
 	}
 
 	static createFromConfig(config: LoggerRuntimeConfig): PinoLoggerAdapter {
-		if (!config.LOG_TO_FILE) {
-			return new PinoLoggerAdapter(config.LOG_LEVEL);
+		let logFilePath: string | undefined;
+		if (config.LOG_TO_FILE) {
+			const manager = new LogFileManager(config.LOG_DIR, config.LOG_RETENTION_DAYS);
+			manager.pruneOldLogs();
+			const session = manager.initializeSession();
+			logFilePath = session.logFilePath;
 		}
-		const manager = new LogFileManager(config.LOG_DIR, config.LOG_RETENTION_DAYS);
-		manager.pruneOldLogs();
-		const session = manager.initializeSession();
 
 		return PinoLoggerAdapter.createWithMultistream({
 			level: config.LOG_LEVEL,
-			toFile: true,
-			logFilePath: session.logFilePath,
+			toFile: config.LOG_TO_FILE,
+			logFilePath,
 			prettyConsole: config.LOG_PRETTY_CONSOLE,
 		});
 	}
@@ -47,16 +57,17 @@ export class PinoLoggerAdapter implements LoggerPort {
 		const consoleStream = PinoLoggerAdapter.resolveConsoleStream(options.prettyConsole);
 		streams.push({ stream: consoleStream, level: options.level as pino.Level });
 
+		let fileStream: fs.WriteStream | undefined;
 		if (options.toFile && options.logFilePath) {
 			const dir = path.dirname(options.logFilePath);
 			fs.mkdirSync(dir, { recursive: true });
-			const fileStream = fs.createWriteStream(options.logFilePath, { flags: "a" });
+			fileStream = fs.createWriteStream(options.logFilePath, { flags: "a" });
 			streams.push({ stream: fileStream, level: options.level as pino.Level });
 		}
 
 		const multi = pino.multistream(streams);
 		const baseLogger = pino({ level: options.level }, multi);
-		return new PinoLoggerAdapter(options.level, baseLogger);
+		return new PinoLoggerAdapter(options.level, baseLogger, fileStream);
 	}
 
 	private static resolveConsoleStream(prettyConsole?: boolean): NodeJS.WritableStream {
@@ -108,6 +119,6 @@ export class PinoLoggerAdapter implements LoggerPort {
 	}
 
 	child(bindings: LogContext): LoggerPort {
-		return new PinoLoggerAdapter(this.pino.level, this.pino.child(bindings));
+		return new PinoLoggerAdapter(this.pino.level, this.pino.child(bindings), this.fileStream);
 	}
 }

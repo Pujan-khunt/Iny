@@ -15,16 +15,24 @@ export class LogFileManager {
 	initializeSession(now: Date = new Date()): LogFileSession {
 		fs.mkdirSync(this.logDir, { recursive: true });
 		const timestamp = now.toISOString().replace(/:/g, "-").split(".")[0];
-		const logFilePath = path.join(this.logDir, `app-${timestamp}.log`);
+		const logFilePath = this.generateUniqueSessionPath(timestamp);
 
-		if (!fs.existsSync(logFilePath)) {
-			fs.closeSync(fs.openSync(logFilePath, "w"));
-		}
+		fs.closeSync(fs.openSync(logFilePath, "w"));
 
 		const latestSymlinkPath = path.join(this.logDir, "latest.log");
 		this.updateLatestPointer(logFilePath, latestSymlinkPath);
 
 		return { logFilePath, latestSymlinkPath };
+	}
+
+	private generateUniqueSessionPath(timestamp: string): string {
+		const base = path.join(this.logDir, `app-${timestamp}.log`);
+		if (!fs.existsSync(base)) return base;
+		let counter = 1;
+		while (fs.existsSync(path.join(this.logDir, `app-${timestamp}-${counter}.log`))) {
+			counter++;
+		}
+		return path.join(this.logDir, `app-${timestamp}-${counter}.log`);
 	}
 
 	pruneOldLogs(now: Date = new Date()): string[] {
@@ -72,17 +80,16 @@ export class LogFileManager {
 	private resolveSymlinkOrPointer(latestPath: string): string | null {
 		if (!fs.existsSync(latestPath)) return null;
 		try {
-			const real = fs.realpathSync(latestPath);
-			if (fs.existsSync(real)) return real;
-		} catch {
-			try {
-				const content = fs.readFileSync(latestPath, "utf-8").trim();
-				if (fs.existsSync(content)) return content;
-			} catch {
-				// Ignore pointer file read failure
+			if (fs.lstatSync(latestPath).isSymbolicLink()) {
+				const real = fs.realpathSync(latestPath);
+				return fs.existsSync(real) ? real : null;
 			}
+			const content = fs.readFileSync(latestPath, "utf-8").trim();
+			return content && fs.existsSync(content) ? content : null;
+		} catch {
+			// Ignore pointer resolution errors
+			return null;
 		}
-		return null;
 	}
 
 	private discoverNewestLogFile(): string | null {
