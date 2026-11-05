@@ -12,7 +12,7 @@
 		"format:check": "prettier --check .",
 		"deadcode": "knip",
 		"check:all": "npm run format:check && npm run lint && npm run deadcode && npm run typecheck && npm test",
-		"dev": "tsx --env-file=.env src/index.ts | pino-pretty",
+		"dev": "tsx --env-file=.env src/index.ts",
 		"start": "node --enable-source-maps --env-file=.env dist/index.js",
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",

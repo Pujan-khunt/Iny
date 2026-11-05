@@ -292,4 +292,52 @@ describe("Config", () => {
 		expect(loaded.DEEPSEEK_MODEL).toBe("deepseek-flash");
 		expect(loaded.FOOD_ANNOUNCEMENTS_GROUP_JID).toBe("120363025343425345@g.us");
 	});
+
+	describe("runtime log observability configuration", () => {
+		it("defaults log configuration when unspecified", () => {
+			const config = parseConfig({
+				DEEPSEEK_API_KEY: "test-key",
+				BOT_PHONE_NUMBER: "15551234567",
+				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
+				FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
+				NODE_ENV: "development",
+			});
+
+			expect(config.LOG_TO_FILE).toBe(true);
+			expect(config.LOG_DIR).toBe("logs");
+			expect(config.LOG_RETENTION_DAYS).toBe(7);
+			expect(config.LOG_PRETTY_CONSOLE).toBe(true);
+		});
+
+		it("defaults LOG_TO_FILE and LOG_PRETTY_CONSOLE to false in test environment", () => {
+			const config = parseConfig({
+				DEEPSEEK_API_KEY: "test-key",
+				BOT_PHONE_NUMBER: "15551234567",
+				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
+				FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
+				NODE_ENV: "test",
+			});
+
+			expect(config.LOG_TO_FILE).toBe(false);
+			expect(config.LOG_PRETTY_CONSOLE).toBe(false);
+		});
+
+		it("accepts custom logging configuration overrides", () => {
+			const config = parseConfig({
+				DEEPSEEK_API_KEY: "test-key",
+				BOT_PHONE_NUMBER: "15551234567",
+				DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/iny",
+				FOOD_ANNOUNCEMENTS_GROUP_JID: "120363025343425345@g.us",
+				LOG_TO_FILE: "true",
+				LOG_DIR: "custom-logs",
+				LOG_RETENTION_DAYS: "14",
+				LOG_PRETTY_CONSOLE: "false",
+			});
+
+			expect(config.LOG_TO_FILE).toBe(true);
+			expect(config.LOG_DIR).toBe("custom-logs");
+			expect(config.LOG_RETENTION_DAYS).toBe(14);
+			expect(config.LOG_PRETTY_CONSOLE).toBe(false);
+		});
+	});
 });

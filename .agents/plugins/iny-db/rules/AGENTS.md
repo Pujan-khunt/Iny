@@ -3,6 +3,7 @@
 ## 1. Scope & Target Architecture
 
 This plugin connects Antigravity directly to the local Docker database container:
+
 - **Container Name:** `iny-db`
 - **Host Endpoint:** `127.0.0.1:5432`
 - **Database:** `iny`

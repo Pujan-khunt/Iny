@@ -33,7 +33,7 @@ import { CatchAllLoggingHandler } from "./adapters/inbound/whatsapp/router/Catch
 import { DialogueTurnContextRetrievalAdapter } from "./adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter";
 
 const config = loadConfig();
-const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
+const logger = PinoLoggerAdapter.createFromConfig(config);
 const logMod = (module: string) => logger.child({ module });
 const registry = new InMemoryToolRegistry(logger);
 const sqlClient = postgres(config.DATABASE_URL, {
@@ -107,6 +107,7 @@ async function shutdown(signal: string, exitCode = 0) {
 	await sqlClient
 		.end({ timeout: 5 })
 		.catch((e: unknown) => logger.error("Error closing database pool", e));
+	await logger.flush?.();
 	process.exit(exitCode);
 }
 
@@ -130,8 +131,8 @@ async function start() {
 	const count = await accessControl.countActiveUsers();
 	if (count === 0) {
 		logger.fatal("No active authorized users found. Iny cannot start.");
-		await sqlClient.end({ timeout: 5 });
-		process.exit(1);
+		await shutdown("no-users", 1);
+		return;
 	}
 	logger.info("Access control initialized", { activeUsers: count });
 	connectionManager.subscribe("messages.upsert", (upsert) => router.handleUpsert(upsert));
@@ -143,5 +144,5 @@ async function start() {
 
 start().catch((err) => {
 	logger.fatal("Fatal application startup failure", err);
-	sqlClient.end({ timeout: 2 }).finally(() => process.exit(1));
+	shutdown("startup-failure", 1);
 });
