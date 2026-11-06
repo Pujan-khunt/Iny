@@ -82,6 +82,7 @@ export class ApplicationLifecycle {
 		await this.closeDatabase(5).catch((error: unknown) =>
 			this.logger.error("Error closing database pool", error),
 		);
+		await this.logger.flush?.();
 		this.exit(exitCode);
 	}
 	/** Reports fatal errors and performs idempotent shutdown with exit code one. */
@@ -96,7 +97,12 @@ export class ApplicationLifecycle {
 		this.startup.abort();
 		this.logger.fatal("Fatal application startup failure", error);
 		await this.operations.stopWorker();
-		await this.closeDatabase(2).finally(() => this.exit(1));
+		await this.closeDatabase(2)
+			.catch(() => {})
+			.finally(async () => {
+				await this.logger.flush?.();
+				this.exit(1);
+			});
 	}
 
 	/** Attaches process-level signal and unhandled rejection listeners. */

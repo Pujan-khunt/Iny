@@ -1,0 +1,5 @@
+{
+	"name": "iny-db",
+	"version": "1.0.0",
+	"description": "PostgreSQL MCP integration for the iny-db Docker container running the Iny database."
+}

@@ -40,7 +40,7 @@ import { WhatsAppMessageRouter } from "./adapters/inbound/whatsapp/router/WhatsA
 import { CatchAllLoggingHandler } from "./adapters/inbound/whatsapp/router/CatchAllLoggingHandler";
 import { DialogueTurnContextRetrievalAdapter } from "./adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter";
 const config = loadConfig();
-const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
+const logger = PinoLoggerAdapter.createFromConfig(config);
 const logMod = (module: string) => logger.child({ module });
 const registry = new InMemoryToolRegistry(logger);
 const sqlClient = postgres(config.DATABASE_URL, {

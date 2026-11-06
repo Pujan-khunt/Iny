@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import pino from "pino";
+import fs from "fs";
+import path from "path";
 import { Writable } from "node:stream";
 import { PinoLoggerAdapter } from "../../../../src/adapters/outbound/logger/PinoLoggerAdapter";
 
@@ -183,5 +185,96 @@ describe("PinoLoggerAdapter", () => {
 		expect(logs[0].msg).toBe("Child event");
 		expect(logs[0].correlationId).toBe("corr-999");
 		expect(logs[0].extra).toBe("data");
+	});
+
+	describe("multistream", () => {
+		const testDir = path.join(process.cwd(), "tmp-pino-logs");
+		const testFile = path.join(testDir, "test.log");
+
+		beforeEach(() => {
+			fs.mkdirSync(testDir, { recursive: true });
+		});
+
+		afterEach(() => {
+			if (fs.existsSync(testDir)) {
+				fs.rmSync(testDir, { recursive: true, force: true });
+			}
+		});
+
+		it("writes valid newline-delimited JSON to target log file", async () => {
+			const multiAdapter = PinoLoggerAdapter.createWithMultistream({
+				level: "info",
+				toFile: true,
+				logFilePath: testFile,
+				prettyConsole: false,
+			});
+
+			multiAdapter.info("test message 1", { component: "auth" });
+			multiAdapter.warn("test warning", new Error("boom"), { component: "db" });
+
+			await new Promise((r) => setTimeout(r, 100));
+
+			expect(fs.existsSync(testFile)).toBe(true);
+			const content = fs.readFileSync(testFile, "utf-8").trim();
+			const lines = content.split("\n").map((l) => JSON.parse(l));
+
+			expect(lines.length).toBe(2);
+			expect(lines[0].msg).toBe("test message 1");
+			expect(lines[0].component).toBe("auth");
+			expect(lines[1].msg).toBe("test warning");
+			expect((lines[1].err as Record<string, unknown>).message).toBe("boom");
+		});
+
+		it("flushes and closes file stream when flush is called", async () => {
+			const multiAdapter = PinoLoggerAdapter.createWithMultistream({
+				level: "info",
+				toFile: true,
+				logFilePath: testFile,
+				prettyConsole: false,
+			});
+
+			multiAdapter.info("flush test message");
+			await multiAdapter.flush();
+
+			expect(fs.existsSync(testFile)).toBe(true);
+			const content = fs.readFileSync(testFile, "utf-8").trim();
+			expect(content).toContain("flush test message");
+		});
+
+		it("creates adapter from config with file logging disabled", () => {
+			const adapter = PinoLoggerAdapter.createFromConfig({
+				LOG_LEVEL: "info",
+				LOG_TO_FILE: false,
+				LOG_DIR: testDir,
+				LOG_RETENTION_DAYS: 7,
+				LOG_PRETTY_CONSOLE: false,
+			});
+			expect(adapter).toBeInstanceOf(PinoLoggerAdapter);
+		});
+
+		it("creates adapter from config with file logging disabled and pretty console enabled", () => {
+			const adapter = PinoLoggerAdapter.createFromConfig({
+				LOG_LEVEL: "info",
+				LOG_TO_FILE: false,
+				LOG_DIR: testDir,
+				LOG_RETENTION_DAYS: 7,
+				LOG_PRETTY_CONSOLE: true,
+			});
+			expect(adapter).toBeInstanceOf(PinoLoggerAdapter);
+		});
+
+		it("creates adapter from config with file logging enabled", async () => {
+			const adapter = PinoLoggerAdapter.createFromConfig({
+				LOG_LEVEL: "info",
+				LOG_TO_FILE: true,
+				LOG_DIR: testDir,
+				LOG_RETENTION_DAYS: 7,
+				LOG_PRETTY_CONSOLE: false,
+			});
+			expect(adapter).toBeInstanceOf(PinoLoggerAdapter);
+			adapter.info("config boot test");
+			await new Promise((r) => setTimeout(r, 50));
+			expect(fs.readdirSync(testDir).some((f) => f.startsWith("app-"))).toBe(true);
+		});
 	});
 });

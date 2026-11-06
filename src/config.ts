@@ -3,61 +3,88 @@ import { z } from "zod";
 const emptyToUndefined = <T extends z.ZodType>(schema: T) =>
 	z.preprocess((val) => (typeof val === "string" && val.trim() === "" ? undefined : val), schema);
 
-export const envSchema = z.object({
-	DEEPSEEK_API_KEY: z.string().trim().min(1, "DEEPSEEK_API_KEY is required"),
-	BOT_PHONE_NUMBER: z
-		.string()
-		.trim()
-		.regex(
-			/^\d{7,15}$/,
-			"BOT_PHONE_NUMBER must contain 7 to 15 digits including country code (e.g. 15551234567)",
-		),
-	ALLOWED_USERS: emptyToUndefined(
-		z
+export const envSchema = z
+	.object({
+		DEEPSEEK_API_KEY: z.string().trim().min(1, "DEEPSEEK_API_KEY is required"),
+		BOT_PHONE_NUMBER: z
 			.string()
-			.optional()
-			.default("")
-			.transform((val) =>
-				val
-					.split(",")
-					.map((s) => s.trim())
-					.filter(Boolean),
+			.trim()
+			.regex(
+				/^\d{7,15}$/,
+				"BOT_PHONE_NUMBER must contain 7 to 15 digits including country code (e.g. 15551234567)",
 			),
-	),
-	ALLOWED_USER_NAMES: emptyToUndefined(
-		z
-			.string()
-			.optional()
-			.default("")
-			.transform((val) => {
-				if (!val || val.trim() === "") return [];
-				const names = val.split(",").map((s) => s.trim());
-				if (names.every((s) => s === "")) return [];
-				return names;
-			}),
-	),
-	DATABASE_URL: z
-		.string()
-		.trim()
-		.min(1, "DATABASE_URL is required")
-		.refine(
-			(url) => url.startsWith("postgres://") || url.startsWith("postgresql://"),
-			"DATABASE_URL must be a valid PostgreSQL connection URI (postgres:// or postgresql://)",
+		ALLOWED_USERS: emptyToUndefined(
+			z
+				.string()
+				.optional()
+				.default("")
+				.transform((val) =>
+					val
+						.split(",")
+						.map((s) => s.trim())
+						.filter(Boolean),
+				),
 		),
-	FOOD_ANNOUNCEMENTS_GROUP_JID: z
-		.string()
-		.trim()
-		.regex(/^.+@g\.us$/, "Must be a valid WhatsApp group JID ending in @g.us"),
-	DB_MAX_CONNECTIONS: emptyToUndefined(z.coerce.number().int().positive().default(10)),
-	DEEPSEEK_BASE_URL: emptyToUndefined(z.url().default("https://api.deepseek.com")),
-	DEEPSEEK_MODEL: emptyToUndefined(z.string().min(1).default("deepseek-flash")),
-	LOG_LEVEL: emptyToUndefined(z.enum(["debug", "info", "warn", "error", "fatal"]).default("info")),
-	MAX_TOOL_ITERATIONS: emptyToUndefined(z.coerce.number().int().positive().max(20).default(5)),
-	MAX_HISTORY_TURNS: emptyToUndefined(z.coerce.number().int().positive().max(100).default(10)),
-	HISTORY_TTL_HOURS: emptyToUndefined(z.coerce.number().positive().default(24)),
-	FOOD_ASSESSMENT_TIMEOUT_MS: emptyToUndefined(z.coerce.number().int().positive().default(180_000)),
-	FOOD_WORKER_DEADLINE_MS: emptyToUndefined(z.coerce.number().int().positive().default(420_000)),
-});
+		ALLOWED_USER_NAMES: emptyToUndefined(
+			z
+				.string()
+				.optional()
+				.default("")
+				.transform((val) => {
+					if (!val || val.trim() === "") return [];
+					const names = val.split(",").map((s) => s.trim());
+					if (names.every((s) => s === "")) return [];
+					return names;
+				}),
+		),
+		DATABASE_URL: z
+			.string()
+			.trim()
+			.min(1, "DATABASE_URL is required")
+			.refine(
+				(url) => url.startsWith("postgres://") || url.startsWith("postgresql://"),
+				"DATABASE_URL must be a valid PostgreSQL connection URI (postgres:// or postgresql://)",
+			),
+		FOOD_ANNOUNCEMENTS_GROUP_JID: z
+			.string()
+			.trim()
+			.regex(/^.+@g\.us$/, "Must be a valid WhatsApp group JID ending in @g.us"),
+		DB_MAX_CONNECTIONS: emptyToUndefined(z.coerce.number().int().positive().default(10)),
+		DEEPSEEK_BASE_URL: emptyToUndefined(z.url().default("https://api.deepseek.com")),
+		DEEPSEEK_MODEL: emptyToUndefined(z.string().min(1).default("deepseek-flash")),
+		LOG_LEVEL: emptyToUndefined(
+			z.enum(["debug", "info", "warn", "error", "fatal"]).default("info"),
+		),
+		MAX_TOOL_ITERATIONS: emptyToUndefined(z.coerce.number().int().positive().max(20).default(5)),
+		MAX_HISTORY_TURNS: emptyToUndefined(z.coerce.number().int().positive().max(100).default(10)),
+		HISTORY_TTL_HOURS: emptyToUndefined(z.coerce.number().positive().default(24)),
+		FOOD_ASSESSMENT_TIMEOUT_MS: emptyToUndefined(
+			z.coerce.number().int().positive().default(180_000),
+		),
+		FOOD_WORKER_DEADLINE_MS: emptyToUndefined(z.coerce.number().int().positive().default(420_000)),
+		NODE_ENV: emptyToUndefined(
+			z.enum(["development", "test", "production"]).default("development"),
+		),
+		LOG_TO_FILE: emptyToUndefined(
+			z
+				.string()
+				.transform((val) => val === "true")
+				.optional(),
+		),
+		LOG_DIR: emptyToUndefined(z.string().min(1).default("logs")),
+		LOG_RETENTION_DAYS: emptyToUndefined(z.coerce.number().int().positive().default(7)),
+		LOG_PRETTY_CONSOLE: emptyToUndefined(
+			z
+				.string()
+				.transform((val) => val === "true")
+				.optional(),
+		),
+	})
+	.transform((data) => ({
+		...data,
+		LOG_TO_FILE: data.LOG_TO_FILE ?? data.NODE_ENV === "development",
+		LOG_PRETTY_CONSOLE: data.LOG_PRETTY_CONSOLE ?? data.NODE_ENV === "development",
+	}));
 
 export type Config = z.infer<typeof envSchema>;
 

@@ -88,8 +88,9 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/outbound/dialogue-turn-repository/postgres/PostgresDialogueTurnRepository.ts`: Persistent conversation history repository implementing `DialogueTurnRepositoryPort` using Drizzle ORM and `postgres.js` under the Hybrid Envelope pattern.
   - `src/adapters/outbound/dialogue-turn-repository/postgres/schema.ts`: Drizzle ORM table schema defining `dialogue_turns` with stored generated `duration_ms`, first-class `reasoning` text array, composite index on `(user_id, completed_at DESC)`, and PostgreSQL `CHECK` constraints.
   - `src/adapters/outbound/dialogue-turn-repository/postgres/migrator.ts`: Startup database migration runner executing Drizzle migrations before service startup.
-  - `src/adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter.ts`: Outbound adapter implementing `ContextRetrievalPort` backed by `DialogueTurnRepositoryPort`.
-  - `src/adapters/outbound/logger/PinoLoggerAdapter.ts`: Structured logging wrapper around Pino with unambiguous signature routing.
+  - `src/adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter.ts`: Outbound adapter implementing `ContextRetrievalPort` backed by `DialogueTurnRepositoryPort`, pruning raw historical tool calls and outputs while preserving conversational messages, with 24-hour default TTL filtering and graceful error fallback.
+  - `src/adapters/outbound/logger/PinoLoggerAdapter.ts`: Structured logging wrapper around Pino with unambiguous signature routing, internal multistreaming (pretty console in development, raw NDJSON in production), and session file streaming.
+  - `src/adapters/outbound/logger/LogFileManager.ts`: Outbound helper managing session log file lifecycle (`logs/app-YYYY-MM-DDTHH-mm-ss.log`), `logs/latest.log` pointer management, resilient fallback discovery, and automatic 7-day retention pruning.
   - `src/adapters/outbound/tool-registry/InMemoryToolRegistry.ts`: In-memory tool storage exposing clean tool definitions.
 
 ## 3. Codebase Directory Map
@@ -477,3 +478,10 @@ sequenceDiagram
 3. Move the completed feature specification from `docs/specs/` to `docs/specs/archive/` within the same feature branch.
 4. Verify all tests pass (`npm test`) and compilation succeeds (`npm run build`).
 5. Commit and merge the pull request.
+
+### Recipe 6: Inspect Application Runtime Logs
+
+1. Triage recent errors: `npx tsx scripts/inspect-logs.ts --errors-only -n 15`
+2. Inspect recent operational events: `npx tsx scripts/inspect-logs.ts -n 30 --since 15m`
+3. Filter by component or WhatsApp JID: `npx tsx scripts/inspect-logs.ts --grep <pattern> -n 25`
+4. Follow logs in real time: `npx tsx scripts/inspect-logs.ts --follow --level warn`
