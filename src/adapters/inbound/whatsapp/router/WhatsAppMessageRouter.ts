@@ -45,7 +45,6 @@ export class WhatsAppMessageRouter {
 			});
 			return true;
 		}
-
 		const processedAt = this.processedMessageIds.get(messageId);
 		if (processedAt && Date.now() - processedAt < DEDUPLICATION_TTL_MS) {
 			this.logger.debug("Dropping duplicate incoming WhatsApp stanza", {
@@ -54,7 +53,6 @@ export class WhatsAppMessageRouter {
 			});
 			return true;
 		}
-
 		return false;
 	}
 
@@ -63,44 +61,39 @@ export class WhatsAppMessageRouter {
 		this.processedMessageIds.set(messageId, now);
 		if (this.processedMessageIds.size > MAX_CACHE_SIZE) {
 			for (const [id, timestamp] of this.processedMessageIds) {
-				if (now - timestamp >= DEDUPLICATION_TTL_MS) {
-					this.processedMessageIds.delete(id);
-				}
+				if (now - timestamp >= DEDUPLICATION_TTL_MS) this.processedMessageIds.delete(id);
+			}
+			while (this.processedMessageIds.size > MAX_CACHE_SIZE) {
+				const oldestKey = this.processedMessageIds.keys().next().value;
+				if (!oldestKey) break;
+				this.processedMessageIds.delete(oldestKey);
 			}
 		}
 	}
 
 	private async dispatchMessage(raw: WAMessage, upsertType: WhatsAppUpsertType): Promise<void> {
 		const messageId = raw.key?.id;
-		if (messageId && this.isDuplicate(messageId)) {
-			return;
-		}
+		if (messageId && this.isDuplicate(messageId)) return;
+		if (messageId) this.inFlightMessageIds.add(messageId);
 
-		if (messageId) {
-			this.inFlightMessageIds.add(messageId);
-		}
-
+		let success = false;
 		try {
-			await this.processMessage(raw, upsertType);
+			success = await this.processMessage(raw, upsertType);
 		} finally {
 			if (messageId) {
 				this.inFlightMessageIds.delete(messageId);
-				this.recordProcessed(messageId);
+				if (success) this.recordProcessed(messageId);
 			}
 		}
 	}
 
-	private async processMessage(raw: WAMessage, upsertType: WhatsAppUpsertType): Promise<void> {
+	private async processMessage(raw: WAMessage, upsertType: WhatsAppUpsertType): Promise<boolean> {
 		const normalized = this.normalizer.normalize(raw, upsertType);
-		if (!normalized) {
-			return;
-		}
+		if (!normalized) return true;
 
 		for (const handler of this.handlers) {
 			const acceptedTypes = handler.acceptedUpsertTypes ?? ["notify"];
-			if (!acceptedTypes.includes(upsertType)) {
-				continue;
-			}
+			if (!acceptedTypes.includes(upsertType)) continue;
 
 			let isMatch = false;
 			try {
@@ -113,16 +106,16 @@ export class WhatsAppMessageRouter {
 			}
 
 			if (isMatch) {
-				await this.executeHandler(handler, normalized);
-				break;
+				return await this.executeHandler(handler, normalized);
 			}
 		}
+		return true;
 	}
 
 	private async executeHandler(
 		handler: WhatsAppMessageHandler,
 		normalized: NormalizedWhatsAppMessage,
-	): Promise<void> {
+	): Promise<boolean> {
 		this.logger.info("Routed incoming message to handler", {
 			messageId: normalized.messageId,
 			handler: handler.name,
@@ -138,11 +131,13 @@ export class WhatsAppMessageRouter {
 				messageId: normalized.messageId,
 				durationMs,
 			});
+			return true;
 		} catch (error) {
 			this.logger.error("Handler failed during message processing", error, {
 				handler: handler.name,
 				messageId: normalized.messageId,
 			});
+			return false;
 		}
 	}
 }

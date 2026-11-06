@@ -201,6 +201,14 @@ describe("WhatsAppMessageRouter", () => {
 				messageId: "msg-fail",
 			}),
 		);
+
+		// Redelivery of msg1 (which previously failed) should be retried and not dropped as duplicate
+		await router.handleUpsert({ type: "notify", messages: [msg1 as any] });
+		expect(handler.handle).toHaveBeenCalledTimes(3);
+
+		// Redelivery of msg2 (which succeeded) should be dropped as duplicate
+		await router.handleUpsert({ type: "notify", messages: [msg2 as any] });
+		expect(handler.handle).toHaveBeenCalledTimes(3);
 	});
 
 	it("isolates handler match predicate failure and proceeds to next handler", async () => {
