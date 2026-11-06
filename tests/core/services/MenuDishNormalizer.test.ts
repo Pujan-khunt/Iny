@@ -36,6 +36,33 @@ describe("MenuDishNormalizer", () => {
 	});
 
 	it.each([
+		["Motichoor Laddo", "Motichoor Ladoo"],
+		["LADDO", "Ladoo"],
+		["laddo", "Ladoo"],
+		["Besan Laddo (1pc)", "Besan Ladoo (1pc)"],
+	])("normalizes laddo alias in %s", (original, corrected) => {
+		const input = menuWith([original]);
+		const result = MenuDishNormalizer.normalize(input);
+		expect(result.menu.meals[0].items).toEqual([corrected]);
+		expect(result.corrections).toEqual([
+			{
+				mealDate: "2026-11-01",
+				mealSlot: "lunch",
+				itemIndex: 0,
+				originalItem: original,
+				correctedItem: corrected,
+				aliasId: "laddo-to-ladoo",
+			},
+		]);
+	});
+
+	it("removes duplicate items in the same mess meal case-insensitively", () => {
+		const input = menuWith(["Dal Makhani", "Jeera Rice", "dal makhani", "Roti", "JEERA RICE"]);
+		const result = MenuDishNormalizer.normalize(input);
+		expect(result.menu.meals[0].items).toEqual(["Dal Makhani", "Jeera Rice", "Roti"]);
+	});
+
+	it.each([
 		["ALOO PARATHA", "Aloo Paratha"],
 		["VEG TAWA MASALA (PANEER)", "Veg Tawa Masala (Paneer)"],
 		["VADA PAV ( 2PCS)", "Vada Pav ( 2pcs)"],
