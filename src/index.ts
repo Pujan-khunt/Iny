@@ -34,12 +34,14 @@ import { BaileysConnectionManager } from "./adapters/outbound/whatsapp/BaileysCo
 import { BaileysMessageSenderAdapter } from "./adapters/outbound/whatsapp/BaileysMessageSenderAdapter";
 import { DirectMessageInboundAdapter } from "./adapters/inbound/whatsapp/DirectMessageInboundAdapter";
 import { FoodAnnouncementInboundAdapter } from "./adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
+import { suppressLibsignalLogs } from "./adapters/outbound/whatsapp/suppressLibsignalLogs";
 import { WhatsAppMessageContentExtractor } from "./adapters/inbound/whatsapp/router/WhatsAppMessageContentExtractor";
 import { WhatsAppMessageNormalizer } from "./adapters/inbound/whatsapp/router/WhatsAppMessageNormalizer";
 import { WhatsAppMessageRouter } from "./adapters/inbound/whatsapp/router/WhatsAppMessageRouter";
 import { CatchAllLoggingHandler } from "./adapters/inbound/whatsapp/router/CatchAllLoggingHandler";
 import { DialogueTurnContextRetrievalAdapter } from "./adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter";
 const config = loadConfig();
+suppressLibsignalLogs();
 const logger = PinoLoggerAdapter.createFromConfig(config);
 const logMod = (module: string) => logger.child({ module });
 const registry = new InMemoryToolRegistry(logger);
@@ -47,6 +49,7 @@ const sqlClient = postgres(config.DATABASE_URL, {
 	max: config.DB_MAX_CONNECTIONS,
 	idle_timeout: 20,
 	connect_timeout: 10,
+	onnotice: () => {},
 });
 const db = drizzle(sqlClient, { schema: applicationSchema });
 const turns = new PostgresDialogueTurnRepository(db, logger),
