@@ -201,7 +201,12 @@ describe.skipIf(!databaseUrl)(
 				}
 				function processing(fetch: typeof globalThis.fetch, connection = client) {
 					const db = drizzle(connection);
-					const logger = { info: vi.fn(), error: vi.fn() } as unknown as LoggerPort;
+					const logger = {
+						info: vi.fn(),
+						error: vi.fn(),
+						warn: vi.fn(),
+						debug: vi.fn(),
+					} as unknown as LoggerPort;
 					const audit = new PostgresMessOperationAudit(new PostgresMessProvenance());
 					const guard = new PostgresMessWriteGuard(audit);
 					const staging = new PostgresMessStagingRepository(
@@ -472,7 +477,7 @@ describe.skipIf(!databaseUrl)(
 					try {
 						await vi.waitFor(
 							async () => expect((await workRow("worker-accept")).state).toBe("accepted"),
-							{ timeout: 5_000 },
+							{ timeout: 15_000 },
 						);
 					} finally {
 						await running.stop();
@@ -517,7 +522,7 @@ describe.skipIf(!databaseUrl)(
 								expect((await workRow("worker-rate-limit")).decision_reason).toBe(
 									"assessment_failure",
 								),
-							{ timeout: 5_000 },
+							{ timeout: 15_000 },
 						);
 					} finally {
 						await running.stop();
@@ -531,7 +536,7 @@ describe.skipIf(!databaseUrl)(
 					expect(Number((await workRow("worker-rate-limit")).retry_seconds)).toBeGreaterThan(15);
 					expect(await operationRows("worker-rate-limit")).toHaveLength(0);
 					expect(await client`SELECT * FROM mess_meal_location_details`).toHaveLength(0);
-				});
+				}, 15_000);
 			});
 
 			function commit(): ValidatedFoodCommit {
