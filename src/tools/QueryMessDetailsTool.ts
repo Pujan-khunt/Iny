@@ -95,10 +95,10 @@ export class QueryMessDetailsTool extends BaseTool<typeof queryMessDetailsSchema
 	): { targetDate: string; targetSlot?: MealSlot } {
 		if (args.mealSlot === "upcoming") {
 			const upcoming = determineNextUpcomingSlot(now);
-			return {
-				targetDate: args.mealDate ?? upcoming.mealDate,
-				targetSlot: upcoming.mealSlot,
-			};
+			const targetDate = args.mealDate ?? upcoming.mealDate;
+			const targetSlot =
+				!args.mealDate || args.mealDate === upcoming.mealDate ? upcoming.mealSlot : "breakfast";
+			return { targetDate, targetSlot };
 		}
 		if (args.mealSlot === "all") {
 			return {

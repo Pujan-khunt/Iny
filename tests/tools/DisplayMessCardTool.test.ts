@@ -509,6 +509,27 @@ describe("DisplayMessCardTool", () => {
 			);
 		});
 
+		it("resolves upcoming slot to breakfast when a future date is requested during afternoon/evening", async () => {
+			// 3:00 PM IST on 2026-10-08 -> today's upcoming slot is dinner
+			const afternoonIST = new Date("2026-10-08T09:30:00Z");
+			const tool = new DisplayMessCardTool(
+				mockMessRepo,
+				defaultMessCardPresenter,
+				() => afternoonIST,
+			);
+
+			await tool.execute({
+				mealDate: "2026-10-09",
+				vendor: "cheftalk_regular",
+			});
+
+			expect(mockMessRepo.getResolvedMeal).toHaveBeenCalledWith({
+				mealDate: "2026-10-09",
+				mealSlot: "breakfast",
+				vendor: "cheftalk_regular",
+			});
+		});
+
 		it("returns error when invalid mealDate format is provided", async () => {
 			const tool = new DisplayMessCardTool(mockMessRepo, defaultMessCardPresenter);
 			const result = await tool.execute({

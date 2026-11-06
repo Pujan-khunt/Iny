@@ -83,11 +83,7 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 		now: Date,
 	): Promise<ToolResult> {
 		const targetDate = date ?? getISTDateString(now);
-		const res = await this.messRepository.getResolvedMeal({
-			mealDate: targetDate,
-			vendor,
-			mealSlot: undefined,
-		});
+		const res = await this.messRepository.getResolvedMeal({ mealDate: targetDate, vendor });
 		if (res.meals.length === 0 || !res.meals.some((m) => m.vendor === vendor)) {
 			return { content: formatEmptyNotice(targetDate, vendor), isTerminal: true };
 		}
@@ -138,7 +134,10 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 	): { targetDate: string; targetSlot: MealSlot } {
 		if (args.mealSlot === "upcoming") {
 			const upcoming = determineNextUpcomingSlot(now);
-			return { targetDate: args.mealDate ?? upcoming.mealDate, targetSlot: upcoming.mealSlot };
+			const targetDate = args.mealDate ?? upcoming.mealDate;
+			const targetSlot =
+				!args.mealDate || args.mealDate === upcoming.mealDate ? upcoming.mealSlot : "breakfast";
+			return { targetDate, targetSlot };
 		}
 		return {
 			targetDate: args.mealDate ?? getISTDateString(now),

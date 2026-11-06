@@ -112,6 +112,24 @@ describe("QueryMessDetailsTool", () => {
 		});
 	});
 
+	it("resolves upcoming slot to breakfast when a future date is queried", async () => {
+		// 3:00 PM IST on 2026-10-08 -> active/upcoming slot today is dinner
+		const fixedNow = new Date("2026-10-08T09:30:00Z");
+		const tool = new QueryMessDetailsTool(mockMessRepo, () => fixedNow);
+
+		const result = await tool.execute({
+			mealDate: "2026-10-09",
+			mealSlot: "upcoming",
+		});
+
+		expect(result.isTerminal).toBe(false);
+		expect(mockMessRepo.getResolvedMeal).toHaveBeenCalledWith({
+			mealDate: "2026-10-09",
+			mealSlot: "breakfast",
+			vendor: undefined,
+		});
+	});
+
 	it("resolves caller userDefaultVendor when accessControl and userId are provided", async () => {
 		const mockAccess = {
 			authenticate: vi.fn(),
