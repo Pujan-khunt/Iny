@@ -1,6 +1,7 @@
 import { downloadMediaMessage, normalizeMessageContent, WAMessage } from "@whiskeysockets/baileys";
 import { LoggerPort } from "../../../../core/ports/LoggerPort";
-import { NormalizedWhatsAppMessage, WhatsAppContentType } from "./NormalizedWhatsAppMessage";
+import { WhatsAppContent, WhatsAppContentType } from "./NormalizedWhatsAppMessage";
+import { WhatsAppMessagePreviewFormatter } from "./WhatsAppMessagePreviewFormatter";
 
 type UnwrappedContent = NonNullable<ReturnType<typeof normalizeMessageContent>>;
 
@@ -14,6 +15,7 @@ export class WhatsAppMessageContentExtractor {
 	 *
 	 * @param logger - Port for logging diagnostic events.
 	 * @param defaultDownloadMediaFn - Function for downloading Baileys media attachments.
+	 * @param retryDelaysMs - Retry backoff sequence for downloading media buffers.
 	 */
 	constructor(
 		private readonly logger: LoggerPort,
@@ -24,36 +26,35 @@ export class WhatsAppMessageContentExtractor {
 	/**
 	 * Resolves normalized content payload metadata from a raw Baileys message.
 	 *
-	 * Unwraps container messages (e.g. view-once, ephemeral) and classifies
-	 * content into text, image, document, or unsupported payloads.
-	 *
 	 * @param raw - The incoming raw Baileys WAMessage stanza.
 	 * @returns The extracted content metadata describing type, text, and media details.
 	 */
-	extractContent(raw: WAMessage): NormalizedWhatsAppMessage["content"] {
+	extractContent(raw: WAMessage): WhatsAppContent {
 		const unwrapped = raw.message ? normalizeMessageContent(raw.message) : null;
 		if (!unwrapped) {
-			return { type: "unsupported", text: null, mimeType: null };
+			const { preview, rawKeys } = WhatsAppMessagePreviewFormatter.formatUnsupported(raw.message);
+			return { type: "unsupported", text: null, mimeType: null, preview, rawKeys };
 		}
 
 		const media = this.resolveMedia(unwrapped);
-		if (media) {
-			return media;
-		}
+		if (media) return media;
 
 		const text = unwrapped.conversation ?? unwrapped.extendedTextMessage?.text;
 		if (text !== undefined && text !== null) {
-			return { type: "text", text, mimeType: null };
+			return {
+				type: "text",
+				text,
+				mimeType: null,
+				preview: WhatsAppMessagePreviewFormatter.formatText(text),
+			};
 		}
 
-		return { type: "unsupported", text: null, mimeType: null };
+		const { preview, rawKeys } = WhatsAppMessagePreviewFormatter.formatUnsupported(raw.message);
+		return { type: "unsupported", text: null, mimeType: null, preview, rawKeys };
 	}
 
 	/**
 	 * Builds a lazy media download closure that fetches binary payloads on demand.
-	 *
-	 * Defers network and memory consumption until a downstream handler explicitly
-	 * invokes downloadMedia. Non-media messages resolve immediately to null.
 	 *
 	 * @param raw - The incoming raw Baileys WAMessage stanza.
 	 * @param contentType - The classified content type of the message.
@@ -92,25 +93,32 @@ export class WhatsAppMessageContentExtractor {
 
 	/**
 	 * Inspects unwrapped message content for supported media attachments (image or document).
-	 *
-	 * @param unwrapped - The unwrapped Baileys IMessage structure.
-	 * @returns Extracted media content metadata, or null if neither image nor document is present.
 	 */
-	private resolveMedia(unwrapped: UnwrappedContent): NormalizedWhatsAppMessage["content"] | null {
+	private resolveMedia(unwrapped: UnwrappedContent): WhatsAppContent | null {
 		if (unwrapped.imageMessage) {
+			const mimeType = unwrapped.imageMessage.mimetype ?? "image/jpeg";
+			const caption = unwrapped.imageMessage.caption ?? null;
 			return {
 				type: "image",
-				text: unwrapped.imageMessage.caption ?? null,
-				mimeType: unwrapped.imageMessage.mimetype ?? "image/jpeg",
+				text: caption,
+				mimeType,
+				preview: WhatsAppMessagePreviewFormatter.formatImage(caption, mimeType),
 			};
 		}
 
 		if (unwrapped.documentMessage) {
 			const doc = unwrapped.documentMessage;
+			const mimeType = doc.mimetype ?? "application/pdf";
+			const text = doc.caption ?? doc.fileName ?? null;
 			return {
 				type: "document",
-				text: doc.caption ?? doc.fileName ?? null,
-				mimeType: doc.mimetype ?? "application/pdf",
+				text,
+				mimeType,
+				preview: WhatsAppMessagePreviewFormatter.formatDocument(
+					doc.caption,
+					doc.fileName,
+					mimeType,
+				),
 			};
 		}
 

@@ -233,11 +233,12 @@ describe("FoodAnnouncementInboundAdapter", () => {
 			expect(adapter.matches(otherGroupMsg)).toBe(false);
 		});
 
-		it("rejects unsupported message type", () => {
+		it("rejects unsupported message type and logs diagnostic reason with rawKeys", () => {
+			const mockLogger = createMockLogger();
 			const adapter = new FoodAnnouncementInboundAdapter({
 				targetGroupJid,
 				useCase: createMockUseCase() as any,
-				logger: createMockLogger() as any,
+				logger: mockLogger as any,
 			});
 
 			const unsupportedMsg: NormalizedWhatsAppMessage = {
@@ -251,11 +252,26 @@ describe("FoodAnnouncementInboundAdapter", () => {
 				timestamp: Date.now(),
 				originalTimestamp: 1793491200000,
 				upsertType: "notify",
-				content: { type: "unsupported", text: null, mimeType: null },
+				content: {
+					type: "unsupported",
+					text: null,
+					mimeType: null,
+					preview: "[unsupported: groupMentionedMessage]",
+					rawKeys: ["groupMentionedMessage"],
+				},
 				downloadMedia: vi.fn(),
 			};
 
 			expect(adapter.matches(unsupportedMsg)).toBe(false);
+			expect(mockLogger.debug).toHaveBeenCalledWith(
+				"Food announcement handler skipped target group message",
+				{
+					messageId: "food-unsupported-1",
+					reason: "unsupported_content_type",
+					contentPreview: "[unsupported: groupMentionedMessage]",
+					rawKeys: ["groupMentionedMessage"],
+				},
+			);
 		});
 	});
 

@@ -37,9 +37,11 @@ export class DirectMessageInboundAdapter implements WhatsAppMessageHandler {
 		const user = await this.accessControl.authenticate(message.senderJid, message.companionLidJid);
 
 		if (!user) {
-			this.logger.debug("Ignored message from unauthorized or inactive sender", {
+			this.logger.info("Direct message ignored by access control", {
+				messageId: message.messageId,
 				senderJid: message.senderJid,
 				companionLidJid: message.companionLidJid,
+				contentPreview: message.content.preview,
 			});
 			return;
 		}

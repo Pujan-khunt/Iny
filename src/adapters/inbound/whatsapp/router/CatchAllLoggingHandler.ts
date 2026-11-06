@@ -7,7 +7,7 @@ import {
 
 /**
  * Terminal fallback handler registered at the end of the priority chain.
- * Matches any unhandled incoming message and logs structured debug metadata.
+ * Matches any unhandled incoming message and logs structured info metadata.
  */
 export class CatchAllLoggingHandler implements WhatsAppMessageHandler {
 	readonly name = "catch-all-logging";
@@ -20,12 +20,17 @@ export class CatchAllLoggingHandler implements WhatsAppMessageHandler {
 	}
 
 	async handle(message: NormalizedWhatsAppMessage): Promise<void> {
-		this.logger.debug("Unhandled incoming message ignored by catch-all fallback", {
+		const rawKeys = message.content.type === "unsupported" ? message.content.rawKeys : undefined;
+		this.logger.info("Unhandled incoming message ignored by catch-all fallback", {
 			messageId: message.messageId,
 			chatJid: message.chatJid,
 			senderJid: message.senderJid,
 			chatType: message.chatType,
 			contentType: message.content.type,
+			contentPreview: message.content.preview,
+			rawKeys,
+			fromMe: message.fromMe,
+			upsertType: message.upsertType,
 		});
 	}
 }

@@ -133,12 +133,13 @@ describe("WhatsAppMessageRouter", () => {
 
 		expect(strictHandler.matches).toHaveBeenCalledTimes(1);
 		expect(strictHandler.handle).not.toHaveBeenCalled();
-		expect(mockLogger.debug).toHaveBeenCalledWith(
+		expect(mockLogger.info).toHaveBeenCalledWith(
 			"Unhandled incoming message ignored by catch-all fallback",
 			expect.objectContaining({
 				messageId: "m4",
 				chatType: "direct",
 				contentType: "text",
+				contentPreview: "unhandled",
 			}),
 		);
 	});
@@ -357,5 +358,33 @@ describe("WhatsAppMessageRouter", () => {
 
 		await router.handleUpsert({ type: "notify", messages: [raw1 as any, raw2 as any] });
 		expect(handler.handle).toHaveBeenCalledTimes(2);
+	});
+
+	it("enriches router info log with contentType and contentPreview", async () => {
+		const mockLogger = createMockLogger();
+		const normalizer = createNormalizer(mockLogger);
+		const router = new WhatsAppMessageRouter(normalizer, mockLogger);
+
+		const handler: WhatsAppMessageHandler = {
+			name: "food-announcement",
+			matches: vi.fn().mockReturnValue(true),
+			handle: vi.fn().mockResolvedValue(undefined),
+		};
+		router.register(handler);
+
+		const raw = {
+			key: { id: "announcement-log-id", remoteJid: "120363413801802358@g.us", fromMe: false },
+			message: { conversation: "Tomorrow lunch menu" },
+		};
+
+		await router.handleUpsert({ type: "notify", messages: [raw as any] });
+
+		expect(mockLogger.info).toHaveBeenCalledWith("Routed incoming message to handler", {
+			messageId: "announcement-log-id",
+			handler: "food-announcement",
+			chatType: "group",
+			contentType: "text",
+			contentPreview: "Tomorrow lunch menu",
+		});
 	});
 });

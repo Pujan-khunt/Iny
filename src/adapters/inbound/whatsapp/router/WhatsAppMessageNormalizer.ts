@@ -25,13 +25,7 @@ export class WhatsAppMessageNormalizer {
 		private readonly contentExtractor: WhatsAppMessageContentExtractor,
 	) {}
 
-	/**
-	 * Normalizes a raw Baileys message into a clean, uniform domain representation.
-	 *
-	 * @param raw - The incoming raw Baileys WAMessage stanza.
-	 * @param upsertType - Actual delivery mode from the transport event.
-	 * @returns The normalized message, or null if key or chat metadata is missing or invalid.
-	 */
+	/** Normalizes a raw Baileys message into a clean, uniform domain representation. */
 	normalize(raw: WAMessage, upsertType: WhatsAppUpsertType): NormalizedWhatsAppMessage | null {
 		if (!raw?.key?.id || !raw.key.remoteJid) {
 			this.logger.debug("Ignored malformed raw message missing key or id", {
@@ -66,6 +60,9 @@ export class WhatsAppMessageNormalizer {
 			messageId: normalized.messageId,
 			chatJid: normalized.chatJid,
 			chatType: normalized.chatType,
+			contentType: normalized.content.type,
+			senderJid: normalized.senderJid,
+			contentPreview: normalized.content.preview,
 		});
 
 		return normalized;

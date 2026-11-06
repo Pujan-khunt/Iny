@@ -237,7 +237,7 @@ describe("DirectMessageInboundAdapter", () => {
 			);
 		});
 
-		it("logs debug and returns early when user is unauthorized or inactive", async () => {
+		it("logs info and returns early when user is unauthorized or inactive", async () => {
 			const mockUseCase = createMockUseCase();
 			const mockAccessControl = createMockAccessControl();
 			mockAccessControl.authenticate.mockResolvedValue(null);
@@ -259,7 +259,12 @@ describe("DirectMessageInboundAdapter", () => {
 				timestamp: Date.now(),
 				originalTimestamp: null,
 				upsertType: "notify",
-				content: { type: "text", text: "Unauthorized message", mimeType: null },
+				content: {
+					type: "text",
+					text: "Unauthorized message",
+					mimeType: null,
+					preview: "Unauthorized message",
+				},
 				downloadMedia: vi.fn(),
 			};
 
@@ -270,11 +275,13 @@ describe("DirectMessageInboundAdapter", () => {
 				null,
 			);
 			expect(mockUseCase.execute).not.toHaveBeenCalled();
-			expect(mockLogger.debug).toHaveBeenCalledWith(
-				"Ignored message from unauthorized or inactive sender",
+			expect(mockLogger.info).toHaveBeenCalledWith(
+				"Direct message ignored by access control",
 				expect.objectContaining({
+					messageId: "dm-unauth-1",
 					senderJid: "919999999999@s.whatsapp.net",
 					companionLidJid: null,
+					contentPreview: "Unauthorized message",
 				}),
 			);
 		});

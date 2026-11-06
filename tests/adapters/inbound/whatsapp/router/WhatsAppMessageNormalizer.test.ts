@@ -340,6 +340,10 @@ describe("WhatsAppMessageNormalizer", () => {
 		expect(result?.content.type).toBe("unsupported");
 		expect(result?.content.text).toBeNull();
 		expect(result?.content.mimeType).toBeNull();
+		expect(result?.content.preview).toBe("[unsupported: audioMessage]");
+		if (result?.content.type === "unsupported") {
+			expect(result.content.rawKeys).toEqual(["audioMessage"]);
+		}
 	});
 
 	it("satisfies WhatsAppMessageHandler contract interface", async () => {

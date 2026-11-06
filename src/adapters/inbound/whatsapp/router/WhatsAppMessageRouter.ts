@@ -120,6 +120,8 @@ export class WhatsAppMessageRouter {
 			messageId: normalized.messageId,
 			handler: handler.name,
 			chatType: normalized.chatType,
+			contentType: normalized.content.type,
+			contentPreview: normalized.content.preview,
 		});
 
 		const startTime = Date.now();

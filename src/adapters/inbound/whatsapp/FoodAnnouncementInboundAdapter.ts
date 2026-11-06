@@ -40,13 +40,30 @@ export class FoodAnnouncementInboundAdapter implements WhatsAppMessageHandler {
 
 	/** Accepts non-bot supported content exclusively from the configured group. */
 	matches(message: NormalizedWhatsAppMessage): boolean {
-		if (message.fromMe || message.chatType !== "group" || message.chatJid !== this.targetGroupJid) {
+		if (message.chatJid !== this.targetGroupJid) return false;
+		if (message.chatType !== "group") return false;
+
+		const reason = this.resolveFilterReason(message);
+		if (reason) {
+			const rawKeys = message.content.type === "unsupported" ? message.content.rawKeys : undefined;
+			this.logger.debug("Food announcement handler skipped target group message", {
+				messageId: message.messageId,
+				reason,
+				contentPreview: message.content.preview,
+				rawKeys,
+			});
 			return false;
 		}
+		return true;
+	}
+
+	private resolveFilterReason(message: NormalizedWhatsAppMessage): string | null {
+		if (message.fromMe) return "authored_by_bot";
+		if (message.content.type === "unsupported") return "unsupported_content_type";
 		if (message.content.type === "text") {
-			return Boolean(message.content.text && message.content.text.trim().length > 0);
+			if (!message.content.text || message.content.text.trim().length === 0) return "empty_text";
 		}
-		return message.content.type === "image" || message.content.type === "document";
+		return null;
 	}
 
 	/** Downloads matched media lazily and captures source provenance; failures reject with a phase. */
