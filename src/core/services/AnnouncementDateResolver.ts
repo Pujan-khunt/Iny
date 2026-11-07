@@ -22,16 +22,18 @@ function parseDateParts(
 	return { day: n1, month: n2 };
 }
 
+function tryShiftISODate(sourceDate: string, offset: number): string | null {
+	try {
+		return shiftISODate(sourceDate, offset);
+	} catch (error) {
+		if (error instanceof RangeError) return null;
+		throw error;
+	}
+}
+
 function resolveToken(token: string, sourceDate: string): string | null {
 	const offset = RELATIVE_OFFSETS[token.toLowerCase()];
-	if (offset !== undefined) {
-		try {
-			return shiftISODate(sourceDate, offset);
-		} catch (error) {
-			if (error instanceof RangeError) return null;
-			throw error;
-		}
-	}
+	if (offset !== undefined) return tryShiftISODate(sourceDate, offset);
 	if (isValidISODate(token)) return token;
 	const parts = /^(\d{1,2})([/.,-])(\d{1,2})\2(\d{2}|\d{4})$/.exec(token);
 	if (!parts) return null;

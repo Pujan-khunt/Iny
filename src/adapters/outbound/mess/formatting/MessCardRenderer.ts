@@ -270,6 +270,32 @@ export function renderMultiVendorSlotDigest(
 	return sections.join("\n\n");
 }
 
+function buildVendorHeaderBlock(info: ResolvedMealInfo, vendor: Vendor, header: string): string {
+	const activeUpdates = renderActiveUpdatesBanner(
+		info.mealChanges.filter((c) => c.targetVendor === vendor),
+	);
+	const timingExt = renderTimingExtensionsSection(
+		info.timingExtensions.filter((e) => e.targetVendor === vendor || e.targetVendor === null),
+	);
+	const banners = [activeUpdates, timingExt].filter(Boolean);
+	return banners.length > 0 ? `${header}\n${banners.join("\n")}` : header;
+}
+
+function renderFullDayVendorSlots(info: ResolvedMealInfo, vendor: Vendor, now: Date): string[] {
+	const slotOrder: MealSlot[] = ["breakfast", "lunch", "dinner"];
+	return slotOrder.map((slot) => {
+		const meal = info.meals.find((m) => m.mealSlot === slot && m.vendor === vendor);
+		const slotEnded = isMealEnded(info.mealDate, slot, now);
+		const endedTag = slotEnded ? " *(Ended):*" : ":*";
+		const label = `${SLOT_EMOJIS[slot]} *${SLOT_DISPLAY_NAMES[slot]}${slotEnded ? "*" : ""}${endedTag}`;
+		const items =
+			meal && meal.items.length > 0
+				? meal.items.map((i) => `• ${sanitizeWhatsAppText(i)}`).join("\n")
+				: "• Not available";
+		return `${label}\n${items}`;
+	});
+}
+
 /**
  * Quadrant 2: Single-Vendor Slot Detail.
  */
@@ -283,35 +309,16 @@ export function renderSingleVendorSlotDetail(
 	const slotName = info.mealSlot ? (SLOT_DISPLAY_NAMES[info.mealSlot] ?? "Meal") : "Meal";
 	const vendorName = VENDOR_DISPLAY_NAMES[vendor] ?? vendor;
 	const header = formatCardHeader(`${vendorName} ${slotName}`, info.mealDate, hasEnded, now);
-
-	const activeUpdates = renderActiveUpdatesBanner(
-		info.mealChanges.filter((c) => c.targetVendor === vendor),
-	);
-	const timingExt = renderTimingExtensionsSection(
-		info.timingExtensions.filter((e) => e.targetVendor === vendor || e.targetVendor === null),
-	);
-
-	let headerBlock = header;
-	const banners: string[] = [];
-	if (activeUpdates) banners.push(activeUpdates);
-	if (timingExt) banners.push(timingExt);
-	if (banners.length > 0) {
-		headerBlock = `${header}\n${banners.join("\n")}`;
-	}
-
-	const sections: string[] = [headerBlock];
+	const sections: string[] = [buildVendorHeaderBlock(info, vendor, header)];
 
 	const meal = info.meals.find((m) => m.vendor === vendor);
 	if (meal && meal.items.length > 0) {
-		const itemsLines = meal.items.map((i) => `• ${sanitizeWhatsAppText(i)}`);
-		sections.push(itemsLines.join("\n"));
+		sections.push(meal.items.map((i) => `• ${sanitizeWhatsAppText(i)}`).join("\n"));
 	}
 
 	if (info.mealSlot === "lunch" && info.locationDetail) {
 		const loc = renderLocationSection(info.locationDetail, false);
-		if (loc) {
-			sections.push(loc);
-		}
+		if (loc) sections.push(loc);
 	}
 
 	if (userDefaultVendor && userDefaultVendor !== vendor) {
@@ -332,45 +339,14 @@ export function renderSingleVendorFullDayDigest(
 ): string {
 	const vendorName = VENDOR_DISPLAY_NAMES[vendor] ?? vendor;
 	const header = formatCardHeader(`${vendorName} Full Day Menu`, info.mealDate, false, now);
-
-	const activeUpdates = renderActiveUpdatesBanner(
-		info.mealChanges.filter((c) => c.targetVendor === vendor),
-	);
-	const timingExt = renderTimingExtensionsSection(
-		info.timingExtensions.filter((e) => e.targetVendor === vendor || e.targetVendor === null),
-	);
-
-	let headerBlock = header;
-	const banners: string[] = [];
-	if (activeUpdates) banners.push(activeUpdates);
-	if (timingExt) banners.push(timingExt);
-	if (banners.length > 0) {
-		headerBlock = `${header}\n${banners.join("\n")}`;
-	}
-
-	const sections: string[] = [headerBlock];
-
-	const slotOrder: MealSlot[] = ["breakfast", "lunch", "dinner"];
-
-	for (const slot of slotOrder) {
-		const meal = info.meals.find((m) => m.mealSlot === slot && m.vendor === vendor);
-		const slotEnded = isMealEnded(info.mealDate, slot, now);
-		const endedTag = slotEnded ? " *(Ended):*" : ":*";
-		const label = `${SLOT_EMOJIS[slot]} *${SLOT_DISPLAY_NAMES[slot]}${slotEnded ? "*" : ""}${endedTag}`;
-
-		if (meal && meal.items.length > 0) {
-			const items = meal.items.map((i) => `• ${sanitizeWhatsAppText(i)}`).join("\n");
-			sections.push(`${label}\n${items}`);
-		} else {
-			sections.push(`${label}\n• Not available`);
-		}
-	}
+	const sections: string[] = [
+		buildVendorHeaderBlock(info, vendor, header),
+		...renderFullDayVendorSlots(info, vendor, now),
+	];
 
 	if (info.locationDetail) {
 		const loc = renderLocationSection(info.locationDetail, true);
-		if (loc) {
-			sections.push(loc);
-		}
+		if (loc) sections.push(loc);
 	}
 
 	return sections.join("\n\n");

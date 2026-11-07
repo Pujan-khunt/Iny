@@ -412,6 +412,98 @@ describe.skipIf(!databaseUrl)(
 				expect(options).toMatchObject({ timeout: 180_000, maxRetries: 0 });
 			}
 		});
+		it("accepts multi-day date range location announcements such as the Diwali notice (7,16)", async () => {
+			const diwaliText =
+				"📢 Lunch will be arranged in the hostel from *6th November 2026 to 12th November 2026* on account of the Diwali holidays.\n\nWishing everyone a very *Happy and Prosperous Diwali!* 🪔✨\n\nHave a wonderful and safe festive break! 🎉";
+			const dates = [
+				"2026-11-06",
+				"2026-11-07",
+				"2026-11-08",
+				"2026-11-09",
+				"2026-11-10",
+				"2026-11-11",
+				"2026-11-12",
+			];
+			const rawDate = "6th November 2026 to 12th November 2026";
+			const rawVenue = "in the hostel";
+			const rawSlot = "Lunch";
+			const clause =
+				"📢 Lunch will be arranged in the hostel from *6th November 2026 to 12th November 2026* on account of the Diwali holidays.";
+			const extraction: Extraction = {
+				kind: "candidate",
+				candidate: {
+					kind: "operational_announcement",
+					announcement: {
+						locations: dates.map((mealDate) => ({
+							mealDate,
+							mealSlot: "lunch",
+							hostelBatches: ["ALL_BATCHES"],
+							collegeBatches: [],
+						})),
+						timings: [],
+						changes: [],
+						swaps: [],
+					},
+				},
+				evidence: dates.flatMap((_, i) => [
+					{
+						fieldPath: `/announcement/locations/${i}/mealDate`,
+						rawValue: rawDate,
+						clause,
+						location: {
+							kind: "text",
+							start: diwaliText.indexOf(rawDate),
+							end: diwaliText.indexOf(rawDate) + rawDate.length,
+						},
+					},
+					{
+						fieldPath: `/announcement/locations/${i}/mealSlot`,
+						rawValue: rawSlot,
+						clause,
+						location: {
+							kind: "text",
+							start: diwaliText.indexOf(rawSlot),
+							end: diwaliText.indexOf(rawSlot) + rawSlot.length,
+						},
+					},
+					{
+						fieldPath: `/announcement/locations/${i}/hostelBatches/0`,
+						rawValue: rawVenue,
+						clause,
+						location: {
+							kind: "text",
+							start: diwaliText.indexOf(rawVenue),
+							end: diwaliText.indexOf(rawVenue) + rawVenue.length,
+						},
+					},
+				]),
+			};
+			const f = runtime([extraction, verified]);
+			await f.deliver(
+				message("diwali-announcement", {
+					originalTimestamp: new Date("2026-11-05T10:00:00Z").getTime(),
+					content: { type: "text", text: diwaliText, mimeType: null },
+				}),
+			);
+			const outcome = await f.processor.execute(new AbortController().signal);
+			expect(outcome).toEqual({ outcome: "accepted" });
+
+			const locationRows =
+				await sql`SELECT meal_date, meal_slot, hostel_batches, college_batches FROM mess_meal_location_details ORDER BY meal_date ASC`;
+			expect(locationRows).toHaveLength(7);
+			expect(locationRows[0]).toMatchObject({
+				meal_date: "2026-11-06",
+				meal_slot: "lunch",
+				hostel_batches: ["ALL_BATCHES"],
+				college_batches: [],
+			});
+			expect(locationRows[6]).toMatchObject({
+				meal_date: "2026-11-12",
+				meal_slot: "lunch",
+				hostel_batches: ["ALL_BATCHES"],
+				college_batches: [],
+			});
+		});
 		it("rejects the identical text sent on November 1 IST with zero rows (8)", async () => {
 			const f = runtime([locationExtraction(), verified]);
 			await f.deliver(

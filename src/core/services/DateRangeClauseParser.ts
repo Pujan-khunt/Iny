@@ -1,5 +1,5 @@
 import { extractWrittenMonthDates } from "./WrittenMonthDateParser";
-import { isValidISODate, shiftISODate } from "../utils/Temporal";
+import { getISTDateString, isValidISODate, shiftISODate } from "../utils/Temporal";
 
 const RELATIVE_OFFSETS: Readonly<Record<string, number>> = {
 	today: 0,
@@ -40,7 +40,7 @@ export function validateDateRangeClause(
 	sourceCreatedAt: Date,
 ): boolean {
 	if (!/\b(?:from|between|to|till|until|-)\b/i.test(clause)) return false;
-	const sourceIso = sourceCreatedAt.toISOString().slice(0, 10);
+	const sourceIso = getISTDateString(sourceCreatedAt);
 	const { dates: writtenDates, remaining } = extractWrittenMonthDates(clause);
 	const tokens =
 		remaining.match(/\d+(?:\s*[/.,-]\s*\d+)+|\b(?:today|yesterday|tomorrow|tommorow|tmrw)\b/gi) ??

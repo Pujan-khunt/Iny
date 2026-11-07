@@ -920,3 +920,78 @@ it("does not confuse a Jain dish label with the regular event's named vendor", (
 			.ok,
 	).toBe(true);
 });
+
+it("accepts multi-day date range location expansion for holiday announcements", () => {
+	const diwaliBody =
+		"📢 Lunch will be arranged in the hostel from *6th November 2026 to 12th November 2026* on account of the Diwali holidays.\n\nWishing everyone a very *Happy and Prosperous Diwali!* 🪔✨\n\nHave a wonderful and safe festive break! 🎉";
+	const dates = [
+		"2026-11-06",
+		"2026-11-07",
+		"2026-11-08",
+		"2026-11-09",
+		"2026-11-10",
+		"2026-11-11",
+		"2026-11-12",
+	];
+	const locations = dates.map((mealDate) => ({
+		mealDate,
+		mealSlot: "lunch" as const,
+		hostelBatches: ["ALL_BATCHES"],
+		collegeBatches: [],
+	}));
+	const candidate: Candidate = {
+		kind: "operational_announcement",
+		announcement: {
+			locations,
+			timings: [],
+			changes: [],
+			swaps: [],
+		},
+	};
+	const rawDate = "6th November 2026 to 12th November 2026";
+	const rawVenue = "in the hostel";
+	const rawSlot = "Lunch";
+	const clause =
+		"📢 Lunch will be arranged in the hostel from *6th November 2026 to 12th November 2026* on account of the Diwali holidays.";
+	const evidence: SourceEvidence[] = dates.flatMap((_, i) => [
+		{
+			fieldPath: `/announcement/locations/${i}/mealDate`,
+			rawValue: rawDate,
+			clause,
+			location: {
+				kind: "text",
+				start: diwaliBody.indexOf(rawDate),
+				end: diwaliBody.indexOf(rawDate) + rawDate.length,
+			},
+		},
+		{
+			fieldPath: `/announcement/locations/${i}/mealSlot`,
+			rawValue: rawSlot,
+			clause,
+			location: {
+				kind: "text",
+				start: diwaliBody.indexOf(rawSlot),
+				end: diwaliBody.indexOf(rawSlot) + rawSlot.length,
+			},
+		},
+		{
+			fieldPath: `/announcement/locations/${i}/hostelBatches/0`,
+			rawValue: rawVenue,
+			clause,
+			location: {
+				kind: "text",
+				start: diwaliBody.indexOf(rawVenue),
+				end: diwaliBody.indexOf(rawVenue) + rawVenue.length,
+			},
+		},
+	]);
+	const res = OperationalAnnouncementValidator.validate(
+		candidate,
+		{ ...source, textBody: diwaliBody, originalCreatedAt: new Date("2026-11-05T10:00:00Z") },
+		evidence,
+	);
+	expect(res.ok).toBe(true);
+	if (res.ok) {
+		expect(res.value.locations).toHaveLength(7);
+	}
+});

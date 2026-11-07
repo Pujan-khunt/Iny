@@ -4,7 +4,6 @@ import { ToolExecutionContext, ToolResult } from "../core/ports/ToolRegistryPort
 import { MessRepositoryPort } from "../core/ports/MessRepositoryPort";
 import { MessCardPresenterPort } from "../core/ports/MessCardPresenterPort";
 import { AccessControlPort } from "../core/ports/AccessControlPort";
-import { VENDOR_DISPLAY_NAMES } from "../adapters/outbound/mess/formatting/MessCardRenderer";
 import {
 	MealSlot,
 	Vendor,
@@ -12,6 +11,12 @@ import {
 	getISTDateString,
 	isMealEnded,
 } from "../core/entities/MessMeal";
+
+const VENDOR_NAMES: Record<Vendor, string> = {
+	cheftalk_regular: "Cheftalk",
+	cheftalk_jain: "Cheftalk Jain",
+	tcb: "TCB",
+};
 
 const displayMessCardSchema = z.object({
 	mealDate: z
@@ -34,7 +39,7 @@ const displayMessCardSchema = z.object({
 type DisplayMessCardInput = z.infer<typeof displayMessCardSchema>;
 
 const formatEmptyNotice = (date: string, vendor?: Vendor, slot?: MealSlot): string =>
-	`ℹ️ No menu data is currently loaded for ${vendor ? VENDOR_DISPLAY_NAMES[vendor] : "the mess"}${slot ? ` ${slot}` : ""} on ${date}.`;
+	`ℹ️ No menu data is currently loaded for ${vendor ? VENDOR_NAMES[vendor] : "the mess"}${slot ? ` ${slot}` : ""} on ${date}.`;
 
 /**
  * Terminal presentation tool serving mess meals with automatic cutoff and upcoming meal rollover.
@@ -42,12 +47,7 @@ const formatEmptyNotice = (date: string, vendor?: Vendor, slot?: MealSlot): stri
 export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> {
 	readonly name = "display_mess_card";
 	readonly description =
-		"Renders formatted WhatsApp mess meal cards: " +
-		'(1) Slot query or all vendors (e.g. "what\'s for lunch", "all vendor lunch") -> pass mealSlot and omit vendor to render all caterers in one card; ' +
-		'(2) Single-vendor slot (e.g. "cheftalk lunch") -> pass mealSlot and vendor; ' +
-		'(3) Generic menu or single-vendor menu (e.g. "menu", "food", "cheftalk menu") -> pass mealSlot: "upcoming" (default) for automatic cutoff and upcoming meal rollover; ' +
-		'(4) Full day menu (e.g. "cheftalk full day menu", "all slots for cheftalk") -> pass mealSlot: "all" and vendor. ' +
-		"Output is terminal. Call at most once per turn; never call speculatively in parallel.";
+		'Renders formatted WhatsApp mess meal cards: (1) Slot query or all vendors (e.g. "what\'s for lunch", "all vendor lunch") -> pass mealSlot and omit vendor to render all caterers in one card; (2) Single-vendor slot (e.g. "cheftalk lunch") -> pass mealSlot and vendor; (3) Generic menu or single-vendor menu (e.g. "menu", "food", "cheftalk menu") -> pass mealSlot: "upcoming" (default) for automatic cutoff and upcoming meal rollover; (4) Full day menu (e.g. "cheftalk full day menu", "all slots for cheftalk") -> pass mealSlot: "all" and vendor. Output is terminal. Call at most once per turn; never call speculatively in parallel.';
 	readonly schema = displayMessCardSchema as typeof displayMessCardSchema & Record<string, unknown>;
 
 	private readonly accessControl?: AccessControlPort;
@@ -132,16 +132,16 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 		args: DisplayMessCardInput,
 		now: Date,
 	): { targetDate: string; targetSlot: MealSlot } {
-		if (args.mealSlot === "upcoming") {
-			const upcoming = determineNextUpcomingSlot(now);
-			const targetDate = args.mealDate ?? upcoming.mealDate;
-			const targetSlot =
-				!args.mealDate || args.mealDate === upcoming.mealDate ? upcoming.mealSlot : "breakfast";
-			return { targetDate, targetSlot };
+		if (args.mealSlot !== "upcoming") {
+			return {
+				targetDate: args.mealDate ?? getISTDateString(now),
+				targetSlot: args.mealSlot as MealSlot,
+			};
 		}
-		return {
-			targetDate: args.mealDate ?? getISTDateString(now),
-			targetSlot: args.mealSlot as MealSlot,
-		};
+		const upcoming = determineNextUpcomingSlot(now);
+		const targetDate = args.mealDate ?? upcoming.mealDate;
+		const targetSlot =
+			!args.mealDate || args.mealDate === upcoming.mealDate ? upcoming.mealSlot : "breakfast";
+		return { targetDate, targetSlot };
 	}
 }

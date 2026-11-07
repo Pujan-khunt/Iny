@@ -23,13 +23,18 @@ export class TriageWeeklyMenuController {
 				this.io.print("\n⏳ Extracting weekly menu via DeepSeek vision engine...");
 				extraction = await this.extract(message);
 			} catch (error: unknown) {
-				this.io.print(this.view.renderExtractionErrorCard(error, message.id));
-				if ((await this.io.prompt("Choice [r/c]: ")).toLowerCase() === "r") continue;
+				if (await this.shouldRetry(error, message.id)) continue;
 				return;
 			}
 			await this.review.run(message, extraction);
 			return;
 		}
+	}
+
+	private async shouldRetry(error: unknown, messageId: string): Promise<boolean> {
+		this.io.print(this.view.renderExtractionErrorCard(error, messageId));
+		const choice = await this.io.prompt("Choice [r/c]: ");
+		return choice.toLowerCase() === "r";
 	}
 	private async extract(message: StagedAnnouncementMessage) {
 		if (!message.mediaBuffer)

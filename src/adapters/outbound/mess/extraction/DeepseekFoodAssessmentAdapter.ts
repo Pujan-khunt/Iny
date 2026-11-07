@@ -63,6 +63,7 @@ export class DeepseekFoodAssessmentAdapter implements FoodAssessmentPort {
 		audit.rawExtraction = await this.infer(source, signal, audit, imageUrl);
 		const normalized = normalizeFoodExtractionEnvelope(
 			JSON.parse(cleanJsonResponse(audit.rawExtraction)),
+			source.textBody,
 		);
 		const extracted = schemas.FoodExtractionSchema.parse(normalized);
 		this.logger.info("Pass 1: Extraction completed", {

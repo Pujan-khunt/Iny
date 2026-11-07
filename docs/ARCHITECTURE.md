@@ -24,8 +24,13 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/core/services/AgentLoop.ts`: Pure domain service executing the ReAct (Reasoning + Acting) loop. Manages concurrent tool execution via `Promise.all`, circuit breaker forced synthesis, malformed tool error injection, temporal IST grounding injection, and terminal tool early termination.
   - `src/core/services/WeeklyMenuValidator.ts`: Pure domain validator enforcing weekly menu structural completeness (21 distinct meals, all 4 meal slots per date, and valid vendors).
   - `src/core/services/OperationalAnnouncementValidator.ts`: Pure domain validator for operational dish changes, timing extensions, location details, and meal swaps.
+  - `src/core/services/FoodCandidateValidator.ts`: Pure domain validator dispatching candidate checks to `WeeklyMenuValidator` or `OperationalAnnouncementValidator`.
   - `src/core/services/AnnouncementEvidenceValidator.ts`: Verifies model extraction evidence against raw source text substrings.
+  - `src/core/services/BatchVenueEvidence.ts`: Validates venue batch evidence (`hostelBatches`, `collegeBatches`) against source text clauses.
+  - `src/core/services/AnnouncementDateEvidence.ts`: Validates date evidence spans against source text.
   - `src/core/services/AnnouncementDateResolver.ts`: Resolves relative and absolute meal dates with IST timezone grounding.
+  - `src/core/services/DateRangeClauseParser.ts`: Validates multi-day date range clauses (e.g., "from 6th November 2026 to 12th November 2026") with IST timezone grounding.
+  - `src/core/services/WrittenMonthDateParser.ts`: Parses natural-language written dates containing English month names.
   - `src/core/services/MealSwapResolver.ts`: Resolves source and target meal prerequisites for meal swaps before committal.
   - `src/core/services/MenuDishNormalizer.ts`: Applies approved dish spelling aliases (`Frycrums` -> `Fryums`, `Laddo` -> `Ladoo`), initial-caps all-caps entries, and deduplicates identical dish items per meal while preserving original OCR strings for audit provenance.
   - `src/core/services/FoodProcessingFailure.ts`: Categorizes thrown errors and abort signals into domain failure classifications and builds structured rejection diagnostics.
@@ -48,6 +53,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/tools/CalculatorTool.ts`: Safe arithmetic evaluation tool using recursive descent parsing (zero `eval`).
   - `src/tools/DisplayMessCardTool.ts`: Terminal mess card tool (`isTerminal: true`) depending strictly on `MessCardPresenterPort` and `MessRepositoryPort`, returning deterministic terminal notices for unpopulated menus to prevent LLM cancellation hallucinations.
   - `src/tools/QueryMessDetailsTool.ts`: Granular multi-turn query tool (`isTerminal: false`) depending on `MessCardPresenterPort` and `MessRepositoryPort`.
+  - `src/tools/SetDefaultMessTool.ts`: Terminal preference tool (`isTerminal: true`) allowing users to persist their default mess caterer preference (`cheftalk_regular`, `cheftalk_jain`, `tcb`) backed by `AccessControlPort`.
 - **Inbound Adapters**: Entry points that trigger core use cases:
   - `src/adapters/inbound/workers/FoodIngestionWorker.ts`: Autonomous background worker driving serial execution of `ProcessNextFoodAnnouncement` with bounded invocation deadlines.
   - `src/adapters/inbound/whatsapp/router/WhatsAppMessageRouter.ts`: Multi-handler priority router dispatching normalized messages to first-matching registered handlers with error isolation and configurable upsert mode filtering (`notify`, `append`).
@@ -79,6 +85,10 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
     - `schema.ts`: Drizzle ORM table definitions for operational mess dining tables, staging, and automated ingestion tables (`food_announcement_ingestions`, `food_announcement_audit_logs`, `food_announcement_versions`, `food_announcement_dish_corrections`).
   - `src/adapters/outbound/mess/extraction/`:
     - `DeepseekFoodAssessmentAdapter.ts`: Two-pass assessment adapter (candidate extraction + independent verification) with low reasoning effort, and 300 DPI PDF rendering for background token efficiency.
+    - `FoodExtractionEnvelopeNormalizer.ts`: Normalizes raw LLM extraction envelopes, reconciles character span offsets against `source.textBody`, and synthesizes supporting clause evidence for multi-day date range expansions.
+    - `FoodVerificationPrompt.ts`: System prompt for Pass 2 independent verification of extracted food candidates.
+    - `OperationalExtractionPrompt.ts`: Focused Pass 1 extraction prompt for text-based operational dining announcements.
+    - `WeeklyMenuExtractionPrompt.ts`: Focused Pass 1 extraction prompt for weekly menu images and PDFs.
     - `PdfRasterizer.ts`: Poppler `pdftoppm` first-page rasterizer with pixel and byte bounds (600 DPI default for manual CLI inspection, 300 DPI optimized for background automated ingestion).
     - `DeepseekVisionExtractor.ts`: Multimodal vision extractor for weekly menu images and PDFs.
     - `DeepseekTextExtractor.ts`: Single-pass composite announcement extractor with IST temporal grounding, batch normalization, and nested date fallbacks.

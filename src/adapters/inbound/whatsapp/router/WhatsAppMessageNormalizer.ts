@@ -56,16 +56,19 @@ export class WhatsAppMessageNormalizer {
 			downloadMedia: this.contentExtractor.buildLazyMediaClosure(raw, content.type),
 		};
 
-		this.logger.debug("Normalized incoming WhatsApp message", {
-			messageId: normalized.messageId,
-			chatJid: normalized.chatJid,
-			chatType: normalized.chatType,
-			contentType: normalized.content.type,
-			senderJid: normalized.senderJid,
-			contentPreview: normalized.content.preview,
-		});
-
+		this.logNormalized(normalized);
 		return normalized;
+	}
+
+	private logNormalized(msg: NormalizedWhatsAppMessage): void {
+		this.logger.debug("Normalized incoming WhatsApp message", {
+			messageId: msg.messageId,
+			chatJid: msg.chatJid,
+			chatType: msg.chatType,
+			contentType: msg.content.type,
+			senderJid: msg.senderJid,
+			contentPreview: msg.content.preview,
+		});
 	}
 
 	/**

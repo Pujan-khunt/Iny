@@ -46,8 +46,9 @@ function normalizeItem(originalItem: string): {
 	let correctedItem = isAllCaps(originalItem) ? toInitCap(originalItem) : originalItem;
 	const appliedAliases: MenuAliasId[] = [];
 	for (const rule of ALIAS_RULES) {
-		if (rule.pattern.test(originalItem) || rule.pattern.test(correctedItem)) {
-			correctedItem = correctedItem.replace(rule.pattern, rule.replacement);
+		const replaced = correctedItem.replace(rule.pattern, rule.replacement);
+		if (replaced !== correctedItem) {
+			correctedItem = replaced;
 			appliedAliases.push(rule.id);
 		}
 	}

@@ -41,8 +41,9 @@ Dates:
 
 Evidence:
 - Emit evidence for EVERY candidate string leaf in announcement.
-- JSON-pointer fieldPath (e.g. /announcement/locations/0/mealDate, /announcement/locations/0/hostelBatches/0).
-- rawValue: exact literal substring from textBody. For campus-wide ALL_BATCHES without the literal word "all", cite the venue phrase (e.g. "in the hostel").
+- For EVERY location event, you MUST emit evidence for mealDate, mealSlot, and hostelBatches/collegeBatches.
+- JSON-pointer fieldPath (e.g. /announcement/locations/0/mealDate, /announcement/locations/0/mealSlot, /announcement/locations/0/hostelBatches/0).
+- rawValue: exact literal substring from textBody (e.g. "Lunch" for mealSlot). For campus-wide ALL_BATCHES without the literal word "all", cite the venue phrase (e.g. "in the hostel").
 - clause: complete supporting sentence containing the information.
 - location: {"kind":"text","start":number,"end":number} zero-based UTF-16 [start, end) offsets in textBody.`;
 

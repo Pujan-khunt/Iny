@@ -77,10 +77,7 @@ export class WhatsAppMessageContentExtractor {
 					return Buffer.isBuffer(downloaded) ? downloaded : Buffer.from(downloaded as Uint8Array);
 				} catch (error) {
 					lastError = error;
-					const delay = this.retryDelaysMs[attempt];
-					if (delay !== undefined && delay > 0) {
-						await new Promise((resolve) => setTimeout(resolve, delay));
-					}
+					await this.waitForRetry(attempt);
 				}
 			}
 			this.logger.warn("Failed to download media for message", lastError, {
@@ -89,6 +86,13 @@ export class WhatsAppMessageContentExtractor {
 			});
 			return null;
 		};
+	}
+
+	private async waitForRetry(attempt: number): Promise<void> {
+		const delay = this.retryDelaysMs[attempt];
+		if (delay !== undefined && delay > 0) {
+			await new Promise((resolve) => setTimeout(resolve, delay));
+		}
 	}
 
 	/**
