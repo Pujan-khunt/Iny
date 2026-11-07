@@ -6,6 +6,7 @@ import type {
 import type { ValidationResult } from "../entities/FoodIngestion";
 import { WeeklyMenuValidator } from "./WeeklyMenuValidator";
 import { clauseDate, dateAgrees } from "./AnnouncementDateEvidence";
+import { batchAgrees } from "./BatchVenueEvidence";
 import { isUnlabeledTcb } from "./MenuVendorInference";
 import { validationFailure } from "./ValidationFailure";
 type Fields = ReadonlyMap<string, string>;
@@ -61,6 +62,14 @@ function scopeAgrees(entry: Evidence, source: Source, required: Fields): boolean
 	const names = entry.clause.match(vendorNames) ?? [];
 	return names.every((name) => vendor !== undefined && vendorMatches(vendor, name, entry.clause));
 }
+function changeTypeAgrees(value: string, raw: string): boolean {
+	const operations: Record<string, RegExp> = {
+		replacement: /\b(?:replace[ds]?|replacing|replacement|instead)\b/i,
+		addition: /\b(?:add(?:ed|ition)?|include[ds]?)\b/i,
+		cancellation: /\b(?:cancel(?:led|ed|lation)?|remove[ds]?)\b/i,
+	};
+	return operations[value]?.test(raw) ?? false;
+}
 function agrees(value: string, entry: Evidence, source: Source, required: Fields): boolean {
 	const raw = entry.rawValue.trim();
 	const path = entry.fieldPath;
@@ -68,20 +77,8 @@ function agrees(value: string, entry: Evidence, source: Source, required: Fields
 	if (/\/(?:mealDate|sourceMealDate|targetMealDate|start|end)$/.test(path)) {
 		return dateAgrees(value, entry, source.originalCreatedAt ?? new Date(NaN), required);
 	}
-	if (value === "ALL_BATCHES") return /^all(?:\s+(?:batches|students))?$/i.test(raw);
-	if (value === "ALL_OTHER_BATCHES")
-		return (
-			/^(?:all\s+)?(?:other|remaining)(?:\s+(?:batches|students))?$/i.test(raw) ||
-			/^all\s+(?:batches|students)\s+except\s+.+$/i.test(raw)
-		);
-	if (path.endsWith("/changeType")) {
-		const operations: Record<string, RegExp> = {
-			replacement: /\b(?:replace[ds]?|replacing|replacement|instead)\b/i,
-			addition: /\b(?:add(?:ed|ition)?|include[ds]?)\b/i,
-			cancellation: /\b(?:cancel(?:led|ed|lation)?|remove[ds]?)\b/i,
-		};
-		return operations[value]?.test(raw) ?? false;
-	}
+	if (value.startsWith("ALL_")) return batchAgrees(value, raw, path, entry.clause);
+	if (path.endsWith("/changeType")) return changeTypeAgrees(value, raw);
 	return value.trim().toLowerCase() === raw.toLowerCase();
 }
 function invalidEntry(

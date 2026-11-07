@@ -96,3 +96,6 @@ export type AssessmentAudit = Record<
 > & {
 	recognizedType?: "weekly_menu" | "operational_announcement";
 };
+
+/** Audit identifier for the paired strict extraction and verification instructions. */
+export const foodPromptVersion = "food-assessment-v1";

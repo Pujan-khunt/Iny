@@ -239,3 +239,67 @@ it("checks literal identity of both range bounds even when daily dates use a hea
 		false,
 	);
 });
+
+it("accepts venue clause evidence for campus-wide ALL_BATCHES when no cohorts are named", () => {
+	const body = "Lunch will be arranged in the hostel from 6th November 2026 to 12th November 2026.";
+	const operationalCandidate: FoodCandidate = {
+		kind: "operational_announcement",
+		announcement: {
+			locations: [
+				{
+					mealDate: "2026-11-06",
+					mealSlot: "lunch",
+					hostelBatches: ["ALL_BATCHES"],
+					collegeBatches: [],
+				},
+			],
+			timings: [],
+			changes: [],
+			swaps: [],
+		},
+	};
+	const rawVenue = "in the hostel";
+	const rawDate = "6th November 2026 to 12th November 2026";
+	const rawSlot = "Lunch";
+	const evidence: SourceEvidence[] = [
+		{
+			fieldPath: "/announcement/locations/0/mealDate",
+			rawValue: rawDate,
+			clause: body,
+			location: {
+				kind: "text",
+				start: body.indexOf(rawDate),
+				end: body.indexOf(rawDate) + rawDate.length,
+			},
+		},
+		{
+			fieldPath: "/announcement/locations/0/mealSlot",
+			rawValue: rawSlot,
+			clause: body,
+			location: {
+				kind: "text",
+				start: body.indexOf(rawSlot),
+				end: body.indexOf(rawSlot) + rawSlot.length,
+			},
+		},
+		{
+			fieldPath: "/announcement/locations/0/hostelBatches/0",
+			rawValue: rawVenue,
+			clause: body,
+			location: {
+				kind: "text",
+				start: body.indexOf(rawVenue),
+				end: body.indexOf(rawVenue) + rawVenue.length,
+			},
+		},
+	];
+	const opSource: FoodAnnouncementSource = {
+		...source,
+		messageType: "text",
+		textBody: body,
+		originalCreatedAt: new Date("2026-11-06T04:00:00Z"),
+	};
+	expect(AnnouncementEvidenceValidator.validate(opSource, operationalCandidate, evidence).ok).toBe(
+		true,
+	);
+});

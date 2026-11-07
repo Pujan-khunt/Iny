@@ -14,8 +14,10 @@ import {
 	prepareImageSource,
 	rejection,
 	stop,
+	verificationIssueCount,
 } from "./FoodAssessmentRequest";
-import { foodExtractionPrompt, foodPromptVersion } from "./FoodExtractionPrompt";
+import { selectExtractionPrompt } from "./OperationalExtractionPrompt";
+import { normalizeFoodExtractionEnvelope } from "./FoodExtractionEnvelopeNormalizer";
 import { foodVerificationPrompt } from "./FoodVerificationPrompt";
 
 /** Two isolated inference passes over the same original, without semantic retries. */
@@ -35,7 +37,7 @@ export class DeepseekFoodAssessmentAdapter implements FoodAssessmentPort {
 			rawExtraction: "",
 			rawVerification: "",
 			model: this.model,
-			promptVersion: foodPromptVersion,
+			promptVersion: schemas.foodPromptVersion,
 		};
 		this.logger.info("Starting food assessment", {
 			id: source.messageId,
@@ -56,11 +58,13 @@ export class DeepseekFoodAssessmentAdapter implements FoodAssessmentPort {
 
 	private async extract(source: Source, signal: AbortSignal, audit: Audit, imageUrl?: string) {
 		const t0 = Date.now();
-		this.logger.info("Pass 1: Requesting menu extraction", { id: source.messageId });
+		const target = source.messageType === "text" ? "operational announcement" : "weekly menu";
+		this.logger.info(`Pass 1: Requesting ${target} extraction`, { id: source.messageId });
 		audit.rawExtraction = await this.infer(source, signal, audit, imageUrl);
-		const extracted = schemas.FoodExtractionSchema.parse(
+		const normalized = normalizeFoodExtractionEnvelope(
 			JSON.parse(cleanJsonResponse(audit.rawExtraction)),
 		);
+		const extracted = schemas.FoodExtractionSchema.parse(normalized);
 		this.logger.info("Pass 1: Extraction completed", {
 			id: source.messageId,
 			elapsedMs: Date.now() - t0,
@@ -82,8 +86,7 @@ export class DeepseekFoodAssessmentAdapter implements FoodAssessmentPort {
 		const v = schemas.FoodVerificationSchema.parse(
 			JSON.parse(cleanJsonResponse(audit.rawVerification)),
 		);
-		const issues =
-			v.missingFields.length + v.conflictingFields.length + v.unsupportedClauses.length;
+		const issues = verificationIssueCount(v);
 		this.logger.info("Pass 2: Verification completed", {
 			id: source.messageId,
 			elapsedMs: Date.now() - t1,
@@ -111,9 +114,7 @@ export class DeepseekFoodAssessmentAdapter implements FoodAssessmentPort {
 		if ((source.messageType === "text") !== (candidate.kind === "operational_announcement"))
 			stop("unsupported_type", "Candidate type does not match source medium.");
 		const v = await this.verify(source, signal, audit, imageUrl, extracted);
-		const issues =
-			v.missingFields.length + v.conflictingFields.length + v.unsupportedClauses.length;
-		if (v.verdict !== "accept" || !v.completeCoverage || issues) {
+		if (v.verdict !== "accept" || !v.completeCoverage || verificationIssueCount(v) > 0) {
 			this.logger.warn("Food assessment verification rejected candidate", {
 				id: source.messageId,
 				verdict: v.verdict,
@@ -133,7 +134,8 @@ export class DeepseekFoodAssessmentAdapter implements FoodAssessmentPort {
 		proposal?: unknown,
 	): Promise<string> {
 		signal.throwIfAborted();
-		const prompt = proposal === undefined ? foodExtractionPrompt : foodVerificationPrompt;
+		const prompt =
+			proposal === undefined ? selectExtractionPrompt(source.messageType) : foodVerificationPrompt;
 		const response = await this.client.chat.completions.create(
 			foodAssessmentRequest(source, this.model, prompt, imageUrl, proposal),
 			{ timeout: this.timeoutMs, maxRetries: 0, signal },

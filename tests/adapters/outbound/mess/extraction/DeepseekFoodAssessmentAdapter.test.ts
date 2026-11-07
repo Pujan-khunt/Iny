@@ -507,6 +507,64 @@ it("forwards cancellation to Poppler rendering and prevents inference after abor
 	).rejects.toMatchObject({ failure: { code: "cancelled", retriable: false } });
 	expect(f.calls).toHaveLength(0);
 });
+it("normalizes flattened operational announcement model response and completes assessment", async () => {
+	const flattenedExtraction = {
+		kind: "operational_announcement",
+		announcement: {
+			locations: [
+				{
+					mealDate: "2026-11-01",
+					mealSlot: "lunch",
+					hostelBatches: ["ALL_BATCHES"],
+					collegeBatches: [],
+				},
+			],
+			timings: [],
+			changes: [],
+			swaps: [],
+		},
+		evidence: [
+			{
+				fieldPath: "/announcement/locations/0/mealDate",
+				rawValue: "Today",
+				clause: text,
+				location: {
+					kind: "text" as const,
+					start: text.indexOf("Today"),
+					end: text.indexOf("Today") + 5,
+				},
+			},
+			{
+				fieldPath: "/announcement/locations/0/mealSlot",
+				rawValue: "lunch",
+				clause: text,
+				location: {
+					kind: "text" as const,
+					start: text.indexOf("lunch"),
+					end: text.indexOf("lunch") + 5,
+				},
+			},
+			{
+				fieldPath: "/announcement/locations/0/hostelBatches/0",
+				rawValue: "all batches",
+				clause: text,
+				location: {
+					kind: "text" as const,
+					start: text.indexOf("all batches"),
+					end: text.indexOf("all batches") + 11,
+				},
+			},
+		],
+	};
+	const f = fixture([flattenedExtraction, accepted]);
+	const result = await f.adapter.assess(source(), new AbortController().signal);
+	expect(result.kind).toBe("candidate");
+	if (result.kind === "candidate") {
+		expect(result.candidate.kind).toBe("operational_announcement");
+	}
+	expect(f.calls[0].body.messages[0].content).toContain("locations");
+});
+
 it("passes abort through extraction SDK options and does not verify a cancelled request", async () => {
 	const f = fixture();
 	const c = new AbortController();

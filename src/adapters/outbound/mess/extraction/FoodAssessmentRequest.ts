@@ -136,3 +136,12 @@ export function foodRetryDelay(headers: Headers | undefined): { retryAfterMs?: n
 			: NaN;
 	return Number.isFinite(delay) && delay >= 0 ? { retryAfterMs: delay } : {};
 }
+
+/** Returns the total defect count reported by independent verification. */
+export function verificationIssueCount(v: {
+	missingFields: readonly string[];
+	conflictingFields: readonly string[];
+	unsupportedClauses: readonly string[];
+}): number {
+	return v.missingFields.length + v.conflictingFields.length + v.unsupportedClauses.length;
+}

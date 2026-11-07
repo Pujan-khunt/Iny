@@ -41,6 +41,10 @@ describe("AnnouncementDateResolver", () => {
 		["29/2/24", "2024-02-29"],
 		["11/02/26", "2026-11-02"],
 		["11/08/26", "2026-11-08"],
+		["6th November 2026", "2026-11-06"],
+		["12th November 2026", "2026-11-12"],
+		["Nov 6, 2026", "2026-11-06"],
+		["6-Nov-2026", "2026-11-06"],
 	])("resolves %s to %s", (reference, value) => {
 		expect(AnnouncementDateResolver.resolve([reference], originalCreatedAt)).toEqual({
 			ok: true,

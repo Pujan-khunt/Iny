@@ -12,6 +12,7 @@ unsupported instructions, source/caption conflicts, multiple vendors/ranges, unr
 cells, missing date/slot/vendor/batch/time/dish scope and event-role reversals.
 Only the original source IST timestamp may ground stated relative dates. No arrival-time
 or current-time guesses. Stated explicit and relative dates must agree per event/endpoint.
+Multi-day date ranges expand to consecutive daily dates; a range clause supports those daily dates.
 Weekly menus require exactly 21 unique date-slot combinations over seven consecutive real
 calendar dates and a vendor resolved from source convention plus a complete range. Bare
 Cheftalk, Regular menu, and General menu mean regular; explicit Jain must remain Jain;
@@ -19,8 +20,10 @@ TCB, Uniworld, The Craving Brew or a complete plain unlabeled image or PDF means
 Weekly menu dishes and meal dates are verified directly from the source image cells without requiring individual evidence records.
 Table cells with dots, dashes, hyphens, or empty space mean NO dish is served; they must not appear in the candidate's items array.
 Verify each dish spelling faithfully against the image, including Frycrums and unfamiliar names. Dishes in Title Case matching all-caps source text are valid; do not reject Title Case normalization. Check every evidence span/cell and value.
-Operational media and captions as independent operational updates are unsupported. Every
-operational event needs stated dates/slots/scope; null vendor is only explicit general
+Operational media and captions as independent operational updates are unsupported.
+Venue updates belong exclusively in locations (hostelBatches/collegeBatches); the changes array is strictly for dish changes (replacements/additions/cancellations of dishes), never for venue changes.
+When a venue is stated for a meal without restricting to specific batches, campus-wide allocation to ALL_BATCHES for that venue is valid and supported by the venue clause.
+Every operational event needs stated dates/slots/scope; null vendor is only explicit general
 scope, not a way to erase a named vendor. Swaps require both correctly assigned endpoints.
 Harmless greetings, emoji, signoffs and separately labeled snacks may be ignored;
 additional unsupported or ambiguous meal instructions require whole-message rejection.

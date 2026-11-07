@@ -1,5 +1,6 @@
 import type { ValidationResult } from "../entities/FoodIngestion";
 import { getISTDateString, isValidISODate, shiftISODate } from "../utils/Temporal";
+import { extractWrittenMonthDates } from "./WrittenMonthDateParser";
 
 const RELATIVE_OFFSETS: Readonly<Record<string, number>> = {
 	today: 0,
@@ -42,6 +43,7 @@ function resolveToken(token: string, sourceDate: string): string | null {
 }
 
 function resolveReference(reference: string, sourceDate: string): (string | null)[] {
+	const { dates: writtenDates, remaining } = extractWrittenMonthDates(reference);
 	const weekdays =
 		/\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b/i;
 	const month =
@@ -50,11 +52,12 @@ function resolveReference(reference: string, sourceDate: string): (string | null
 		`\\b(?:\\d{1,2}(?:st|nd|rd|th)?\\s+${month}|${month}\\s+\\d{1,2}(?:st|nd|rd|th)?)\\b`,
 		"i",
 	);
-	if (weekdays.test(reference) || monthDate.test(reference)) return [null];
-	const tokens = reference.match(
+	if (weekdays.test(remaining) || monthDate.test(remaining)) return [null];
+	const tokens = remaining.match(
 		/\d+(?:\s*[/.,-]\s*\d+)+|\b(?:today|yesterday|tomorrow|tommorow|tmrw)\b/gi,
 	);
-	return tokens ? tokens.map((token) => resolveToken(token, sourceDate)) : [];
+	const numericDates = tokens ? tokens.map((token) => resolveToken(token, sourceDate)) : [];
+	return [...writtenDates, ...numericDates];
 }
 
 /** Resolves all stated date evidence without inferring an unstated calendar date. */
