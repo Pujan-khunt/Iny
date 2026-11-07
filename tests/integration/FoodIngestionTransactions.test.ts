@@ -2463,8 +2463,8 @@ describe.skipIf(!databaseUrl)(
 			expect(claim.lease).toMatchObject({ messageId: source.messageId, attempt: 1 });
 			expect(claim.lease.token).toMatch(/^[a-f0-9-]{36}$/);
 			const row = await workRow(source.messageId);
-			expect(Number(row.lease_seconds)).toBeGreaterThan(295);
-			expect(Number(row.lease_seconds)).toBeLessThanOrEqual(300);
+			expect(Number(row.lease_seconds)).toBeGreaterThan(590);
+			expect(Number(row.lease_seconds)).toBeLessThanOrEqual(600);
 			expect(new Date(row.lease_expires_at)).toEqual(claim.lease.expiresAt);
 		});
 

@@ -295,12 +295,12 @@ describe("HandleIncomingUserMessage", () => {
 			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
 		});
 
-		it("should safely catch and log error if sending fallback message also fails", async () => {
+		it("should propagate transport error if sending fallback message also fails", async () => {
 			vi.mocked(mockAgentLoop.run).mockRejectedValueOnce(new Error("Reasoning crashed"));
 			vi.mocked(mockSender.sendMessage).mockRejectedValueOnce(new Error("Transport disconnected"));
 
 			const useCase = createUseCase();
-			await expect(useCase.execute(sampleUserMessage)).resolves.toBeUndefined();
+			await expect(useCase.execute(sampleUserMessage)).rejects.toThrow("Transport disconnected");
 
 			expect(mockChildLogger.error).toHaveBeenCalled();
 			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
@@ -308,12 +308,12 @@ describe("HandleIncomingUserMessage", () => {
 	});
 
 	describe("Phase 3: Delivery error handling", () => {
-		it("should log transport error and not attempt retry or turn persistence", async () => {
+		it("should log and propagate transport error without saving turn", async () => {
 			const transportError = new Error("WhatsApp socket closed");
 			vi.mocked(mockSender.sendMessage).mockRejectedValueOnce(transportError);
 
 			const useCase = createUseCase();
-			await useCase.execute(sampleUserMessage);
+			await expect(useCase.execute(sampleUserMessage)).rejects.toThrow(transportError);
 
 			expect(mockSender.sendMessage).toHaveBeenCalledTimes(1);
 			expect(mockSender.sendMessage).toHaveBeenCalledWith(

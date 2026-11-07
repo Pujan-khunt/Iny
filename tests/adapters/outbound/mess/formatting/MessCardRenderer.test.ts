@@ -3,6 +3,7 @@ import {
 	renderMultiVendorSlotDigest,
 	renderSingleVendorSlotDetail,
 	renderSingleVendorFullDayDigest,
+	renderEmptyNotice,
 	sanitizeWhatsAppText,
 	formatCardHeader,
 	renderActiveUpdatesBanner,
@@ -501,6 +502,23 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 			expect(rendered).toContain(
 				"🌙 *Dinner:*\n• Veg Biryani\n• Mirchi Salan\n• Raita\n• Ice Cream",
 			);
+		});
+	});
+
+	describe("renderEmptyNotice", () => {
+		it("formats empty notice for general mess query when vendor and slot are omitted", () => {
+			const notice = renderEmptyNotice("2026-11-08");
+			expect(notice).toBe("ℹ️ No menu data is currently loaded for the mess on 2026-11-08.");
+		});
+
+		it("formats empty notice with vendor and slot when both are provided", () => {
+			const notice = renderEmptyNotice("2026-11-08", "tcb", "lunch");
+			expect(notice).toBe("ℹ️ No menu data is currently loaded for TCB lunch on 2026-11-08.");
+		});
+
+		it("formats empty notice with vendor only when slot is omitted", () => {
+			const notice = renderEmptyNotice("2026-11-08", "cheftalk_regular");
+			expect(notice).toBe("ℹ️ No menu data is currently loaded for Cheftalk on 2026-11-08.");
 		});
 	});
 });

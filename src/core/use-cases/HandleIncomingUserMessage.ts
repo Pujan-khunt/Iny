@@ -69,7 +69,7 @@ export class HandleIncomingUserMessage {
 			await this.sender.sendMessage(message.userId, loopResult.finalText);
 		} catch (deliveryError) {
 			log.error("Failed to deliver message to user via transport", deliveryError);
-			return;
+			throw deliveryError;
 		}
 		const completedAt = new Date();
 
@@ -125,6 +125,7 @@ export class HandleIncomingUserMessage {
 			await this.sender.sendMessage(userId, userMessage);
 		} catch (fallbackError) {
 			log.error("Failed to send error notification to user", fallbackError);
+			throw fallbackError;
 		}
 	}
 }

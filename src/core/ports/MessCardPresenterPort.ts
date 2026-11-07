@@ -1,4 +1,4 @@
-import { ResolvedMealInfo, Vendor } from "../entities/MessMeal";
+import { MealSlot, ResolvedMealInfo, Vendor } from "../entities/MessMeal";
 
 /**
  * Port defining presentation formatting for mess cards.
@@ -25,4 +25,9 @@ export interface MessCardPresenterPort {
 	 * Formats a full-day menu digest for a single vendor across all meal slots.
 	 */
 	renderSingleVendorFullDayDigest(info: ResolvedMealInfo, vendor: Vendor, now: Date): string;
+
+	/**
+	 * Formats a user-facing notice when no menu data is available for a queried date, vendor, and slot.
+	 */
+	renderEmptyNotice(date: string, vendor?: Vendor, slot?: MealSlot): string;
 }

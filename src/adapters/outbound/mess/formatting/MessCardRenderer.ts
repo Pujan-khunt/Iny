@@ -352,8 +352,18 @@ export function renderSingleVendorFullDayDigest(
 	return sections.join("\n\n");
 }
 
+/**
+ * Formats a user-facing notice when no menu data is available for a queried date, vendor, and slot.
+ */
+export function renderEmptyNotice(date: string, vendor?: Vendor, slot?: MealSlot): string {
+	const vendorLabel = vendor ? (VENDOR_DISPLAY_NAMES[vendor] ?? vendor) : "the mess";
+	const slotLabel = slot ? ` ${slot}` : "";
+	return `ℹ️ No menu data is currently loaded for ${vendorLabel}${slotLabel} on ${date}.`;
+}
+
 export const defaultMessCardPresenter: MessCardPresenterPort = {
 	renderMultiVendorSlotDigest,
 	renderSingleVendorSlotDetail,
 	renderSingleVendorFullDayDigest,
+	renderEmptyNotice,
 };

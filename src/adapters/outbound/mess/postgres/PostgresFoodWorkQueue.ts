@@ -39,7 +39,7 @@ export class PostgresFoodWorkQueue {
 				.set({
 					state: "processing",
 					leaseToken: randomUUID(),
-					leaseExpiresAt: sql`clock_timestamp() + interval '5 minutes'`,
+					leaseExpiresAt: sql`clock_timestamp() + interval '10 minutes'`,
 					attemptCount: sql`${work.attemptCount} + 1`,
 					nextAttemptAt: null,
 				})

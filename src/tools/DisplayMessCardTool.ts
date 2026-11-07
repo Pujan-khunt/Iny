@@ -12,12 +12,6 @@ import {
 	isMealEnded,
 } from "../core/entities/MessMeal";
 
-const VENDOR_NAMES: Record<Vendor, string> = {
-	cheftalk_regular: "Cheftalk",
-	cheftalk_jain: "Cheftalk Jain",
-	tcb: "TCB",
-};
-
 const displayMessCardSchema = z.object({
 	mealDate: z
 		.string()
@@ -37,9 +31,6 @@ const displayMessCardSchema = z.object({
 });
 
 type DisplayMessCardInput = z.infer<typeof displayMessCardSchema>;
-
-const formatEmptyNotice = (date: string, vendor?: Vendor, slot?: MealSlot): string =>
-	`ℹ️ No menu data is currently loaded for ${vendor ? VENDOR_NAMES[vendor] : "the mess"}${slot ? ` ${slot}` : ""} on ${date}.`;
 
 /**
  * Terminal presentation tool serving mess meals with automatic cutoff and upcoming meal rollover.
@@ -85,7 +76,7 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 		const targetDate = date ?? getISTDateString(now);
 		const res = await this.messRepository.getResolvedMeal({ mealDate: targetDate, vendor });
 		if (res.meals.length === 0 || !res.meals.some((m) => m.vendor === vendor)) {
-			return { content: formatEmptyNotice(targetDate, vendor), isTerminal: true };
+			return { content: this.presenter.renderEmptyNotice(targetDate, vendor), isTerminal: true };
 		}
 		const content = this.presenter.renderSingleVendorFullDayDigest(res, vendor, now);
 		return { content, isTerminal: true };
@@ -109,7 +100,10 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 		});
 
 		if (res.meals.length === 0 || (vendor && !res.meals.some((m) => m.vendor === vendor))) {
-			return { content: formatEmptyNotice(targetDate, vendor, targetSlot), isTerminal: true };
+			return {
+				content: this.presenter.renderEmptyNotice(targetDate, vendor, targetSlot),
+				isTerminal: true,
+			};
 		}
 
 		const ended = isMealEnded(targetDate, targetSlot, now);
