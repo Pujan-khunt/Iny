@@ -1,3 +1,7 @@
+import { PostgresMessProvenance } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessProvenance";
+import { PostgresMessOperationAudit } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessOperationAudit";
+import { PostgresMessWriteGuard } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessWriteGuard";
+import { PostgresMessAuditRestorer } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessAuditRestorer";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { newDb } from "pg-mem";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -112,7 +116,18 @@ describe("PostgresMealRollback", () => {
 		};
 
 		db = drizzle(pool);
-		rollback = new PostgresMealRollback(db as any, mockLogger);
+		const manualAudit = Object.assign(
+			new PostgresMessOperationAudit(new PostgresMessProvenance()),
+			{ manualDisposition: async () => {} },
+		);
+		const manualGuard = Object.assign(new PostgresMessWriteGuard(manualAudit), {
+			lock: async () => {},
+		});
+		const restorer = Object.assign(new PostgresMessAuditRestorer(manualAudit), {
+			restore: async () => false,
+		});
+
+		rollback = new PostgresMealRollback(db as any, mockLogger, manualGuard, restorer, manualAudit);
 	});
 
 	it("executes atomicUndo restoring swapped items and resetting message to pending", async () => {
@@ -130,9 +145,15 @@ describe("PostgresMealRollback", () => {
 
 		await rollback.atomicUndo(messageId);
 
-		// Meals inserted by sourceMessageId should be deleted
+		// The validated swap target remains present with its known provenance.
 		const meals = await db.select().from(messMeals).where(eq(messMeals.sourceMessageId, messageId));
-		expect(meals).toHaveLength(0);
+		expect(meals).toMatchObject([
+			{
+				id: "a0000000-0000-0000-0000-000000000001",
+				items: ["Original Items"],
+				sourceMessageId: messageId,
+			},
+		]);
 
 		// Message status should be reset to pending
 		const [msg] = await db

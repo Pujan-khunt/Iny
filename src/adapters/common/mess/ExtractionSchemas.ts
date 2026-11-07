@@ -50,10 +50,4 @@ export const ExtractedCompositeAnnouncementSchema = z.object({
 	mealSwaps: z.array(ExtractedMealSwapSchema).default([]),
 });
 
-export type ExtractedWeeklyMealItem = z.infer<typeof ExtractedWeeklyMealItemSchema>;
-export type ExtractedWeeklyMenu = z.infer<typeof ExtractedWeeklyMenuSchema>;
-export type ExtractedLocationDetail = z.infer<typeof ExtractedLocationDetailSchema>;
-export type ExtractedTimingExtension = z.infer<typeof ExtractedTimingExtensionSchema>;
-export type ExtractedMealChange = z.infer<typeof ExtractedMealChangeSchema>;
-export type ExtractedMealSwap = z.infer<typeof ExtractedMealSwapSchema>;
 export type ExtractedCompositeAnnouncement = z.infer<typeof ExtractedCompositeAnnouncementSchema>;

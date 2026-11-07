@@ -1,5 +1,23 @@
-import { MealSlot, Vendor, MealChangeType } from "../entities/MessMeal";
+import type { MealSlot, Vendor } from "../entities/MessMeal";
+import type {
+	AtomicCommitCompositeOptions,
+	MessIngestionAudit,
+	AtomicCommitOptions,
+	CommitOperationalPayload,
+} from "../entities/MessCommit";
 
+export type {
+	CommitMealsInput,
+	CommitLocationDetailInput,
+	CommitTimingExtensionInput,
+	CommitMealChangeInput,
+	ResolvedMealSwapInput,
+	CommitOperationalPayload,
+	AtomicCommitOptions,
+	AtomicCommitCompositeOptions,
+} from "../entities/MessCommit";
+
+/** Manual staging queue status, independent of automatic ingestion decisions. */
 export type StagedMessageStatus = "pending" | "processed" | "ignored";
 
 /**
@@ -7,128 +25,41 @@ export type StagedMessageStatus = "pending" | "processed" | "ignored";
  */
 export type StageMessageResult = "staged" | "already_staged";
 
+/** Stored raw announcement available for manual triage. */
 export interface StagedAnnouncementMessage {
 	id: string;
 	senderAddress: string;
 	senderAddressType: "pn" | "lid";
 	messageType: "image" | "document" | "text";
 	mediaMimeType?: string | null;
-	mediaBuffer?: Buffer | Uint8Array | null;
+	mediaBuffer?: Uint8Array | null;
 	textBody?: string | null;
 	status: StagedMessageStatus;
 	receivedAt: Date;
 	processedAt?: Date | null;
 }
 
+/** Incoming raw announcement with optional repository-generated status and time. */
 export interface NewStagedAnnouncementMessage {
 	id: string;
 	senderAddress: string;
 	senderAddressType: "pn" | "lid";
 	messageType: "image" | "document" | "text";
 	mediaMimeType?: string | null;
-	mediaBuffer?: Buffer | Uint8Array | null;
+	mediaBuffer?: Uint8Array | null;
 	textBody?: string | null;
 	status?: StagedMessageStatus;
 	receivedAt?: Date;
 }
 
+/** Optional manual staging inbox filters. */
 export interface ListStagedMessagesOptions {
 	limit?: number;
 	date?: string;
 	status?: StagedMessageStatus;
 }
 
-export interface CommitMealsInput {
-	id?: string;
-	mealDate: string;
-	mealSlot: MealSlot;
-	vendor?: Vendor;
-	items: readonly string[] | string[];
-}
-
-export interface CommitLocationDetailInput {
-	id?: string;
-	mealDate: string;
-	mealSlot?: MealSlot;
-	hostelBatches: readonly string[] | string[];
-	collegeBatches: readonly string[] | string[];
-}
-
-export interface CommitTimingExtensionInput {
-	id?: string;
-	mealDate: string;
-	mealSlot: MealSlot;
-	targetVendor?: Vendor | null;
-	extendedTimings: string;
-}
-
-export interface CommitMealChangeInput {
-	id?: string;
-	mealDate: string;
-	mealSlot: MealSlot;
-	targetVendor: Vendor;
-	changeType: MealChangeType;
-	affectedItem: string;
-	originalItem?: string | null;
-}
-
-export interface StagedWeeklyMealItem {
-	mealDate: string;
-	mealSlot: MealSlot;
-	items: string[];
-}
-
-export interface StagedWeeklyMenu {
-	vendor: Vendor;
-	meals: StagedWeeklyMealItem[];
-}
-
-export interface StagedMealSwap {
-	targetMealDate: string;
-	targetMealSlot: MealSlot;
-	sourceMealDate: string;
-	sourceMealSlot: MealSlot;
-	targetVendor?: Vendor | null;
-}
-
-export interface StagedCompositeAnnouncement {
-	mealDate: string;
-	location?: CommitLocationDetailInput | null;
-	timingExtensions?: CommitTimingExtensionInput[];
-	mealChanges?: CommitMealChangeInput[];
-	mealSwaps?: StagedMealSwap[];
-}
-
-export interface ResolvedMealSwapInput {
-	targetMealDate: string;
-	targetMealSlot: MealSlot;
-	vendor: Vendor;
-	newItems: string[];
-	previousItems: string[];
-	sourceMealDate: string;
-	sourceMealSlot: MealSlot;
-}
-
-export interface CommitOperationalPayload {
-	vendor?: Vendor;
-	meals?: CommitMealsInput[];
-	weeklyMenu?: StagedWeeklyMenu;
-	locationDetails?: CommitLocationDetailInput | CommitLocationDetailInput[];
-	locationDetail?: CommitLocationDetailInput;
-	timingExtensions?: CommitTimingExtensionInput | CommitTimingExtensionInput[];
-	timingExtension?: CommitTimingExtensionInput;
-	mealChanges?: CommitMealChangeInput | CommitMealChangeInput[];
-	mealChange?: CommitMealChangeInput;
-}
-
-export type AtomicCommitOptions = CommitOperationalPayload & { messageId: string };
-
-export interface AtomicCommitCompositeOptions {
-	messageId: string;
-	composite: StagedCompositeAnnouncement;
-	resolvedSwaps?: ResolvedMealSwapInput[];
-}
-
+/** Existing operational meal snapshot exposed to manual swap resolution. */
 export interface StagedMealLookupRecord {
 	mealDate: string;
 	mealSlot: MealSlot | string;
@@ -138,6 +69,8 @@ export interface StagedMealLookupRecord {
 
 /** Port contract for staged announcement messages and atomic transaction operations. */
 export interface MessStagingRepositoryPort {
+	/** Returns persisted automatic and operation evidence, or null for an unknown message. */
+	getIngestionAudit(messageId: string): Promise<MessIngestionAudit | null>;
 	/** Lists staged messages filtered by options. */
 	listStagedMessages(options?: ListStagedMessagesOptions): Promise<StagedAnnouncementMessage[]>;
 	/** Retrieves a staged message by its unique identifier. */
@@ -149,7 +82,7 @@ export interface MessStagingRepositoryPort {
 	 * @returns "staged" if newly inserted, or "already_staged" if duplicate exists.
 	 */
 	stageMessage(message: NewStagedAnnouncementMessage): Promise<StageMessageResult>;
-	/** Marks a staged message as ignored. */
+	/** Ignores staging and fences outstanding automatic work without changing terminal decisions. */
 	markIgnored(id: string): Promise<void>;
 	/** Retrieves operational mess meals for date, slot, and optional vendor. */
 	getMealsByDateAndSlot(
@@ -162,8 +95,8 @@ export interface MessStagingRepositoryPort {
 	atomicCommit(messageId: string, payload: CommitOperationalPayload): Promise<void>;
 	/** Atomically commits composite operational announcements. */
 	atomicCommitComposite(options: AtomicCommitCompositeOptions): Promise<void>;
-	/** Surgically reverts operational rows created from a specific message. */
+	/** Restores audited before-images or current-owned legacy rows; changed ownership rejects atomically. */
 	atomicUndo(messageId: string): Promise<void>;
-	/** Resets staging and operational mess tables for testing or development. */
+	/** Resets operational/staging data for development while preserving automatic activation and final decisions. */
 	atomicReset(): Promise<void>;
 }

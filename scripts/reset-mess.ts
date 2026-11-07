@@ -1,9 +1,13 @@
+import { PostgresMessAuditRestorer } from "../src/adapters/outbound/mess/postgres/PostgresMessAuditRestorer";
+import { PostgresMealRollback } from "../src/adapters/outbound/mess/postgres/PostgresMealRollback";
+import { PostgresMessWriteGuard } from "../src/adapters/outbound/mess/postgres/PostgresMessWriteGuard";
+import { PostgresMessOperationAudit } from "../src/adapters/outbound/mess/postgres/PostgresMessOperationAudit";
+import { PostgresMessProvenance } from "../src/adapters/outbound/mess/postgres/PostgresMessProvenance";
 import readline from "node:readline/promises";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { loadConfig } from "../src/config";
 import { PinoLoggerAdapter } from "../src/adapters/outbound/logger/PinoLoggerAdapter";
-import { PostgresMessStagingRepository } from "../src/adapters/outbound/mess/postgres/PostgresMessStagingRepository";
 import * as messSchema from "../src/adapters/outbound/mess/postgres/schema";
 
 export interface ResetMessIo {
@@ -15,7 +19,7 @@ export interface ExecuteResetWithGuardsOptions {
 	nodeEnv?: string;
 	databaseUrl?: string;
 	confirmNameInput?: string;
-	stagingRepo?: { atomicReset: () => Promise<void> } | any;
+	stagingRepo?: { atomicReset: () => Promise<void> };
 	io?: ResetMessIo;
 }
 
@@ -35,8 +39,19 @@ export async function executeResetWithGuards(
 		throw new Error("Refusing to run destructive reset in production environment.");
 	}
 
-	// Guard 2: Host Inspection & Target DB Display
-	const databaseUrl = options.databaseUrl ?? process.env.DATABASE_URL;
+	const { host, dbName } = resetTarget(options.databaseUrl ?? process.env.DATABASE_URL);
+	options.io?.print?.(`⚠️ TARGET DATABASE: postgres://...@${host}/${dbName}`);
+	await confirmTarget(options, dbName);
+
+	// Execution: Atomic Reset
+	if (options.stagingRepo) {
+		await options.stagingRepo.atomicReset();
+	}
+
+	options.io?.print?.("Successfully reset all mess operational tables and staging messages.");
+}
+
+function resetTarget(databaseUrl: string | undefined) {
 	if (!databaseUrl) {
 		throw new Error("DATABASE_URL is required to perform reset.");
 	}
@@ -54,9 +69,10 @@ export async function executeResetWithGuards(
 	}
 	const host = parsed.host || parsed.hostname;
 
-	options.io?.print?.(`⚠️ TARGET DATABASE: postgres://...@${host}/${dbName}`);
+	return { host, dbName };
+}
 
-	// Guard 3: Explicit Name Challenge
+async function confirmTarget(options: ExecuteResetWithGuardsOptions, dbName: string) {
 	let confirmName = options.confirmNameInput;
 	if (confirmName === undefined && options.io?.prompt) {
 		const rawAnswer = await options.io.prompt(
@@ -70,13 +86,6 @@ export async function executeResetWithGuards(
 			`Confirmation name does not match target database name ("${dbName}"). Aborting reset.`,
 		);
 	}
-
-	// Execution: Atomic Reset
-	if (options.stagingRepo) {
-		await options.stagingRepo.atomicReset();
-	}
-
-	options.io?.print?.("Successfully reset all mess operational tables and staging messages.");
 }
 
 /**
@@ -85,12 +94,10 @@ export async function executeResetWithGuards(
 export async function main(): Promise<void> {
 	const config = loadConfig();
 	const logger = new PinoLoggerAdapter(config.LOG_LEVEL);
-
 	const rl = readline.createInterface({
 		input: process.stdin,
 		output: process.stdout,
 	});
-
 	const sqlClient = postgres(config.DATABASE_URL, {
 		max: 2,
 		idle_timeout: 10,
@@ -101,7 +108,14 @@ export async function main(): Promise<void> {
 		const db = drizzle(sqlClient, {
 			schema: messSchema,
 		});
-		const stagingRepo = new PostgresMessStagingRepository(db, logger);
+		const messAudit = new PostgresMessOperationAudit(new PostgresMessProvenance());
+		const stagingRepo = new PostgresMealRollback(
+			db,
+			logger,
+			new PostgresMessWriteGuard(messAudit),
+			new PostgresMessAuditRestorer(messAudit),
+			messAudit,
+		);
 
 		await executeResetWithGuards({
 			nodeEnv: process.env.NODE_ENV,

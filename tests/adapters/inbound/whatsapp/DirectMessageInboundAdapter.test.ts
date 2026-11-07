@@ -58,6 +58,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "What is for lunch?", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -81,6 +83,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: true,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "Hello", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -104,6 +108,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "Group text", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -127,6 +133,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "image", text: "Photo", mimeType: "image/jpeg" },
 				downloadMedia: vi.fn(),
 			};
@@ -150,6 +158,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "   \t\n  ", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -173,6 +183,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -202,6 +214,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: "123456789012345@lid",
 				fromMe: false,
 				timestamp: now,
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: "What is for lunch?", mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -223,7 +237,7 @@ describe("DirectMessageInboundAdapter", () => {
 			);
 		});
 
-		it("logs debug and returns early when user is unauthorized or inactive", async () => {
+		it("logs info and returns early when user is unauthorized or inactive", async () => {
 			const mockUseCase = createMockUseCase();
 			const mockAccessControl = createMockAccessControl();
 			mockAccessControl.authenticate.mockResolvedValue(null);
@@ -243,7 +257,14 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
-				content: { type: "text", text: "Unauthorized message", mimeType: null },
+				originalTimestamp: null,
+				upsertType: "notify",
+				content: {
+					type: "text",
+					text: "Unauthorized message",
+					mimeType: null,
+					preview: "Unauthorized message",
+				},
 				downloadMedia: vi.fn(),
 			};
 
@@ -254,11 +275,13 @@ describe("DirectMessageInboundAdapter", () => {
 				null,
 			);
 			expect(mockUseCase.execute).not.toHaveBeenCalled();
-			expect(mockLogger.debug).toHaveBeenCalledWith(
-				"Ignored message from unauthorized or inactive sender",
+			expect(mockLogger.info).toHaveBeenCalledWith(
+				"Direct message ignored by access control",
 				expect.objectContaining({
+					messageId: "dm-unauth-1",
 					senderJid: "919999999999@s.whatsapp.net",
 					companionLidJid: null,
+					contentPreview: "Unauthorized message",
 				}),
 			);
 		});
@@ -282,6 +305,8 @@ describe("DirectMessageInboundAdapter", () => {
 				companionLidJid: null,
 				fromMe: false,
 				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
 				content: { type: "text", text: null, mimeType: null },
 				downloadMedia: vi.fn(),
 			};
@@ -294,6 +319,37 @@ describe("DirectMessageInboundAdapter", () => {
 					content: "",
 				}),
 			);
+		});
+
+		it("propagates delivery failures thrown by useCase.execute", async () => {
+			const deliveryError = new Error("WhatsApp socket disconnected");
+			const mockUseCase = {
+				execute: vi.fn().mockRejectedValueOnce(deliveryError),
+			};
+			const mockAccessControl = createMockAccessControl();
+			const mockLogger = createMockLogger();
+			const adapter = new DirectMessageInboundAdapter(
+				mockUseCase as any,
+				mockAccessControl as any,
+				mockLogger as any,
+			);
+
+			const msg: NormalizedWhatsAppMessage = {
+				messageId: "dm-fail-1",
+				chatJid: "919876543210@s.whatsapp.net",
+				chatType: "direct",
+				senderJid: "919876543210@s.whatsapp.net",
+				senderType: "pn",
+				companionLidJid: null,
+				fromMe: false,
+				timestamp: Date.now(),
+				originalTimestamp: null,
+				upsertType: "notify",
+				content: { type: "text", text: "Hello", mimeType: null },
+				downloadMedia: vi.fn(),
+			};
+
+			await expect(adapter.handle(msg)).rejects.toThrow("WhatsApp socket disconnected");
 		});
 	});
 });

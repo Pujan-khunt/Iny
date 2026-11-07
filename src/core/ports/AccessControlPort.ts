@@ -1,3 +1,5 @@
+import { Vendor } from "../entities/MessMeal";
+
 export type UserRole = "admin" | "user";
 export type UserStatus = "active" | "pending" | "revoked" | "suspended";
 
@@ -8,6 +10,7 @@ export interface UserRecord {
 	name: string | null;
 	role: UserRole;
 	status: UserStatus;
+	defaultVendor: Vendor;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -27,6 +30,11 @@ export interface AccessControlPort {
 	 * Retrieves the full user record by phone number, PNJID, or LIDJID regardless of status.
 	 */
 	getUser(address: string): Promise<UserRecord | null>;
+
+	/**
+	 * Updates the user's default mess vendor preference.
+	 */
+	setDefaultVendor(address: string, vendor: Vendor): Promise<void>;
 }
 
 export interface SeedUserEntry {

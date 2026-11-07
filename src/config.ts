@@ -58,6 +58,10 @@ export const envSchema = z
 		MAX_TOOL_ITERATIONS: emptyToUndefined(z.coerce.number().int().positive().max(20).default(5)),
 		MAX_HISTORY_TURNS: emptyToUndefined(z.coerce.number().int().positive().max(100).default(10)),
 		HISTORY_TTL_HOURS: emptyToUndefined(z.coerce.number().positive().default(24)),
+		FOOD_ASSESSMENT_TIMEOUT_MS: emptyToUndefined(
+			z.coerce.number().int().positive().default(180_000),
+		),
+		FOOD_WORKER_DEADLINE_MS: emptyToUndefined(z.coerce.number().int().positive().default(420_000)),
 		NODE_ENV: emptyToUndefined(
 			z.enum(["development", "test", "production"]).default("development"),
 		),

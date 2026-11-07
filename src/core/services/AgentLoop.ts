@@ -115,7 +115,7 @@ export class AgentLoop {
 		}
 		try {
 			log.info("Executing tool call", { toolName: tc.name });
-			const res = await this.registry.executeTool(tc.name, tc.arguments);
+			const res = await this.registry.executeTool(tc.name, tc.arguments, { userId });
 			return createToolOutcome(userId, tc, res.content, false, res);
 		} catch (error) {
 			const msg = error instanceof Error ? error.message : String(error);

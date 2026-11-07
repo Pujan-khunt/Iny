@@ -12,8 +12,8 @@
 		"format:check": "prettier --check .",
 		"deadcode": "knip",
 		"check:all": "npm run format:check && npm run lint && npm run deadcode && npm run typecheck && npm test",
-		"dev": "tsx --env-file=.env src/index.ts",
-		"start": "node --enable-source-maps --env-file=.env dist/index.js",
+		"dev": "tsx --dns-result-order=ipv4first --env-file=.env src/index.ts",
+		"start": "node --dns-result-order=ipv4first --enable-source-maps --env-file=.env dist/index.js",
 		"test": "vitest run",
 		"test:coverage": "vitest run --coverage",
 		"db:generate": "drizzle-kit generate",
@@ -21,7 +21,8 @@
 		"db:studio": "drizzle-kit studio",
 		"db:check": "drizzle-kit check",
 		"ingest": "tsx --env-file=.env scripts/ingest-announcements.ts",
-		"mess:reset": "tsx --env-file=.env scripts/reset-mess.ts"
+		"mess:reset": "tsx --env-file=.env scripts/reset-mess.ts",
+		"db:reset-tables": "tsx --env-file=.env scripts/reset-tables.ts"
 	},
 	"keywords": [],
 	"author": "",

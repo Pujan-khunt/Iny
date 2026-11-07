@@ -134,7 +134,13 @@ describe("AgentLoop", () => {
 		const loop = createAgentLoop();
 		const result = await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
 
-		expect(mockRegistry.executeTool).toHaveBeenCalledWith("calculator", { expr: "2+2" });
+		expect(mockRegistry.executeTool).toHaveBeenCalledWith(
+			"calculator",
+			{ expr: "2+2" },
+			{
+				userId: "user-123",
+			},
+		);
 		expect(mockLLM.generateResponse).toHaveBeenCalledTimes(2);
 
 		expect(result.finalText).toBe("Result is 4.");
@@ -158,6 +164,36 @@ describe("AgentLoop", () => {
 			role: "assistant",
 			content: "Result is 4.",
 		});
+	});
+
+	it("passes caller userId in ToolExecutionContext to registry.executeTool", async () => {
+		vi.mocked(mockLLM.generateResponse)
+			.mockResolvedValueOnce({
+				type: "tool_calls",
+				toolCalls: [
+					{
+						type: "valid",
+						id: "call-context-1",
+						name: "calculator",
+						arguments: { expr: "1+1" },
+					},
+				],
+			})
+			.mockResolvedValueOnce({
+				type: "text",
+				content: "2",
+			});
+
+		vi.mocked(mockRegistry.executeTool).mockResolvedValueOnce({ content: "2", isTerminal: false });
+
+		const loop = createAgentLoop();
+		await loop.run(sampleUserMessage, [], defaultTools, mockLogger);
+
+		expect(mockRegistry.executeTool).toHaveBeenCalledWith(
+			"calculator",
+			{ expr: "1+1" },
+			{ userId: "user-123" },
+		);
 	});
 
 	it("should accumulate all intermediate reasoning across multiple tool call iterations in reasoning array", async () => {

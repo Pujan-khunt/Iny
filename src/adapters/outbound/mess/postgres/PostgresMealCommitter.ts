@@ -1,9 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { and, eq, type SQL } from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import { LoggerPort } from "../../../../core/ports/LoggerPort";
-import { MealSlot, Vendor } from "../../../../core/entities/MessMeal";
-import {
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import type { LoggerPort } from "../../../../core/ports/LoggerPort";
+import type { MealSlot, Vendor } from "../../../../core/entities/MessMeal";
+import type { FoodDecision } from "../../../../core/entities/FoodIngestion";
+import type {
 	AtomicCommitCompositeOptions,
 	AtomicCommitOptions,
 	CommitOperationalPayload,
@@ -11,84 +10,138 @@ import {
 } from "../../../../core/ports/MessStagingRepositoryPort";
 import { PostgresOperationalWriter } from "./PostgresOperationalWriter";
 import { PostgresSwapWriter } from "./PostgresSwapWriter";
-import { messMeals, type MessMealRow } from "./schema";
+import { PostgresMessWriteGuard } from "./PostgresMessWriteGuard";
+import { PostgresMessOperationAudit } from "./PostgresMessOperationAudit";
+import {
+	PostgresMessCommitPreparation,
+	type MessCommitOperation,
+} from "./PostgresMessCommitPreparation";
+type Transaction = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
-/** Handles atomic transactional commit operations for operational mess entities. */
+/** Shared guarded atomic operational writes; manual callers own one outer transaction. */
 export class PostgresMealCommitter {
-	private readonly writer: PostgresOperationalWriter;
-	private readonly swapWriter: PostgresSwapWriter;
-
+	/** All persistence collaborators are supplied by the composition root. */
 	constructor(
-		private readonly db: PgDatabase<any, any, any>,
+		private readonly db: Transaction,
 		private readonly logger: LoggerPort,
-	) {
-		this.writer = new PostgresOperationalWriter();
-		this.swapWriter = new PostgresSwapWriter();
-	}
-
+		private readonly writer: PostgresOperationalWriter,
+		private readonly swapWriter: PostgresSwapWriter,
+		private readonly guard: PostgresMessWriteGuard,
+		private readonly audit: PostgresMessOperationAudit,
+		private readonly preparation: PostgresMessCommitPreparation,
+	) {}
+	/** Returns manual resolver snapshots for an endpoint and optional vendor; SQL failures reject. */
 	async getMealsByDateAndSlot(
 		mealDate: string,
 		mealSlot: MealSlot | string,
 		vendor?: Vendor | string | null,
 	): Promise<StagedMealLookupRecord[]> {
-		this.logger.debug("Fetching mess meals by date and slot", { mealDate, mealSlot, vendor });
-		const conditions: SQL[] = [
-			eq(messMeals.mealDate, mealDate),
-			eq(messMeals.mealSlot, mealSlot as any),
-		];
-		if (vendor) conditions.push(eq(messMeals.vendor, vendor as any));
-		const rows = (await this.db
-			.select()
-			.from(messMeals)
-			.where(and(...conditions))) as MessMealRow[];
-		return rows.map((r) => ({
-			mealDate: r.mealDate,
-			mealSlot: r.mealSlot,
-			vendor: r.vendor,
-			items: r.items,
-		}));
+		const rows = await this.audit.meals(this.db, mealDate, mealSlot as MealSlot);
+		return vendor ? rows.filter((row) => row.vendor === vendor) : rows;
 	}
-
+	/** Commits reviewed values; semantic preflight rejection throws reason/detail without writes. */
 	async atomicCommit(options: AtomicCommitOptions): Promise<void>;
+	/** Commits the reviewed payload for a staged source; conflicts and SQL failures reject atomically. */
 	async atomicCommit(messageId: string, payload: CommitOperationalPayload): Promise<void>;
+	/** Normalizes either public request form before guarded transactional persistence. */
 	async atomicCommit(
 		messageIdOrOptions: string | AtomicCommitOptions,
 		maybePayload?: CommitOperationalPayload,
 	): Promise<void> {
-		const messageId =
-			typeof messageIdOrOptions === "string" ? messageIdOrOptions : messageIdOrOptions.messageId;
-		const payload =
-			typeof messageIdOrOptions === "string" ? (maybePayload ?? {}) : messageIdOrOptions;
-
-		this.logger.info("Executing atomic commit for message", { messageId });
-		await this.db.transaction(async (tx) => {
-			await this.writer.commitMeals(tx, messageId, payload);
-			await this.writer.commitLocations(
-				tx,
-				messageId,
-				payload.locationDetails ?? payload.locationDetail,
-			);
-			await this.writer.commitTimings(
-				tx,
-				messageId,
-				payload.timingExtensions ?? payload.timingExtension,
-			);
-			await this.writer.commitChanges(tx, messageId, payload.mealChanges ?? payload.mealChange);
-			await this.writer.markProcessed(tx, messageId);
-		});
-		this.logger.info("Successfully committed staging message", { messageId });
+		await this.manual(this.preparation.manual(messageIdOrOptions, maybePayload));
+	}
+	/** Commits all reviewed operational clauses and complete swap snapshots or throws atomically. */
+	async atomicCommitComposite(options: AtomicCommitCompositeOptions): Promise<void> {
+		await this.manual(this.preparation.composite(options));
 	}
 
-	async atomicCommitComposite(options: AtomicCommitCompositeOptions): Promise<void> {
-		const { messageId, composite, resolvedSwaps } = options;
-		this.logger.info("Executing atomic composite commit for message", { messageId });
+	private async manual(operation: MessCommitOperation): Promise<void> {
 		await this.db.transaction(async (tx) => {
-			await this.writer.commitLocations(tx, messageId, composite.location ?? undefined);
-			await this.writer.commitTimings(tx, messageId, composite.timingExtensions);
-			await this.writer.commitChanges(tx, messageId, composite.mealChanges);
-			await this.swapWriter.commitSwaps(tx, messageId, resolvedSwaps);
-			await this.writer.markProcessed(tx, messageId);
+			const decision = await this.commitWithinTransaction(tx, operation);
+			if (decision.outcome !== "accepted")
+				throw new Error(
+					"reason" in decision ? `${decision.reason}: ${decision.detail}` : decision.outcome,
+				);
 		});
-		this.logger.info("Successfully committed composite announcement", { messageId });
+		this.logger.info("Successfully committed staging message", { messageId: operation.messageId });
+	}
+	/**
+	 * Uses the existing caller transaction, acquiring the shared lock before staging checks.
+	 * Returns semantic rejection without writes; validation/SQL errors throw and must roll back.
+	 * Automatic callers acquire the shared lock before their lease fence, then call this method.
+	 * Reacquiring the same transaction lock is safe; this method writes no automatic decision.
+	 */
+	async commitWithinTransaction(
+		tx: Transaction,
+		operation: MessCommitOperation,
+	): Promise<FoodDecision> {
+		await this.guard.lock(tx);
+		if (!(await this.guard.permits(tx, operation)))
+			return {
+				outcome: "rejected",
+				reason: "staging_conflict",
+				detail: "Staging no longer permits this operation",
+			};
+		const prepared = this.preparation.prepare(operation);
+		const keys = PostgresMessOperationAudit.factKeys(prepared.payload, operation.resolvedSwaps);
+		const source = await this.audit.source(tx, operation.messageId);
+		const originalCreatedAt = source?.originalCreatedAt ?? null;
+		const order = await this.guard.checkOrder(
+			tx,
+			{ messageId: operation.messageId, originalCreatedAt },
+			keys,
+		);
+		if (order.outcome !== "accepted") return order;
+		const swaps = await this.guard.checkSwapSnapshots(tx, {
+			swaps: operation.swaps ?? [],
+			resolvedSwaps: operation.resolvedSwaps ?? [],
+			mode: operation.mode,
+		});
+		if (swaps.outcome !== "accepted") return swaps;
+		await this.apply(tx, operation, prepared, keys, source);
+		return { outcome: "accepted" };
+	}
+	private async apply(
+		tx: Transaction,
+		operation: MessCommitOperation,
+		prepared: ReturnType<PostgresMessCommitPreparation["prepare"]>,
+		keys: string[],
+		source: Awaited<ReturnType<PostgresMessOperationAudit["source"]>>,
+	) {
+		const beforeImages = await this.audit.operationSnapshot(tx, keys, operation.resolvedSwaps);
+		await this.write(tx, operation.messageId, prepared.payload, {
+			...operation,
+			resolvedSwaps: prepared.resolvedSwaps,
+		});
+		const afterImages = await this.audit.operationSnapshot(tx, keys, operation.resolvedSwaps);
+		await this.audit.record(tx, {
+			operation,
+			source: source?.source,
+			originalCreatedAt: source?.originalCreatedAt ?? null,
+			keys,
+			corrections: prepared.corrections,
+			beforeImages,
+			afterImages,
+		});
+		await this.writer.markProcessed(tx, operation.messageId);
+		if (operation.mode === "manual")
+			await this.audit.manualDisposition(tx, "manual_override", operation.messageId);
+	}
+
+	private async write(
+		tx: Transaction,
+		id: string,
+		payload: CommitOperationalPayload,
+		operation: MessCommitOperation,
+	) {
+		await this.writer.commitMeals(tx, id, payload);
+		await this.writer.commitLocations(tx, id, payload.locationDetails ?? payload.locationDetail);
+		await this.writer.commitTimings(tx, id, payload.timingExtensions ?? payload.timingExtension);
+		await this.writer.commitChanges(tx, id, payload.mealChanges ?? payload.mealChange);
+		await this.swapWriter.commitSwaps(
+			tx,
+			id,
+			operation.resolvedSwaps ? [...operation.resolvedSwaps] : undefined,
+		);
 	}
 }

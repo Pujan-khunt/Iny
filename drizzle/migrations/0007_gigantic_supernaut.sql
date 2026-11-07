@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "default_vendor" "vendor" DEFAULT 'cheftalk_regular' NOT NULL;

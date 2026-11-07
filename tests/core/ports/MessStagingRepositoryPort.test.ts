@@ -9,10 +9,6 @@ import {
 	CommitLocationDetailInput,
 	CommitTimingExtensionInput,
 	CommitMealChangeInput,
-	StagedWeeklyMealItem,
-	StagedWeeklyMenu,
-	StagedMealSwap,
-	StagedCompositeAnnouncement,
 	ResolvedMealSwapInput,
 	StagedMealLookupRecord,
 	CommitOperationalPayload,
@@ -20,8 +16,17 @@ import {
 	AtomicCommitCompositeOptions,
 	StageMessageResult,
 } from "../../../src/core/ports/MessStagingRepositoryPort";
+import type {
+	StagedWeeklyMealItem,
+	StagedWeeklyMenu,
+	StagedMealSwap,
+	StagedCompositeAnnouncement,
+} from "../../../src/core/entities/MessAnnouncement";
 
 class MockMessStagingRepository implements MessStagingRepositoryPort {
+	async getIngestionAudit() {
+		return null;
+	}
 	listStagedMessages =
 		vi.fn<(options?: ListStagedMessagesOptions) => Promise<StagedAnnouncementMessage[]>>();
 	getMessageById = vi.fn<(id: string) => Promise<StagedAnnouncementMessage | null>>();

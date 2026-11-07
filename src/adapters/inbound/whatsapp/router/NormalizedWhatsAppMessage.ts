@@ -6,6 +6,36 @@ export type WhatsAppContentType = "text" | "image" | "document" | "unsupported";
 
 export type WhatsAppUpsertType = "notify" | "append";
 
+export interface WhatsAppContentBase {
+	readonly type: WhatsAppContentType;
+	readonly text: string | null;
+	readonly mimeType: string | null;
+	readonly preview?: string;
+}
+
+export type WhatsAppContent =
+	| (WhatsAppContentBase & {
+			readonly type: "text";
+			readonly text: string | null;
+			readonly mimeType: null;
+	  })
+	| (WhatsAppContentBase & {
+			readonly type: "image";
+			readonly text: string | null;
+			readonly mimeType: string;
+	  })
+	| (WhatsAppContentBase & {
+			readonly type: "document";
+			readonly text: string | null;
+			readonly mimeType: string;
+	  })
+	| (WhatsAppContentBase & {
+			readonly type: "unsupported";
+			readonly text: null;
+			readonly mimeType: null;
+			readonly rawKeys?: readonly string[];
+	  });
+
 /**
  * Ingestion payload representing a raw Baileys messages.upsert event batch.
  */
@@ -23,6 +53,7 @@ export interface ResolvedWhatsAppIdentity {
 	readonly companionLidJid: string | null;
 }
 
+/** Transport envelope retaining original provenance and the DM compatibility timestamp. */
 export interface NormalizedWhatsAppMessage {
 	/** Unique stanza message identifier (e.g. wamid or Baileys ID). */
 	readonly messageId: string;
@@ -47,14 +78,14 @@ export interface NormalizedWhatsAppMessage {
 	readonly companionLidJid: string | null;
 	/** True if the message was authored by the connected bot identity. */
 	readonly fromMe: boolean;
-	/** Message creation epoch timestamp in milliseconds. */
+	/** Actual transport delivery mode, retained independently of handler routing. */
+	readonly upsertType: WhatsAppUpsertType;
+	/** Valid source creation epoch milliseconds, or null if missing or invalid. */
+	readonly originalTimestamp: number | null;
+	/** Message creation epoch milliseconds, falling back to current time for DMs. */
 	readonly timestamp: number;
 	/** Extracted content payload metadata. */
-	readonly content: {
-		readonly type: WhatsAppContentType;
-		readonly text: string | null;
-		readonly mimeType: string | null;
-	};
+	readonly content: WhatsAppContent;
 	/**
 	 * Lazy media download closure.
 	 * Defers binary buffer fetching until explicitly invoked by a handler that requires raw media.
@@ -63,6 +94,7 @@ export interface NormalizedWhatsAppMessage {
 	readonly downloadMedia: () => Promise<Buffer | null>;
 }
 
+/** Routes matching normalized messages through the handler's declared delivery modes. */
 export interface WhatsAppMessageHandler {
 	readonly name: string;
 	/**

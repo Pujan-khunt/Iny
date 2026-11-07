@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, check, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { UserRecord, UserRole, UserStatus } from "../../../../core/ports/AccessControlPort";
+import { vendorEnum } from "../../mess/postgres/schema";
 
 export const users = pgTable(
 	"users",
@@ -11,6 +12,7 @@ export const users = pgTable(
 		name: text("name"),
 		role: text("role").$type<UserRole>().notNull().default("user"),
 		status: text("status").$type<UserStatus>().notNull().default("pending"),
+		defaultVendor: vendorEnum("default_vendor").notNull().default("cheftalk_regular"),
 		createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	},

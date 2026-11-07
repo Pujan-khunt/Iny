@@ -61,6 +61,12 @@ describe("SystemPrompt Subsystem", () => {
 		expect(MESS_ROUTING_RULES).toContain("empty argument payload `{}`");
 	});
 
+	it("documents uniform vendor alias mapping and default mess preference rules", () => {
+		expect(MESS_ROUTING_RULES).toContain("cheftalk_regular");
+		expect(MESS_ROUTING_RULES).toContain("set_default_mess");
+		expect(SYSTEM_PROMPT).toContain("set_default_mess");
+	});
+
 	it("assembles SYSTEM_PROMPT containing all modular sections", () => {
 		expect(SYSTEM_PROMPT).toContain(BASE_PERSONA);
 		expect(SYSTEM_PROMPT).toContain(WHATSAPP_FORMATTING_RULES);

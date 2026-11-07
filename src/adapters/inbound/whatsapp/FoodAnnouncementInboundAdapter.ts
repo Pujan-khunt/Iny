@@ -9,6 +9,7 @@ import {
 	WhatsAppUpsertType,
 } from "./router/NormalizedWhatsAppMessage";
 
+/** Configured group scope and required food capture collaborators. */
 export interface FoodAnnouncementInboundAdapterOptions {
 	readonly targetGroupJid: string;
 	readonly useCase: StageIncomingFoodAnnouncement;
@@ -30,43 +31,86 @@ export class FoodAnnouncementInboundAdapter implements WhatsAppMessageHandler {
 	private readonly useCase: StageIncomingFoodAnnouncement;
 	private readonly logger: LoggerPort;
 
+	/** Receives configured group scope, atomic staging use case, and logging. */
 	constructor(options: FoodAnnouncementInboundAdapterOptions) {
 		this.targetGroupJid = options.targetGroupJid;
 		this.useCase = options.useCase;
 		this.logger = options.logger;
 	}
 
+	/** Accepts non-bot supported content exclusively from the configured group. */
 	matches(message: NormalizedWhatsAppMessage): boolean {
-		if (message.fromMe || message.chatType !== "group" || message.chatJid !== this.targetGroupJid) {
+		if (message.chatJid !== this.targetGroupJid) return false;
+		if (message.chatType !== "group") return false;
+
+		const reason = this.resolveFilterReason(message);
+		if (reason) {
+			const rawKeys = message.content.type === "unsupported" ? message.content.rawKeys : undefined;
+			this.logger.debug("Food announcement handler skipped target group message", {
+				messageId: message.messageId,
+				reason,
+				contentPreview: message.content.preview,
+				rawKeys,
+			});
 			return false;
 		}
-		if (message.content.type === "text") {
-			return Boolean(message.content.text && message.content.text.trim().length > 0);
-		}
-		return message.content.type === "image" || message.content.type === "document";
+		return true;
 	}
 
-	async handle(message: NormalizedWhatsAppMessage): Promise<void> {
-		const mediaBuffer = await message.downloadMedia();
-		if (mediaBuffer) {
-			this.logger.debug("Downloaded media attachment for food announcement", {
-				messageId: message.messageId,
-				mediaMimeType: message.content.mimeType,
-				bufferSize: mediaBuffer.length,
-			});
+	private resolveFilterReason(message: NormalizedWhatsAppMessage): string | null {
+		if (message.fromMe) return "authored_by_bot";
+		if (message.content.type === "unsupported") return "unsupported_content_type";
+		if (message.content.type === "text") {
+			if (!message.content.text || message.content.text.trim().length === 0) return "empty_text";
 		}
+		return null;
+	}
 
-		const command: StageFoodAnnouncementCommand = {
-			id: message.messageId,
+	/** Downloads matched media lazily and captures source provenance; failures reject with a phase. */
+	async handle(message: NormalizedWhatsAppMessage): Promise<void> {
+		if (!this.matches(message)) return;
+		const capturedAt = new Date();
+		let phase = "download";
+		try {
+			const mediaBytes = message.content.type === "text" ? null : await message.downloadMedia();
+			if (message.content.type !== "text" && !mediaBytes?.byteLength)
+				throw new Error("Food announcement media download returned no content");
+			if (mediaBytes) {
+				this.logger.debug("Downloaded media attachment for food announcement", {
+					messageId: message.messageId,
+					mediaMimeType: message.content.mimeType,
+					bufferSize: mediaBytes.length,
+				});
+			}
+			phase = "capture";
+			await this.useCase.execute(this.source(message, mediaBytes, capturedAt));
+		} catch (error) {
+			this.logger.error("Food announcement handling failed", error, {
+				messageId: message.messageId,
+				phase,
+			});
+			throw error;
+		}
+	}
+
+	private source(
+		message: NormalizedWhatsAppMessage,
+		mediaBytes: Uint8Array | null,
+		capturedAt: Date,
+	): StageFoodAnnouncementCommand {
+		return {
+			messageId: message.messageId,
+			groupJid: message.chatJid,
 			senderAddress: message.senderJid,
 			senderAddressType: message.senderType,
+			deliveryMode: message.upsertType,
+			originalCreatedAt:
+				message.originalTimestamp === null ? null : new Date(message.originalTimestamp),
+			capturedAt,
 			messageType: message.content.type as "image" | "document" | "text",
 			textBody: message.content.text,
 			mediaMimeType: message.content.mimeType,
-			mediaBuffer,
-			receivedAt: new Date(message.timestamp),
+			mediaBytes,
 		};
-
-		await this.useCase.execute(command);
 	}
 }

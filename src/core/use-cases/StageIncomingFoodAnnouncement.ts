@@ -1,69 +1,51 @@
-import { MessStagingRepositoryPort } from "../ports/MessStagingRepositoryPort";
-import { LoggerPort } from "../ports/LoggerPort";
+import type { FoodAnnouncementSource } from "../entities/FoodAnnouncement";
+import type { FoodIngestionRepositoryPort } from "../ports/FoodIngestionRepositoryPort";
+import type { LoggerPort } from "../ports/LoggerPort";
 
-/**
- * Command payload for staging an incoming food announcement message.
- */
-export interface StageFoodAnnouncementCommand {
-	readonly id: string;
-	readonly senderAddress: string;
-	readonly senderAddressType: "pn" | "lid";
-	readonly messageType: "image" | "document" | "text";
-	readonly textBody: string | null;
-	readonly mediaMimeType: string | null;
-	readonly mediaBuffer: Buffer | null;
-	readonly receivedAt?: Date;
-}
+/** Pure original source contract for atomic staging and automatic admission. */
+export type StageFoodAnnouncementCommand = FoodAnnouncementSource;
 
-/**
- * Use case that validates and stages incoming food announcement messages.
- * Enforces ingestion idempotency by inspecting staging repository results.
- */
+/** Validates raw source content and requests one atomic capture/admission operation. */
 export class StageIncomingFoodAnnouncement {
+	/** Injects the atomic persistence boundary and source-scoped diagnostic logger. */
 	constructor(
-		private readonly stagingRepository: MessStagingRepositoryPort,
+		private readonly repository: FoodIngestionRepositoryPort,
 		private readonly logger: LoggerPort,
 	) {}
 
 	/**
-	 * Validates the announcement command and stages the pending record.
-	 * Idempotently ignores duplicate messages during historical replay.
-	 *
-	 * @param command Validated staging command.
+	 * Captures a validated source once, preserving ineligibility and duplicate decisions.
+	 * @param source Original transport provenance and actual text or media content.
+	 * @returns Resolves after capture; validation and persistence failures reject for transport retry.
 	 */
-	async execute(command: StageFoodAnnouncementCommand): Promise<void> {
-		this.validateCommand(command);
-		const result = await this.stagingRepository.stageMessage({
-			...command,
-			status: "pending",
-		});
-
-		if (result === "already_staged") {
-			this.logger.debug("Food announcement message already staged, ignoring duplicate", {
-				id: command.id,
+	async execute(source: StageFoodAnnouncementCommand): Promise<void> {
+		this.validateCommand(source);
+		try {
+			const result = await this.repository.capture(source);
+			const context = { messageId: source.messageId, phase: "capture", result };
+			if (result === "duplicate") {
+				this.logger.debug("Food announcement already captured", context);
+				return;
+			}
+			this.logger.info("Food announcement captured successfully", context);
+		} catch (error) {
+			this.logger.error("Food announcement capture failed", error, {
+				messageId: source.messageId,
+				phase: "capture",
 			});
-			return;
+			throw error;
 		}
-
-		this.logger.info("Food announcement message staged successfully", {
-			id: command.id,
-		});
 	}
 
-	/**
-	 * Validates mandatory fields and content presence on the command.
-	 */
-	private validateCommand(command: StageFoodAnnouncementCommand): void {
-		if (!command.id || command.id.trim() === "") {
-			throw new Error("Invalid announcement command: id is required");
+	private validateCommand(source: StageFoodAnnouncementCommand): void {
+		for (const field of ["messageId", "groupJid", "senderAddress"] as const) {
+			if (!source[field] || source[field].trim() === "")
+				throw new Error(`Invalid announcement command: ${field} is required`);
 		}
-		if (!command.senderAddress || command.senderAddress.trim() === "") {
-			throw new Error("Invalid announcement command: senderAddress is required");
-		}
-		const hasText = typeof command.textBody === "string" && command.textBody.trim() !== "";
-		const hasMedia = command.mediaBuffer !== null;
-		if (!hasText && !hasMedia) {
-			throw new Error("Invalid announcement command: message must have text body or media content");
-		}
+		const hasText = typeof source.textBody === "string" && source.textBody.trim() !== "";
+		const hasMedia = source.mediaBytes instanceof Uint8Array && source.mediaBytes.byteLength > 0;
+		const validContent = source.messageType === "text" ? hasText : hasMedia;
+		if (!validContent)
+			throw new Error("Invalid announcement command: message must have actual content");
 	}
 }

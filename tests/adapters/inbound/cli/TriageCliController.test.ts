@@ -1,11 +1,20 @@
+import { TriageTerminalView } from "../../../../src/adapters/inbound/cli/TriageTerminalView";
+import { TriageMenuRenderer } from "../../../../src/adapters/inbound/cli/TriageMenuRenderer";
+import { TriagePreviewRenderer } from "../../../../src/adapters/inbound/cli/TriagePreviewRenderer";
+import { TriageWeeklyMenuRenderer } from "../../../../src/adapters/inbound/cli/TriageWeeklyMenuRenderer";
+import { TriageCompositeRenderer } from "../../../../src/adapters/inbound/cli/TriageCompositeRenderer";
+import { TriageMessageActions } from "../../../../src/adapters/inbound/cli/TriageMessageActions";
+import { TriageWeeklyMenuController } from "../../../../src/adapters/inbound/cli/TriageWeeklyMenuController";
+import { TriageWeeklyMenuReview } from "../../../../src/adapters/inbound/cli/TriageWeeklyMenuReview";
+import { TriageAnnouncementController } from "../../../../src/adapters/inbound/cli/TriageAnnouncementController";
+import { MenuDishNormalizer } from "../../../../src/core/services/MenuDishNormalizer";
+import { MealSwapResolver } from "../../../../src/core/services/MealSwapResolver";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TriageCliController } from "../../../../src/adapters/inbound/cli/TriageCliController";
 import type { StagedAnnouncementMessage } from "../../../../src/core/ports/MessStagingRepositoryPort";
-import type {
-	ExtractedWeeklyMenu,
-	ExtractedCompositeAnnouncement,
-} from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
-import { ExtractedCompositeAnnouncementSchema } from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
+import type { StagedWeeklyMenu } from "../../../../src/core/entities/MessAnnouncement";
+import type { ExtractedCompositeAnnouncement } from "../../../../src/adapters/common/mess/ExtractionSchemas";
+import { ExtractedCompositeAnnouncementSchema } from "../../../../src/adapters/common/mess/ExtractionSchemas";
 
 class MockIo {
 	private inputs: string[];
@@ -41,7 +50,7 @@ describe("TriageCliController", () => {
 	let mockEditor: any;
 	let mockPreviewer: any;
 
-	const mockWeeklyMenu: ExtractedWeeklyMenu = {
+	const mockWeeklyMenu: StagedWeeklyMenu = {
 		vendor: "cheftalk_regular",
 		meals: Array.from({ length: 21 }, (_, i) => ({
 			mealDate: `2026-10-${String(4 + Math.floor(i / 3)).padStart(2, "0")}`,
@@ -76,9 +85,40 @@ describe("TriageCliController", () => {
 		processedAt: new Date("2026-10-08T07:00:00Z"),
 	};
 
+	function createController(deps: { io: MockIo }) {
+		const io = deps.io;
+		const view = new TriageTerminalView(
+			new TriageMenuRenderer(),
+			new TriagePreviewRenderer(new TriageWeeklyMenuRenderer(), new TriageCompositeRenderer()),
+		);
+		const review = new TriageWeeklyMenuReview(
+			io,
+			view,
+			mockStagingRepo,
+			mockEditor,
+			MenuDishNormalizer,
+		);
+		return new TriageCliController(
+			io,
+			view,
+			mockStagingRepo,
+			new TriageMessageActions(io, view, mockStagingRepo, mockPreviewer),
+			new TriageWeeklyMenuController(io, view, mockVisionExtractor, mockPdfRasterizer, review),
+			new TriageAnnouncementController(
+				io,
+				view,
+				mockStagingRepo,
+				mockTextExtractor,
+				mockEditor,
+				new MealSwapResolver(mockStagingRepo),
+			),
+		);
+	}
+
 	beforeEach(() => {
 		mockStagingRepo = {
 			listStagedMessages: vi.fn(),
+			getIngestionAudit: vi.fn().mockResolvedValue(null),
 			getMessageById: vi.fn(),
 			atomicCommit: vi.fn().mockResolvedValue(undefined),
 			atomicCommitComposite: vi.fn().mockResolvedValue(undefined),
@@ -88,18 +128,26 @@ describe("TriageCliController", () => {
 		};
 
 		mockVisionExtractor = {
-			extractWeeklyMenu: vi.fn().mockResolvedValue(mockWeeklyMenu),
+			extractWeeklyMenu: vi.fn().mockResolvedValue({
+				rawMenu: structuredClone(mockWeeklyMenu),
+				menu: structuredClone(mockWeeklyMenu),
+				corrections: [],
+			}),
 		};
 
 		mockTextExtractor = {
-			extractLocationDetail: vi.fn(),
-			extractTimingExtension: vi.fn(),
-			extractMealChange: vi.fn(),
 			extractAnnouncementEvents: vi.fn(),
 		};
 
 		mockPdfRasterizer = {
-			rasterizePageOneToPng: vi.fn().mockResolvedValue(Buffer.from("png-bytes")),
+			inspect: vi.fn().mockResolvedValue({ pageCount: 1, widthPoints: 72, heightPoints: 36 }),
+			renderFirstPage: vi.fn().mockResolvedValue({
+				pngBytes: new Uint8Array(Buffer.from("png-bytes")),
+				widthPixels: 600,
+				heightPixels: 300,
+				dpi: 600,
+				elapsedMs: 1,
+			}),
 		};
 
 		mockEditor = {
@@ -115,15 +163,7 @@ describe("TriageCliController", () => {
 		mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
 		const io = new MockIo(["q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			pdfRasterizer: mockPdfRasterizer,
-			editor: mockEditor,
-			previewer: mockPreviewer,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 		expect(mockStagingRepo.listStagedMessages).toHaveBeenCalledTimes(1);
@@ -133,12 +173,7 @@ describe("TriageCliController", () => {
 		mockStagingRepo.listStagedMessages.mockResolvedValue([]);
 		const io = new MockIo([]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 		expect(io.outputs.some((o) => o.includes("No staged food announcement messages found"))).toBe(
@@ -154,12 +189,7 @@ describe("TriageCliController", () => {
 		// Choices: select message 1 -> undo 'u' -> will loop, then exit on q or empty
 		const io = new MockIo(["1", "u", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 		expect(mockStagingRepo.atomicUndo).toHaveBeenCalledWith("MSG_PROCESSED_01");
@@ -173,12 +203,7 @@ describe("TriageCliController", () => {
 		// Select message 1 -> Intent 5 (mark ignored) -> confirm 'y' -> exit 'q'
 		const io = new MockIo(["1", "5", "y", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 		expect(mockStagingRepo.markIgnored).toHaveBeenCalledWith("MSG_PDF_01");
@@ -190,13 +215,7 @@ describe("TriageCliController", () => {
 		// Select 1 -> Intent 1 -> Choice 'o' (open media) -> Choice 'c' (cancel) -> Exit 'q'
 		const io = new MockIo(["1", "1", "o", "c", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			previewer: mockPreviewer,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 		expect(mockPreviewer.previewMedia).toHaveBeenCalledWith(
@@ -210,32 +229,39 @@ describe("TriageCliController", () => {
 		mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
 
 		// First call throws, second call succeeds
-		mockPdfRasterizer.rasterizePageOneToPng
+		mockPdfRasterizer.renderFirstPage
 			.mockRejectedValueOnce(new Error("Rate limit reached for deepseek-flash"))
-			.mockResolvedValueOnce(Buffer.from("png-bytes"));
+			.mockResolvedValueOnce({
+				pngBytes: new Uint8Array(Buffer.from("png-bytes")),
+				widthPixels: 600,
+				heightPixels: 300,
+				dpi: 600,
+				elapsedMs: 1,
+			});
 
 		// Select 1 -> Intent 1 -> Proceed 'y' -> Error occurs -> Retry 'r' -> Preview shown -> Commit 'y' -> Exit 'q'
 		const io = new MockIo(["1", "1", "y", "r", "y", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			pdfRasterizer: mockPdfRasterizer,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 		expect(mockStagingRepo.atomicCommit).toHaveBeenCalledWith({
 			messageId: "MSG_PDF_01",
 			weeklyMenu: mockWeeklyMenu,
+			extractionAudit: {
+				rawMenu: mockWeeklyMenu,
+				menu: mockWeeklyMenu,
+				corrections: [],
+				reviewedMenu: mockWeeklyMenu,
+				reviewCorrections: [],
+			},
 		});
 	});
 
 	it("executes full weekly menu remediation (switch vendor [v], shift dates [d], edit [e], confirm [y])", async () => {
 		mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
 
-		const updatedMenuFromEditor: ExtractedWeeklyMenu = {
+		const updatedMenuFromEditor: StagedWeeklyMenu = {
 			...mockWeeklyMenu,
 			vendor: "cheftalk_jain",
 		};
@@ -252,25 +278,288 @@ describe("TriageCliController", () => {
 		// 'q' -> exit
 		const io = new MockIo(["1", "1", "y", "v", "3", "d", "2026-10-05", "e", "y", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			pdfRasterizer: mockPdfRasterizer,
-			editor: mockEditor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
-		expect(mockPdfRasterizer.rasterizePageOneToPng).toHaveBeenCalled();
-		expect(mockVisionExtractor.extractWeeklyMenu).toHaveBeenCalled();
+		expect(mockPdfRasterizer.renderFirstPage).toHaveBeenCalled();
+		expect(mockVisionExtractor.extractWeeklyMenu).toHaveBeenCalledWith(Buffer.from("png-bytes"), {
+			mimeType: "image/png",
+			textContext: samplePendingPdfMessage.textBody,
+		});
 		expect(mockEditor.editJson).toHaveBeenCalled();
 		expect(mockStagingRepo.atomicCommit).toHaveBeenCalledWith({
 			messageId: "MSG_PDF_01",
 			weeklyMenu: expect.objectContaining({
 				vendor: "cheftalk_jain",
 			}),
+			extractionAudit: expect.objectContaining({
+				rawMenu: mockWeeklyMenu,
+				menu: mockWeeklyMenu,
+				corrections: [],
+				reviewedMenu: updatedMenuFromEditor,
+				reviewCorrections: [],
+			}),
 		});
+	});
+
+	it("preserves extraction audit independently through vendor, date, and mutable editor changes", async () => {
+		mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
+		const rawMenu = structuredClone(mockWeeklyMenu);
+		rawMenu.meals[0].items = ["Frycrums"];
+		const menu = structuredClone(rawMenu);
+		menu.meals[0].items = ["Fryums"];
+		const corrections = [
+			{
+				mealDate: "2026-10-04",
+				mealSlot: "breakfast",
+				itemIndex: 0,
+				originalItem: "Frycrums",
+				correctedItem: "Fryums",
+				aliasId: "frycrums-to-fryums",
+			},
+		];
+		const extraction = { rawMenu, menu, corrections };
+		const snapshot = structuredClone(extraction);
+		mockVisionExtractor.extractWeeklyMenu.mockResolvedValue(extraction);
+		mockEditor.editJson.mockImplementation(async (working: StagedWeeklyMenu) => {
+			expect(working.vendor).toBe("tcb");
+			expect(working.meals[0].mealDate).toBe("2026-10-05");
+			working.meals[0].items[0] = "Operator dish";
+			return { success: true, data: working };
+		});
+		const io = new MockIo(["1", "1", "y", "v", "3", "d", "2026-10-05", "e", "y", "q"]);
+		const controller = createController({ io });
+		await controller.run();
+		expect(extraction).toEqual(snapshot);
+		const committed = mockStagingRepo.atomicCommit.mock.calls[0][0];
+		expect(committed.weeklyMenu.meals[0].items).toEqual(["Operator dish"]);
+		expect(committed.extractionAudit).toEqual({
+			...snapshot,
+			reviewedMenu: committed.weeklyMenu,
+			reviewCorrections: [],
+		});
+		committed.weeklyMenu.meals[0].items[0] = "Later mutation";
+		expect(committed.extractionAudit.reviewedMenu.meals[0].items).toEqual(["Operator dish"]);
+	});
+
+	it("retains initial corrections and normalizes edited dishes through the public sequence", async () => {
+		mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
+		const rawMenu = structuredClone(mockWeeklyMenu);
+		rawMenu.meals[0].items = ["Frycrums", "Patrode"];
+		const menu = structuredClone(rawMenu);
+		menu.meals[0].items[0] = "Fryums";
+		const extraction = {
+			rawMenu,
+			menu,
+			corrections: [
+				{
+					mealDate: "2026-10-04",
+					mealSlot: "breakfast",
+					itemIndex: 0,
+					originalItem: "Frycrums",
+					correctedItem: "Fryums",
+					aliasId: "frycrums-to-fryums",
+				},
+			],
+		};
+		mockVisionExtractor.extractWeeklyMenu.mockResolvedValue(extraction);
+		mockEditor.editJson.mockImplementation(async (working: StagedWeeklyMenu) => {
+			working.meals[1].items = ["Masala Frycrums/Papad"];
+			return { success: true, data: working };
+		});
+		const io = new MockIo(["1", "1", "y", "e", "y", "q"]);
+		const controller = createController({ io });
+		await controller.run();
+		const commit = mockStagingRepo.atomicCommit.mock.calls[0][0];
+		expect(commit.weeklyMenu.meals[0].items).toEqual(["Fryums", "Patrode"]);
+		expect(commit.weeklyMenu.meals[1].items).toEqual(["Masala Fryums/Papad"]);
+		expect(commit.extractionAudit.rawMenu.meals[0].items).toContain("Frycrums");
+		expect(commit.extractionAudit.corrections[0].aliasId).toBe("frycrums-to-fryums");
+		expect(commit.extractionAudit.reviewedMenu.meals[1].items).toEqual(["Masala Frycrums/Papad"]);
+		expect(commit.extractionAudit.reviewCorrections).toEqual([
+			expect.objectContaining({
+				originalItem: "Masala Frycrums/Papad",
+				correctedItem: "Masala Fryums/Papad",
+			}),
+		]);
+		expect(io.outputs.join("\n")).toContain("Frycrums -> Fryums");
+		expect(extraction.menu.meals[1].items).toEqual(["Item 2"]);
+	});
+
+	it.each(["rejected", "failed"])(
+		"inspects persisted %s reason without changing automatic state",
+		async (state) => {
+			mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
+			mockStagingRepo.getIngestionAudit = vi.fn().mockResolvedValue({
+				automatic: {
+					state,
+					decisionReason: "unreadable_content",
+					decisionDetail: "Dinner cell is obscured",
+				},
+				operations: [],
+			});
+			const io = new MockIo(["1", "c", "q"]);
+			await createController({ io }).run();
+			expect(mockStagingRepo.getIngestionAudit).toHaveBeenCalledWith(samplePendingPdfMessage.id);
+			expect(io.outputs.join("\n")).toContain("unreadable_content");
+			expect(io.outputs.join("\n")).toContain("Dinner cell is obscured");
+			expect(mockStagingRepo.atomicCommit).not.toHaveBeenCalled();
+		},
+	);
+
+	it("keeps chronological edit corrections without duplicating them on cancelled edits", async () => {
+		mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
+		mockEditor.editJson
+			.mockImplementationOnce(async (working: StagedWeeklyMenu) => {
+				working.meals[0].items = ["Masala Frycrums"];
+				return { success: true, data: working };
+			})
+			.mockResolvedValueOnce({ cancelled: true })
+			.mockImplementationOnce(async (working: StagedWeeklyMenu) => {
+				expect(working.meals[0].items).toEqual(["Masala Fryums"]);
+				working.meals[0].items = ["Patrode"];
+				working.meals[1].items = ["Frycrums/Papad"];
+				return { success: true, data: working };
+			});
+		const io = new MockIo(["1", "1", "y", "e", "e", "e", "y", "q"]);
+		await createController({ io }).run();
+		const commit = mockStagingRepo.atomicCommit.mock.calls[0][0];
+		expect(commit.extractionAudit.reviewCorrections.map((c: any) => c.originalItem)).toEqual([
+			"Masala Frycrums",
+			"Frycrums/Papad",
+		]);
+		expect(commit.weeklyMenu.meals[0].items).toEqual(["Patrode"]);
+		expect(commit.weeklyMenu.meals[1].items).toEqual(["Fryums/Papad"]);
+	});
+
+	it.each([null, undefined])(
+		"retains manual %s scope for only currently present source vendors",
+		async (targetVendor) => {
+			const message = {
+				...samplePendingPdfMessage,
+				messageType: "text",
+				mediaBuffer: null,
+				mediaMimeType: null,
+			};
+			mockStagingRepo.listStagedMessages.mockResolvedValue([message]);
+			const swap = {
+				sourceMealDate: "2026-10-04",
+				sourceMealSlot: "lunch",
+				targetMealDate: "2026-10-05",
+				targetMealSlot: "dinner",
+				targetVendor,
+			};
+			mockTextExtractor.extractAnnouncementEvents.mockResolvedValue({
+				mealDate: "2026-10-05",
+				mealSwaps: [swap],
+			});
+			mockStagingRepo.getMealsByDateAndSlot.mockImplementation(
+				async (mealDate: string, mealSlot: string) => [
+					{
+						mealDate,
+						mealSlot,
+						vendor: "tcb",
+						items: [mealDate === "2026-10-04" ? "Source" : "Target"],
+					},
+				],
+			);
+			await createController({ io: new MockIo(["1", "1", "y", "q"]) }).run();
+			const commit = mockStagingRepo.atomicCommitComposite.mock.calls[0][0];
+			expect(commit.composite.mealSwaps[0].targetVendor).toBe(targetVendor);
+			expect(commit.resolvedSwaps).toEqual([
+				expect.objectContaining({ vendor: "tcb", newItems: ["Source"], previousItems: ["Target"] }),
+			]);
+		},
+	);
+
+	it.each([null, undefined])("blocks missing target for manual %s scope", async (targetVendor) => {
+		mockStagingRepo.listStagedMessages.mockResolvedValue([
+			{ ...samplePendingPdfMessage, messageType: "text", mediaBuffer: null, mediaMimeType: null },
+		]);
+		mockTextExtractor.extractAnnouncementEvents.mockResolvedValue({
+			mealDate: "2026-10-05",
+			mealSwaps: [
+				{
+					sourceMealDate: "2026-10-04",
+					sourceMealSlot: "lunch",
+					targetMealDate: "2026-10-05",
+					targetMealSlot: "dinner",
+					targetVendor,
+				},
+			],
+		});
+		mockStagingRepo.getMealsByDateAndSlot.mockImplementation(
+			async (mealDate: string, mealSlot: string) =>
+				mealDate === "2026-10-04" ? [{ mealDate, mealSlot, vendor: "tcb", items: ["Source"] }] : [],
+		);
+		const io = new MockIo(["1", "1", "y", "c", "q"]);
+		await createController({ io }).run();
+		expect(mockStagingRepo.atomicCommitComposite).not.toHaveBeenCalled();
+		expect(io.outputs.join("\n")).toContain("Target menu for 2026-10-05");
+	});
+
+	it("keeps the previous menu after a mutable cancelled edit and allows retry", async () => {
+		mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
+		mockEditor.editJson
+			.mockImplementationOnce(async (working: StagedWeeklyMenu) => {
+				working.meals[0].items = ["Discard this"];
+				return { success: false, cancelled: true };
+			})
+			.mockResolvedValueOnce({ success: false, error: "Invalid JSON" })
+			.mockImplementationOnce(async (working: StagedWeeklyMenu) => {
+				expect(working.meals[0].items).toEqual(["Item 1"]);
+				working.meals[0].items = ["Operator dish"];
+				return { success: true, data: working };
+			});
+		const io = new MockIo(["1", "1", "y", "e", "e", "e", "y", "q"]);
+		await createController({ io }).run();
+		expect(mockStagingRepo.atomicCommit.mock.calls[0][0].weeklyMenu.meals[0].items).toEqual([
+			"Operator dish",
+		]);
+		expect(io.outputs.join("\n")).toContain("Edit error: Invalid JSON");
+	});
+
+	it("retries text extraction and preserves confirmation after an error", async () => {
+		mockStagingRepo.listStagedMessages.mockResolvedValue([
+			{ ...samplePendingPdfMessage, messageType: "text", mediaBuffer: null, mediaMimeType: null },
+		]);
+		mockTextExtractor.extractAnnouncementEvents
+			.mockRejectedValueOnce(new Error("provider timeout"))
+			.mockResolvedValueOnce({
+				mealDate: "2026-10-05",
+				mealChanges: [
+					{
+						mealDate: "2026-10-05",
+						mealSlot: "dinner",
+						targetVendor: "tcb",
+						changeType: "addition",
+						affectedItem: "Patrode",
+					},
+				],
+			});
+		await createController({ io: new MockIo(["1", "1", "r", "y", "q"]) }).run();
+		expect(mockTextExtractor.extractAnnouncementEvents).toHaveBeenCalledTimes(2);
+		expect(
+			mockStagingRepo.atomicCommitComposite.mock.calls[0][0].composite.mealChanges[0].affectedItem,
+		).toBe("Patrode");
+	});
+
+	it("returns to the inbox after extraction error cancellation", async () => {
+		mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
+		mockVisionExtractor.extractWeeklyMenu.mockRejectedValue(new Error("provider unavailable"));
+		await createController({ io: new MockIo(["1", "1", "y", "c", "q"]) }).run();
+		expect(mockVisionExtractor.extractWeeklyMenu).toHaveBeenCalledTimes(1);
+		expect(mockStagingRepo.atomicCommit).not.toHaveBeenCalled();
+	});
+
+	it.each(["ignore", "undo"])("cancels %s without mutating staging", async (action) => {
+		mockStagingRepo.listStagedMessages.mockResolvedValue([
+			action === "undo" ? sampleProcessedMessage : samplePendingPdfMessage,
+		]);
+		const inputs = action === "undo" ? ["1", "c", "q"] : ["1", "4", "c", "q"];
+		await createController({ io: new MockIo(inputs) }).run();
+		expect(mockStagingRepo.atomicUndo).not.toHaveBeenCalled();
+		expect(mockStagingRepo.markIgnored).not.toHaveBeenCalled();
 	});
 
 	it("handles pending text message mark ignored [2] -> [y]", async () => {
@@ -287,12 +576,7 @@ describe("TriageCliController", () => {
 		// Select 1 -> Option 2 (Ignore Message) -> Confirm 'y' -> Exit 'q'
 		const io = new MockIo(["1", "2", "y", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 		expect(mockStagingRepo.markIgnored).toHaveBeenCalledWith("MSG_TEXT_IGNORE_01");
@@ -318,13 +602,7 @@ describe("TriageCliController", () => {
 		// 1 -> [3] Open in Viewer -> [2] Process Announcement -> [y] Confirm -> [q]
 		const io = new MockIo(["1", "3", "2", "y", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			previewer: mockPreviewer,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 		expect(mockPreviewer.previewMedia).toHaveBeenCalled();
@@ -375,12 +653,7 @@ describe("TriageCliController", () => {
 		// 1 (select message) -> 1 (Process Announcement) -> y (Confirm & Commit) -> q (exit)
 		const io = new MockIo(["1", "1", "y", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 
@@ -428,12 +701,7 @@ describe("TriageCliController", () => {
 		// 1 (select message) -> 1 (Process Announcement) -> y (rejected) -> c (cancel) -> q (quit)
 		const io = new MockIo(["1", "1", "y", "c", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 
@@ -497,12 +765,7 @@ describe("TriageCliController", () => {
 
 		const io = new MockIo(["1", "1", "y", "c", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 
@@ -577,12 +840,7 @@ describe("TriageCliController", () => {
 		// 1 (select) -> 1 (Process Announcement) -> y (Confirm & Commit) -> q (exit)
 		const io = new MockIo(["1", "1", "y", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 
@@ -646,13 +904,7 @@ describe("TriageCliController", () => {
 		// 1 (select) -> 1 (Process Announcement) -> e (edit in vim) -> y (confirm) -> q (exit)
 		const io = new MockIo(["1", "1", "e", "y", "q"]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			editor: mockEditor,
-			io,
-		});
+		const controller = createController({ io });
 
 		await controller.run();
 
@@ -671,31 +923,8 @@ describe("TriageCliController", () => {
 		mockStagingRepo.listStagedMessages.mockResolvedValue([]);
 		const io = new MockIo([]);
 
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
+		const controller = createController({ io });
 
-		await controller.run();
-		expect(io.isClosed).toBe(true);
-	});
-
-	it("wires default InteractiveJsonEditor with io.prompt retry handler", async () => {
-		mockStagingRepo.listStagedMessages.mockResolvedValue([samplePendingPdfMessage]);
-
-		const io = new MockIo(["q"]);
-
-		const controller = new TriageCliController({
-			stagingRepo: mockStagingRepo,
-			visionExtractor: mockVisionExtractor,
-			textExtractor: mockTextExtractor,
-			io,
-		});
-
-		// Test that controller instance has an editor configured
-		expect((controller as any).editor).toBeDefined();
 		await controller.run();
 		expect(io.isClosed).toBe(true);
 	});

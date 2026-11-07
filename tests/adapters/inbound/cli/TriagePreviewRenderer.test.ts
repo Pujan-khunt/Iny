@@ -1,18 +1,24 @@
+import { TriageWeeklyMenuRenderer } from "../../../../src/adapters/inbound/cli/TriageWeeklyMenuRenderer";
+import { TriageCompositeRenderer } from "../../../../src/adapters/inbound/cli/TriageCompositeRenderer";
 import { describe, it, expect } from "vitest";
 import { TriagePreviewRenderer } from "../../../../src/adapters/inbound/cli/TriagePreviewRenderer";
 import type {
-	ExtractedWeeklyMenu,
-	ExtractedLocationDetail,
-	ExtractedTimingExtension,
-	ExtractedMealChange,
-	ExtractedCompositeAnnouncement,
-} from "../../../../src/adapters/outbound/mess/extraction/ExtractionSchemas";
+	StagedWeeklyMenu,
+	LocationUpdate,
+	TimingUpdate,
+	DishUpdate,
+} from "../../../../src/core/entities/MessAnnouncement";
+import type { ExtractedCompositeAnnouncement } from "../../../../src/adapters/common/mess/ExtractionSchemas";
 
 describe("TriagePreviewRenderer", () => {
-	const renderer = new TriagePreviewRenderer({ enableAnsi: false });
+	const renderer = new TriagePreviewRenderer(
+		new TriageWeeklyMenuRenderer({ enableAnsi: false }),
+		new TriageCompositeRenderer({ enableAnsi: false }),
+		{ enableAnsi: false },
+	);
 
 	it("renders weekly menu preview", () => {
-		const menu: ExtractedWeeklyMenu = {
+		const menu: StagedWeeklyMenu = {
 			vendor: "cheftalk_regular",
 			meals: [
 				{ mealDate: "2026-10-12", mealSlot: "breakfast", items: ["Poha", "Tea"] },
@@ -29,7 +35,7 @@ describe("TriagePreviewRenderer", () => {
 	});
 
 	it("renders location detail preview", () => {
-		const detail: ExtractedLocationDetail = {
+		const detail: LocationUpdate = {
 			mealDate: "2026-10-12",
 			mealSlot: "lunch",
 			hostelBatches: ["Batch 2024", "Batch 2025"],
@@ -44,7 +50,7 @@ describe("TriagePreviewRenderer", () => {
 	});
 
 	it("renders timing extension preview", () => {
-		const ext: ExtractedTimingExtension = {
+		const ext: TimingUpdate = {
 			mealDate: "2026-10-12",
 			mealSlot: "dinner",
 			targetVendor: "cheftalk_regular",
@@ -56,7 +62,7 @@ describe("TriagePreviewRenderer", () => {
 	});
 
 	it("renders meal change preview", () => {
-		const change: ExtractedMealChange = {
+		const change: DishUpdate = {
 			mealDate: "2026-10-12",
 			mealSlot: "breakfast",
 			targetVendor: "cheftalk_regular",

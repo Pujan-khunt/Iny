@@ -11,6 +11,7 @@
 import {
 	Tool,
 	ToolDefinition,
+	ToolExecutionContext,
 	ToolRegistryPort,
 	ToolResult,
 } from "../../../core/ports/ToolRegistryPort";
@@ -54,18 +55,23 @@ export class InMemoryToolRegistry implements ToolRegistryPort {
 	}
 
 	/**
-	 * Executes a registered tool by name with validated arguments.
+	 * Executes a registered tool by name with validated arguments and context.
 	 *
 	 * @param name Unique name of the tool to execute.
 	 * @param args Dictionary of arguments supplied by the caller.
+	 * @param context Caller execution context containing user identity.
 	 * @returns Structured result of tool execution.
 	 * @throws {Error} If the requested tool name is not registered.
 	 */
-	async executeTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+	async executeTool(
+		name: string,
+		args: Record<string, unknown>,
+		context?: ToolExecutionContext,
+	): Promise<ToolResult> {
 		const tool = this.tools.get(name);
 		if (!tool) {
 			throw new Error(`Tool "${name}" not found.`);
 		}
-		return await tool.execute(args);
+		return context ? await tool.execute(args, context) : await tool.execute(args);
 	}
 }

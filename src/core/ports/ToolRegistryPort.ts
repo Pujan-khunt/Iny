@@ -22,6 +22,13 @@ export interface ToolDefinition {
 }
 
 /**
+ * Contextual metadata regarding the caller invoking the tool.
+ */
+export interface ToolExecutionContext {
+	readonly userId: string;
+}
+
+/**
  * An executable tool implementation.
  * Combines metadata declaration with an asynchronous execution handler.
  */
@@ -30,9 +37,10 @@ export interface Tool extends ToolDefinition {
 	 * Executes the tool logic with validated arguments.
 	 *
 	 * @param args Dictionary of arguments supplied by the caller.
+	 * @param context Caller execution context containing user identity.
 	 * @returns Structured tool execution result.
 	 */
-	execute(args: Record<string, unknown>): Promise<ToolResult>;
+	execute(args: Record<string, unknown>, context?: ToolExecutionContext): Promise<ToolResult>;
 }
 
 /**
@@ -48,11 +56,16 @@ export interface ToolRegistryPort {
 	getToolDefinitions(): ToolDefinition[];
 
 	/**
-	 * Executes a tool by name with the given arguments.
+	 * Executes a tool by name with the given arguments and execution context.
 	 *
 	 * @param name Unique name of the tool to execute.
 	 * @param args Dictionary of arguments passed to the tool.
+	 * @param context Caller execution context containing user identity.
 	 * @returns Structured result of the tool execution.
 	 */
-	executeTool(name: string, args: Record<string, unknown>): Promise<ToolResult>;
+	executeTool(
+		name: string,
+		args: Record<string, unknown>,
+		context?: ToolExecutionContext,
+	): Promise<ToolResult>;
 }

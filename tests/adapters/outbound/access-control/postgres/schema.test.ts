@@ -15,6 +15,7 @@ describe("users Drizzle Schema", () => {
 		expect(columns.name).toBeDefined();
 		expect(columns.role).toBeDefined();
 		expect(columns.status).toBeDefined();
+		expect(columns.defaultVendor).toBeDefined();
 		expect(columns.createdAt).toBeDefined();
 		expect(columns.updatedAt).toBeDefined();
 
@@ -26,6 +27,8 @@ describe("users Drizzle Schema", () => {
 		expect(columns.role.default).toBe("user");
 		expect(columns.status.notNull).toBe(true);
 		expect(columns.status.default).toBe("pending");
+		expect(columns.defaultVendor.notNull).toBe(true);
+		expect(columns.defaultVendor.default).toBe("cheftalk_regular");
 		expect(columns.createdAt.notNull).toBe(true);
 		expect(columns.updatedAt.notNull).toBe(true);
 	});

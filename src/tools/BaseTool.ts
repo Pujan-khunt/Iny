@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { Tool, ToolDefinition, ToolResult } from "../core/ports/ToolRegistryPort";
+import {
+	Tool,
+	ToolDefinition,
+	ToolExecutionContext,
+	ToolResult,
+} from "../core/ports/ToolRegistryPort";
 
 /**
  * Base abstract class for declarative tool implementations.
@@ -27,7 +32,10 @@ export abstract class BaseTool<TSchema extends z.ZodType> implements Tool {
 	 * This string is sent back as the tool call execution response in a ToolResultMessage.
 	 * The LLM automatically inspects this feedback to self-correct in the next reasoning iteration.
 	 */
-	async execute(args: Record<string, unknown>): Promise<ToolResult> {
+	async execute(
+		args: Record<string, unknown>,
+		context?: ToolExecutionContext,
+	): Promise<ToolResult> {
 		const parsed = this.schema.safeParse(args);
 		if (!parsed.success) {
 			return {
@@ -35,12 +43,15 @@ export abstract class BaseTool<TSchema extends z.ZodType> implements Tool {
 				isTerminal: false,
 			};
 		}
-		return this.run(parsed.data);
+		return this.run(parsed.data, context);
 	}
 
 	/**
 	 * Template hook implemented by concrete tools to perform business logic.
 	 * Subclasses receive strongly-typed, pre-validated arguments inferred from the schema.
 	 */
-	protected abstract run(args: z.infer<TSchema>): Promise<ToolResult>;
+	protected abstract run(
+		args: z.infer<TSchema>,
+		context?: ToolExecutionContext,
+	): Promise<ToolResult>;
 }

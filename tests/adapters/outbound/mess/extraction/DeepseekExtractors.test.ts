@@ -30,22 +30,30 @@ const sample21Meals = {
 
 describe("DeepseekExtractors", () => {
 	describe("DeepseekVisionExtractor", () => {
-		it("initializes with apiKey or OpenAI client", () => {
-			const ext1 = new DeepseekVisionExtractor("mock-api-key");
-			expect(ext1).toBeDefined();
-
-			const mockClient = createMockOpenAI(async () => ({}));
-			const ext2 = new DeepseekVisionExtractor(mockClient);
-			expect(ext2).toBeDefined();
-
-			const ext3 = new DeepseekVisionExtractor({ apiKey: "mock-key", model: "custom-model" });
-			expect(ext3).toBeDefined();
+		it("retains raw Frycrums while normalizing the reviewed menu with correction audit", async () => {
+			const payload = structuredClone(sample21Meals);
+			payload.meals[0].items = ["Frycrums"];
+			const client = createMockOpenAI(async () => ({
+				choices: [{ message: { content: JSON.stringify(payload) } }],
+			}));
+			const result = await new DeepseekVisionExtractor(
+				client,
+				"manual-test-model",
+			).extractWeeklyMenu(new Uint8Array([1]));
+			expect(result.rawMenu.meals[0].items).toEqual(["Frycrums"]);
+			expect(result.menu.meals[0].items).toEqual(["Fryums"]);
+			expect(result.corrections).toHaveLength(1);
+			result.menu.meals[0].items[0] = "Operator dish";
+			expect(result.rawMenu.meals[0].items).toEqual(["Frycrums"]);
+			expect(result.corrections[0].originalItem).toBe("Frycrums");
 		});
 
 		it("extracts weekly menu from image buffer successfully", async () => {
 			const mockClient = createMockOpenAI(async (params: any) => {
 				// Assert message payload contains base64 image data url
 				expect(params.messages[1].content[1].image_url.url).toContain("data:image/png;base64,");
+				expect(params.model).toBe("manual-test-model");
+				expect(params.messages[0].content).toContain("Preserve source dish spelling exactly");
 				return {
 					choices: [
 						{
@@ -57,13 +65,13 @@ describe("DeepseekExtractors", () => {
 				};
 			});
 
-			const extractor = new DeepseekVisionExtractor(mockClient);
+			const extractor = new DeepseekVisionExtractor(mockClient, "manual-test-model");
 			const fakeImage = Buffer.from("fake_image_bytes");
 			const result = await extractor.extractWeeklyMenu(fakeImage);
 
-			expect(result.vendor).toBe("cheftalk_regular");
-			expect(result.meals.length).toBe(21);
-			expect(result.meals[0].mealDate).toBe("2026-10-04");
+			expect(result.menu.vendor).toBe("cheftalk_regular");
+			expect(result.menu.meals.length).toBe(21);
+			expect(result.menu.meals[0].mealDate).toBe("2026-10-04");
 		});
 
 		it("strips markdown code blocks around JSON response", async () => {
@@ -77,10 +85,10 @@ describe("DeepseekExtractors", () => {
 				],
 			}));
 
-			const extractor = new DeepseekVisionExtractor(mockClient);
+			const extractor = new DeepseekVisionExtractor(mockClient, "manual-test-model");
 			const result = await extractor.extractWeeklyMenu(Buffer.from("img"));
-			expect(result.vendor).toBe("cheftalk_regular");
-			expect(result.meals.length).toBe(21);
+			expect(result.menu.vendor).toBe("cheftalk_regular");
+			expect(result.menu.meals.length).toBe(21);
 		});
 
 		it("includes optional textContext in extraction prompt", async () => {
@@ -92,7 +100,7 @@ describe("DeepseekExtractors", () => {
 				};
 			});
 
-			const extractor = new DeepseekVisionExtractor(mockClient);
+			const extractor = new DeepseekVisionExtractor(mockClient, "manual-test-model");
 			await extractor.extractWeeklyMenu(Buffer.from("img"), {
 				textContext: "Weekly Menu Oct 4 - 10 Cheftalk",
 			});
@@ -109,7 +117,7 @@ describe("DeepseekExtractors", () => {
 				choices: [{ message: { content: JSON.stringify(invalidMeals) } }],
 			}));
 
-			const extractor = new DeepseekVisionExtractor(mockClient);
+			const extractor = new DeepseekVisionExtractor(mockClient, "manual-test-model");
 			await expect(extractor.extractWeeklyMenu(Buffer.from("img"))).rejects.toThrow();
 		});
 
@@ -120,7 +128,7 @@ describe("DeepseekExtractors", () => {
 				throw error;
 			});
 
-			const extractor = new DeepseekVisionExtractor(mockClient);
+			const extractor = new DeepseekVisionExtractor(mockClient, "manual-test-model");
 			await expect(extractor.extractWeeklyMenu(Buffer.from("img"))).rejects.toThrow(
 				LLMRateLimitError,
 			);
@@ -133,7 +141,7 @@ describe("DeepseekExtractors", () => {
 				throw error;
 			});
 
-			const extractor503 = new DeepseekVisionExtractor(mockClient503);
+			const extractor503 = new DeepseekVisionExtractor(mockClient503, "manual-test-model");
 			await expect(extractor503.extractWeeklyMenu(Buffer.from("img"))).rejects.toThrow(
 				LLMServerOverloadedError,
 			);
@@ -144,7 +152,7 @@ describe("DeepseekExtractors", () => {
 				throw error;
 			});
 
-			const extractorTimeout = new DeepseekVisionExtractor(mockClientTimeout);
+			const extractorTimeout = new DeepseekVisionExtractor(mockClientTimeout, "manual-test-model");
 			await expect(extractorTimeout.extractWeeklyMenu(Buffer.from("img"))).rejects.toThrow(
 				LLMError,
 			);
@@ -152,120 +160,72 @@ describe("DeepseekExtractors", () => {
 	});
 
 	describe("DeepseekTextExtractor", () => {
-		it("extracts location detail relative to receivedAt", async () => {
+		it.each([
+			{
+				field: "location",
+				value: {
+					mealDate: "2026-10-08",
+					mealSlot: "lunch",
+					hostelBatches: ["2028", "2029"],
+					collegeBatches: ["ALL_OTHER_BATCHES"],
+				},
+			},
+			{
+				field: "timingExtensions",
+				value: [
+					{
+						mealDate: "2026-10-08",
+						mealSlot: "dinner",
+						targetVendor: null,
+						extendedTimings: "Extended until 10:45 PM due to college fest",
+					},
+				],
+			},
+			{
+				field: "mealChanges",
+				value: [
+					{
+						mealDate: "2026-10-08",
+						mealSlot: "lunch",
+						targetVendor: "cheftalk_regular",
+						changeType: "replacement",
+						affectedItem: "Kadai Paneer",
+						originalItem: "Paneer Butter Masala",
+					},
+				],
+			},
+		])("extracts $field through the production composite API", async ({ field, value }) => {
+			const payload = {
+				mealDate: "2026-10-08",
+				location: null,
+				timingExtensions: [],
+				mealChanges: [],
+				mealSwaps: [],
+				[field]: value,
+			};
 			const mockClient = createMockOpenAI(async (params: any) => {
 				expect(params.messages[1].content).toContain("2026-10-08");
-				return {
-					choices: [
-						{
-							message: {
-								content: JSON.stringify({
-									mealDate: "2026-10-08",
-									mealSlot: "lunch",
-									hostelBatches: ["UG1", "UG2"],
-									collegeBatches: ["UG3", "UG4"],
-								}),
-							},
-						},
-					],
-				};
+				expect(params.model).toBe("manual-test-model");
+				return { choices: [{ message: { content: JSON.stringify(payload) } }] };
 			});
-
-			const extractor = new DeepseekTextExtractor(mockClient);
-			const receivedAt = new Date("2026-10-08T06:00:00Z");
-			const result = await extractor.extractLocationDetail(
-				"Lunch today: UG1 and UG2 at Hostel mess, rest at College",
-				receivedAt,
-			);
-
-			expect(result.mealDate).toBe("2026-10-08");
-			expect(result.mealSlot).toBe("lunch");
-			expect(result.hostelBatches).toEqual(["UG1", "UG2"]);
-			expect(result.collegeBatches).toEqual(["UG3", "UG4"]);
-		});
-
-		it("extracts timing extension relative to receivedAt", async () => {
-			const mockClient = createMockOpenAI(async () => ({
-				choices: [
-					{
-						message: {
-							content: JSON.stringify({
-								mealDate: "2026-10-08",
-								mealSlot: "dinner",
-								targetVendor: null,
-								extendedTimings: "Extended until 10:45 PM due to college fest",
-							}),
-						},
-					},
-				],
-			}));
-
-			const extractor = new DeepseekTextExtractor(mockClient);
-			const result = await extractor.extractTimingExtension(
-				"Dinner extended until 10:45 PM due to fest",
-				new Date("2026-10-08T15:00:00Z"),
-			);
-
-			expect(result.mealDate).toBe("2026-10-08");
-			expect(result.mealSlot).toBe("dinner");
-			expect(result.targetVendor).toBeNull();
-			expect(result.extendedTimings).toContain("10:45 PM");
-		});
-
-		it("extracts meal change relative to receivedAt", async () => {
-			const mockClient = createMockOpenAI(async () => ({
-				choices: [
-					{
-						message: {
-							content: JSON.stringify({
-								mealDate: "2026-10-08",
-								mealSlot: "lunch",
-								targetVendor: "cheftalk_regular",
-								changeType: "replacement",
-								affectedItem: "Kadai Paneer",
-								originalItem: "Paneer Butter Masala",
-							}),
-						},
-					},
-				],
-			}));
-
-			const extractor = new DeepseekTextExtractor(mockClient);
-			const result = await extractor.extractMealChange(
-				"Mix Veg replacing Paneer at Cheftalk regular today lunch",
+			const extractor = new DeepseekTextExtractor(mockClient, "manual-test-model");
+			const result = await extractor.extractAnnouncementEvents(
+				"Meal announcement today",
 				new Date("2026-10-08T06:00:00Z"),
 			);
-
-			expect(result.mealDate).toBe("2026-10-08");
-			expect(result.mealSlot).toBe("lunch");
-			expect(result.targetVendor).toBe("cheftalk_regular");
-			expect(result.changeType).toBe("replacement");
-			expect(result.affectedItem).toBe("Kadai Paneer");
-			expect(result.originalItem).toBe("Paneer Butter Masala");
+			expect(result[field as keyof typeof result]).toEqual(value);
 		});
 
-		it("translates rate limits to LLMRateLimitError and server errors to LLMError", async () => {
-			const mockRateLimit = createMockOpenAI(async () => {
-				const error: any = new Error("Too many requests");
-				error.status = 429;
-				throw error;
+		it("translates bad gateway errors through the composite API", async () => {
+			const client = createMockOpenAI(async () => {
+				throw { status: 502, message: "Bad gateway" };
 			});
-
-			const textExtractor429 = new DeepseekTextExtractor(mockRateLimit);
-			await expect(textExtractor429.extractLocationDetail("text", new Date())).rejects.toThrow(
-				LLMRateLimitError,
-			);
-
-			const mockOverload = createMockOpenAI(async () => {
-				const error: any = new Error("Bad gateway");
-				error.status = 502;
-				throw error;
-			});
-
-			const textExtractor502 = new DeepseekTextExtractor(mockOverload);
-			await expect(textExtractor502.extractTimingExtension("text", new Date())).rejects.toThrow(
-				LLMError,
-			);
+			await expect(
+				new DeepseekTextExtractor(client, "manual-test-model").extractAnnouncementEvents(
+					"text",
+					new Date(),
+				),
+			).rejects.toThrow(LLMError);
 		});
 
 		describe("extractAnnouncementEvents", () => {
@@ -304,7 +264,7 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
 				const result = await extractor.extractAnnouncementEvents(
 					"Lunch extended till 3:00 PM. 2028 and 2029 will have lunch in Hostel, others in College.",
 					new Date("2026-10-20T08:00:00Z"),
@@ -362,7 +322,7 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
 				const result = await extractor.extractAnnouncementEvents(
 					"Tommorow (20/10/26), lunch will be arranged in the hostel for all batches. Lunch will be arranged from 12 PM tommorow.",
 					new Date("2026-10-19T10:00:00Z"),
@@ -405,7 +365,7 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
 				const result = await extractor.extractAnnouncementEvents(
 					"Today's dinner will serve tomorrow's lunch menu.",
 					new Date("2026-10-20T10:00:00Z"),
@@ -459,7 +419,7 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
 				const result = await extractor.extractAnnouncementEvents(
 					"Lunch extended till 2:30 PM. Paneer Butter Masala replaced with Kadai Paneer at Cheftalk Regular.",
 					new Date("2026-10-20T07:00:00Z"),
@@ -481,7 +441,7 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
 				await expect(
 					extractor.extractAnnouncementEvents("Lunch announcement", new Date()),
 				).rejects.toThrow(LLMRateLimitError);
@@ -496,13 +456,13 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
 				await expect(
 					extractor.extractAnnouncementEvents("Lunch announcement", new Date()),
 				).rejects.toThrow(LLMServerOverloadedError);
 			});
 
-			it("defaults receivedAt to current Date if omitted", async () => {
+			it("uses the injected model and original timestamp", async () => {
 				const mockOpenAi = {
 					chat: {
 						completions: {
@@ -525,8 +485,11 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
-				const result = await extractor.extractAnnouncementEvents("Simple notice");
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
+				const result = await extractor.extractAnnouncementEvents(
+					"Simple notice",
+					new Date("2026-10-20T20:00:00Z"),
+				);
 				expect(result.mealDate).toBe("2026-10-20");
 				expect(mockOpenAi.chat.completions.create).toHaveBeenCalled();
 			});
@@ -542,8 +505,10 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
-				await expect(extractor.extractAnnouncementEvents("Announcement")).rejects.toThrow(LLMError);
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
+				await expect(
+					extractor.extractAnnouncementEvents("Announcement", new Date("2026-10-20T20:00:00Z")),
+				).rejects.toThrow(LLMError);
 			});
 
 			it("throws LLMResponseError with rawResponse attached when JSON does not match schema", async () => {
@@ -569,7 +534,7 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
 				let caughtErr: any;
 				try {
 					await extractor.extractAnnouncementEvents("Announcement", new Date());
@@ -608,8 +573,11 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
-				const result = await extractor.extractAnnouncementEvents("Lunch in hostel for all batches");
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
+				const result = await extractor.extractAnnouncementEvents(
+					"Lunch in hostel for all batches",
+					new Date("2026-10-20T20:00:00Z"),
+				);
 				expect(result.mealDate).toBe("2026-10-21");
 				expect(result.location?.mealDate).toBe("2026-10-21");
 				expect(result.location?.mealSlot).toBe("lunch");
@@ -653,8 +621,11 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
-				const result = await extractor.extractAnnouncementEvents("Timing and meal change");
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
+				const result = await extractor.extractAnnouncementEvents(
+					"Timing and meal change",
+					new Date("2026-10-20T20:00:00Z"),
+				);
 				expect(result.timingExtensions[0].mealDate).toBe("2026-10-21");
 				expect(result.mealChanges[0].mealDate).toBe("2026-10-21");
 			});
@@ -682,7 +653,7 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
 				const refDate = new Date("2026-10-21T06:00:00Z");
 				const result = await extractor.extractAnnouncementEvents("Lunch notice", refDate);
 				expect(result.mealDate).toBe("2026-10-21");
@@ -718,8 +689,11 @@ describe("DeepseekExtractors", () => {
 					},
 				};
 
-				const extractor = new DeepseekTextExtractor(mockOpenAi as any);
-				const result = await extractor.extractAnnouncementEvents("Swap announcement");
+				const extractor = new DeepseekTextExtractor(mockOpenAi as any, "manual-test-model");
+				const result = await extractor.extractAnnouncementEvents(
+					"Swap announcement",
+					new Date("2026-10-20T20:00:00Z"),
+				);
 				expect(result.mealSwaps[0].targetMealDate).toBe("2026-10-20");
 			});
 		});

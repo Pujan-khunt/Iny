@@ -20,6 +20,7 @@ describe("PostgresAccessControlAdapter", () => {
         name TEXT,
         role TEXT NOT NULL DEFAULT 'user',
         status TEXT NOT NULL DEFAULT 'pending',
+        default_vendor TEXT NOT NULL DEFAULT 'cheftalk_regular',
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
@@ -199,5 +200,23 @@ describe("PostgresAccessControlAdapter", () => {
 			undefined,
 			expect.any(Object),
 		);
+	});
+
+	it("should provide defaultVendor 'cheftalk_regular' and allow updating via setDefaultVendor", async () => {
+		await adapter.seedUsers([{ phoneNumber: "919876543210", name: "Pujan" }]);
+		await (adapter as any).cacheLidJid("919876543210", "123456789012345@lid");
+
+		const user = await adapter.getUser("919876543210");
+		expect(user?.defaultVendor).toBe("cheftalk_regular");
+
+		// Update via phone number
+		await adapter.setDefaultVendor("919876543210", "tcb");
+		const userAfterTcb = await adapter.getUser("919876543210");
+		expect(userAfterTcb?.defaultVendor).toBe("tcb");
+
+		// Update via LID JID
+		await adapter.setDefaultVendor("123456789012345@lid", "cheftalk_jain");
+		const userAfterJain = await adapter.getUser("919876543210");
+		expect(userAfterJain?.defaultVendor).toBe("cheftalk_jain");
 	});
 });

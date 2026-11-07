@@ -1,25 +1,29 @@
 import type { ResolvedMealSwapInput } from "../../../core/ports/MessStagingRepositoryPort";
 import type {
-	ExtractedCompositeAnnouncement,
-	ExtractedMealSwap,
-} from "../../outbound/mess/extraction/ExtractionSchemas";
+	StagedCompositeAnnouncement,
+	StagedMealSwap,
+} from "../../../core/entities/MessAnnouncement";
 import { type AnsiTheme, RAW_ANSI, NO_ANSI } from "./TriageAnsi";
 
+/** Terminal color preference for rendered cards. */
 export interface TriageCompositeRendererOptions {
 	enableAnsi?: boolean;
 }
 
+/** Renders manual triage values without extraction or persistence. */
 export class TriageCompositeRenderer {
 	private readonly ansi: AnsiTheme;
 
+	/** Receives terminal presentation options. */
 	constructor(options?: TriageCompositeRendererOptions) {
 		this.ansi = options?.enableAnsi === false ? NO_ANSI : RAW_ANSI;
 	}
 
+	/** Returns a presentation card for the supplied core values. */
 	render(
-		composite: ExtractedCompositeAnnouncement,
+		composite: StagedCompositeAnnouncement,
 		resolvedSwaps?: ResolvedMealSwapInput[],
-		missingSwaps?: ExtractedMealSwap[],
+		missingSwaps?: StagedMealSwap[],
 	): string {
 		const header = `${this.ansi.bold}${this.ansi.cyan}┌─ Extracted Announcement Events (Date: ${composite.mealDate}) ──────────────────────────┐${this.ansi.reset}`;
 		const footer =
@@ -36,7 +40,7 @@ export class TriageCompositeRenderer {
 		].join("\n");
 	}
 
-	private formatLocationSection(loc: ExtractedCompositeAnnouncement["location"]): string {
+	private formatLocationSection(loc: StagedCompositeAnnouncement["location"]): string {
 		if (!loc) return "│  📍 Location: None";
 		const slotStr = loc.mealSlot
 			? `(${loc.mealSlot.charAt(0).toUpperCase() + loc.mealSlot.slice(1)})`
@@ -56,7 +60,7 @@ export class TriageCompositeRenderer {
 	}
 
 	private formatTimingLines(
-		extensions?: ExtractedCompositeAnnouncement["timingExtensions"],
+		extensions?: StagedCompositeAnnouncement["timingExtensions"],
 	): string[] {
 		if (!extensions || extensions.length === 0) return ["│  ⏰ Timing: None"];
 		return extensions.map((t) => {
@@ -66,7 +70,7 @@ export class TriageCompositeRenderer {
 		});
 	}
 
-	private formatChangesLines(changes?: ExtractedCompositeAnnouncement["mealChanges"]): string[] {
+	private formatChangesLines(changes?: StagedCompositeAnnouncement["mealChanges"]): string[] {
 		if (!changes || changes.length === 0) return ["│  🔄 Changes: None"];
 		return changes.map((c) => {
 			const slotCap = c.mealSlot.charAt(0).toUpperCase() + c.mealSlot.slice(1);
@@ -79,10 +83,7 @@ export class TriageCompositeRenderer {
 		});
 	}
 
-	private formatSwapsLines(
-		swaps?: ExtractedMealSwap[],
-		resolved?: ResolvedMealSwapInput[],
-	): string[] {
+	private formatSwapsLines(swaps?: StagedMealSwap[], resolved?: ResolvedMealSwapInput[]): string[] {
 		if (!swaps || swaps.length === 0) return ["│  🔁 Swaps: None"];
 		const lines: string[] = [];
 		for (const s of swaps) {
@@ -108,7 +109,7 @@ export class TriageCompositeRenderer {
 		return lines;
 	}
 
-	private formatMissingSwaps(missing?: ExtractedMealSwap[]): string[] {
+	private formatMissingSwaps(missing?: StagedMealSwap[]): string[] {
 		if (!missing || missing.length === 0) {
 			return [
 				`Actions: ${this.ansi.bold}[y]${this.ansi.reset} Confirm & Commit | ${this.ansi.bold}[e]${this.ansi.reset} Edit in Neovim | ${this.ansi.bold}[c]${this.ansi.reset} Cancel`,

@@ -93,15 +93,19 @@ describe("WhatsAppMessageRouter", () => {
 
 		router.register(multiTypeHandler);
 
-		const raw = {
-			key: { id: "m3", remoteJid: "120363045678901234@g.us", fromMe: false },
+		const rawAppend = {
+			key: { id: "m3-append", remoteJid: "120363045678901234@g.us", fromMe: false },
+			message: { conversation: "food announcement" },
+		};
+		const rawNotify = {
+			key: { id: "m3-notify", remoteJid: "120363045678901234@g.us", fromMe: false },
 			message: { conversation: "food announcement" },
 		};
 
-		await router.handleUpsert({ type: "append", messages: [raw as any] });
+		await router.handleUpsert({ type: "append", messages: [rawAppend as any] });
 		expect(multiTypeHandler.handle).toHaveBeenCalledTimes(1);
 
-		await router.handleUpsert({ type: "notify", messages: [raw as any] });
+		await router.handleUpsert({ type: "notify", messages: [rawNotify as any] });
 		expect(multiTypeHandler.handle).toHaveBeenCalledTimes(2);
 	});
 
@@ -129,12 +133,13 @@ describe("WhatsAppMessageRouter", () => {
 
 		expect(strictHandler.matches).toHaveBeenCalledTimes(1);
 		expect(strictHandler.handle).not.toHaveBeenCalled();
-		expect(mockLogger.debug).toHaveBeenCalledWith(
+		expect(mockLogger.info).toHaveBeenCalledWith(
 			"Unhandled incoming message ignored by catch-all fallback",
 			expect.objectContaining({
 				messageId: "m4",
 				chatType: "direct",
 				contentType: "text",
+				contentPreview: "unhandled",
 			}),
 		);
 	});
@@ -197,6 +202,14 @@ describe("WhatsAppMessageRouter", () => {
 				messageId: "msg-fail",
 			}),
 		);
+
+		// Redelivery of msg1 (which previously failed) should be retried and not dropped as duplicate
+		await router.handleUpsert({ type: "notify", messages: [msg1 as any] });
+		expect(handler.handle).toHaveBeenCalledTimes(3);
+
+		// Redelivery of msg2 (which succeeded) should be dropped as duplicate
+		await router.handleUpsert({ type: "notify", messages: [msg2 as any] });
+		expect(handler.handle).toHaveBeenCalledTimes(3);
 	});
 
 	it("isolates handler match predicate failure and proceeds to next handler", async () => {
@@ -249,5 +262,129 @@ describe("WhatsAppMessageRouter", () => {
 		expect(catchAll.name).toBe("catch-all-logging");
 		expect(catchAll.acceptedUpsertTypes).toEqual(["notify", "append"]);
 		expect(catchAll.matches({} as any)).toBe(true);
+	});
+
+	it("drops duplicate messages that are currently in-flight", async () => {
+		const mockLogger = createMockLogger();
+		const normalizer = createNormalizer(mockLogger);
+		const router = new WhatsAppMessageRouter(normalizer, mockLogger);
+
+		let resolveFirstCall: () => void;
+		const blockPromise = new Promise<void>((resolve) => {
+			resolveFirstCall = resolve;
+		});
+
+		const handler: WhatsAppMessageHandler = {
+			name: "async-handler",
+			matches: vi.fn().mockReturnValue(true),
+			handle: vi.fn().mockImplementation(async () => {
+				await blockPromise;
+			}),
+		};
+		router.register(handler);
+
+		const raw = {
+			key: { id: "in-flight-dup-id", remoteJid: "919876543210@s.whatsapp.net", fromMe: false },
+			message: { conversation: "test in flight" },
+		};
+
+		// Launch first execution (which pauses on blockPromise)
+		const firstDispatch = router.handleUpsert({ type: "notify", messages: [raw as any] });
+
+		// Attempt concurrent second execution with identical messageId
+		await router.handleUpsert({ type: "notify", messages: [raw as any] });
+
+		// Resolve first
+		resolveFirstCall!();
+		await firstDispatch;
+
+		expect(handler.handle).toHaveBeenCalledTimes(1);
+		expect(mockLogger.debug).toHaveBeenCalledWith(
+			"Dropping duplicate incoming WhatsApp stanza",
+			expect.objectContaining({ messageId: "in-flight-dup-id", inFlight: true }),
+		);
+	});
+
+	it("drops duplicate messages that were processed within the 10-minute TTL window", async () => {
+		const mockLogger = createMockLogger();
+		const normalizer = createNormalizer(mockLogger);
+		const router = new WhatsAppMessageRouter(normalizer, mockLogger);
+
+		const handler: WhatsAppMessageHandler = {
+			name: "simple-handler",
+			matches: vi.fn().mockReturnValue(true),
+			handle: vi.fn().mockResolvedValue(undefined),
+		};
+		router.register(handler);
+
+		const raw = {
+			key: { id: "completed-dup-id", remoteJid: "919876543210@s.whatsapp.net", fromMe: false },
+			message: { conversation: "test completed" },
+		};
+
+		// First execution finishes
+		await router.handleUpsert({ type: "notify", messages: [raw as any] });
+		expect(handler.handle).toHaveBeenCalledTimes(1);
+
+		// Second execution within 10 minutes
+		await router.handleUpsert({ type: "notify", messages: [raw as any] });
+		expect(handler.handle).toHaveBeenCalledTimes(1);
+		expect(mockLogger.debug).toHaveBeenCalledWith(
+			"Dropping duplicate incoming WhatsApp stanza",
+			expect.objectContaining({ messageId: "completed-dup-id", inFlight: false }),
+		);
+	});
+
+	it("allows messages with distinct messageIds to process normally", async () => {
+		const mockLogger = createMockLogger();
+		const normalizer = createNormalizer(mockLogger);
+		const router = new WhatsAppMessageRouter(normalizer, mockLogger);
+
+		const handler: WhatsAppMessageHandler = {
+			name: "simple-handler",
+			matches: vi.fn().mockReturnValue(true),
+			handle: vi.fn().mockResolvedValue(undefined),
+		};
+		router.register(handler);
+
+		const raw1 = {
+			key: { id: "msg-1", remoteJid: "919876543210@s.whatsapp.net", fromMe: false },
+			message: { conversation: "first" },
+		};
+		const raw2 = {
+			key: { id: "msg-2", remoteJid: "919876543210@s.whatsapp.net", fromMe: false },
+			message: { conversation: "second" },
+		};
+
+		await router.handleUpsert({ type: "notify", messages: [raw1 as any, raw2 as any] });
+		expect(handler.handle).toHaveBeenCalledTimes(2);
+	});
+
+	it("enriches router info log with contentType and contentPreview", async () => {
+		const mockLogger = createMockLogger();
+		const normalizer = createNormalizer(mockLogger);
+		const router = new WhatsAppMessageRouter(normalizer, mockLogger);
+
+		const handler: WhatsAppMessageHandler = {
+			name: "food-announcement",
+			matches: vi.fn().mockReturnValue(true),
+			handle: vi.fn().mockResolvedValue(undefined),
+		};
+		router.register(handler);
+
+		const raw = {
+			key: { id: "announcement-log-id", remoteJid: "120363413801802358@g.us", fromMe: false },
+			message: { conversation: "Tomorrow lunch menu" },
+		};
+
+		await router.handleUpsert({ type: "notify", messages: [raw as any] });
+
+		expect(mockLogger.info).toHaveBeenCalledWith("Routed incoming message to handler", {
+			messageId: "announcement-log-id",
+			handler: "food-announcement",
+			chatType: "group",
+			contentType: "text",
+			contentPreview: "Tomorrow lunch menu",
+		});
 	});
 });

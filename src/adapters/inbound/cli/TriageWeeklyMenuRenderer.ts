@@ -1,4 +1,4 @@
-import type { ExtractedWeeklyMenu } from "../../outbound/mess/extraction/ExtractionSchemas";
+import type { StagedWeeklyMenu } from "../../../core/entities/MessAnnouncement";
 import {
 	type AnsiTheme,
 	RAW_ANSI,
@@ -9,18 +9,22 @@ import {
 	getDayOfWeekShort,
 } from "./TriageAnsi";
 
+/** Terminal color preference for rendered cards. */
 export interface TriageWeeklyMenuRendererOptions {
 	enableAnsi?: boolean;
 }
 
+/** Renders manual triage values without extraction or persistence. */
 export class TriageWeeklyMenuRenderer {
 	private readonly ansi: AnsiTheme;
 
+	/** Receives terminal presentation options. */
 	constructor(options?: TriageWeeklyMenuRendererOptions) {
 		this.ansi = options?.enableAnsi === false ? NO_ANSI : RAW_ANSI;
 	}
 
-	render(menu: ExtractedWeeklyMenu): string {
+	/** Returns a presentation card for the supplied core values. */
+	render(menu: StagedWeeklyMenu): string {
 		const meals = this.sortMeals(menu.meals);
 		const uniqueDates = Array.from(new Set(meals.map((m) => m.mealDate))).sort();
 		const startDate = uniqueDates[0] ?? "N/A";
@@ -43,7 +47,7 @@ export class TriageWeeklyMenuRenderer {
 		].join("\n");
 	}
 
-	private sortMeals(meals: ExtractedWeeklyMenu["meals"]): ExtractedWeeklyMenu["meals"] {
+	private sortMeals(meals: StagedWeeklyMenu["meals"]): StagedWeeklyMenu["meals"] {
 		const slotOrder: Record<string, number> = { breakfast: 1, lunch: 2, dinner: 3 };
 		return [...meals].sort((a, b) => {
 			if (a.mealDate !== b.mealDate) return a.mealDate.localeCompare(b.mealDate);
@@ -58,7 +62,7 @@ export class TriageWeeklyMenuRenderer {
 		return endMs - startMs === 6 * 86400000;
 	}
 
-	private formatSanityLines(meals: ExtractedWeeklyMenu["meals"], uniqueDates: string[]): string[] {
+	private formatSanityLines(meals: StagedWeeklyMenu["meals"], uniqueDates: string[]): string[] {
 		const isContiguous = this.checkContiguity(uniqueDates);
 		const contiguousCheck = isContiguous
 			? `${this.ansi.green}✅ Contiguous 7-day span (Verified via UTC epoch: 86,400,000 ms/day)${this.ansi.reset}`
@@ -80,7 +84,7 @@ export class TriageWeeklyMenuRenderer {
 		return lines;
 	}
 
-	private formatDailyMeals(meals: ExtractedWeeklyMenu["meals"]): string[] {
+	private formatDailyMeals(meals: StagedWeeklyMenu["meals"]): string[] {
 		const mealsByDate = new Map<string, typeof meals>();
 		for (const m of meals) {
 			const existing = mealsByDate.get(m.mealDate);

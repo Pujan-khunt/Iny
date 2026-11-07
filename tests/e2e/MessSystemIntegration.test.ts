@@ -1,7 +1,27 @@
+import { FoodIngestionWorker } from "../../src/adapters/inbound/workers/FoodIngestionWorker";
+import { ProcessNextFoodAnnouncement } from "../../src/core/use-cases/ProcessNextFoodAnnouncement";
+import { PostgresAccessControlAdapter } from "../../src/adapters/outbound/access-control/postgres/PostgresAccessControlAdapter";
+import { BaileysConnectionManager } from "../../src/adapters/outbound/whatsapp/BaileysConnectionManager";
+import { PostgresBaileysSessionManager } from "../../src/adapters/outbound/whatsapp/PostgresBaileysSessionManager";
+import { PostgresMessAuditRestorer } from "../../src/adapters/outbound/mess/postgres/PostgresMessAuditRestorer";
+import { PostgresFoodAdmission } from "../../src/adapters/outbound/mess/postgres/PostgresFoodAdmission";
+import { PostgresFoodIngestionRepository } from "../../src/adapters/outbound/mess/postgres/PostgresFoodIngestionRepository";
+import { PostgresFoodWorkQueue } from "../../src/adapters/outbound/mess/postgres/PostgresFoodWorkQueue";
+import { PostgresFoodFinalizer } from "../../src/adapters/outbound/mess/postgres/PostgresFoodFinalizer";
+import { randomUUID } from "node:crypto";
+import { PostgresStagingQueue } from "../../src/adapters/outbound/mess/postgres/PostgresStagingQueue";
+import { PostgresMealCommitter } from "../../src/adapters/outbound/mess/postgres/PostgresMealCommitter";
+import { PostgresMealRollback } from "../../src/adapters/outbound/mess/postgres/PostgresMealRollback";
+import { PostgresOperationalWriter } from "../../src/adapters/outbound/mess/postgres/PostgresOperationalWriter";
+import { PostgresSwapWriter } from "../../src/adapters/outbound/mess/postgres/PostgresSwapWriter";
+import { PostgresMessWriteGuard } from "../../src/adapters/outbound/mess/postgres/PostgresMessWriteGuard";
+import { PostgresMessOperationAudit } from "../../src/adapters/outbound/mess/postgres/PostgresMessOperationAudit";
+import { PostgresMessProvenance } from "../../src/adapters/outbound/mess/postgres/PostgresMessProvenance";
+import { PostgresMessCommitPreparation } from "../../src/adapters/outbound/mess/postgres/PostgresMessCommitPreparation";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { newDb } from "pg-mem";
+import { DataType, newDb } from "pg-mem";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import { AgentLoop } from "../../src/core/services/AgentLoop";
@@ -47,52 +67,116 @@ describe("Mess System End-to-End Integration", () => {
 	} as unknown as LoggerPort;
 
 	describe("Composition Root Wiring (src/index.ts)", () => {
-		it("verifies that src/index.ts wires repositories, tools, router, and inbound adapters", () => {
-			const indexPath = path.resolve(__dirname, "../../src/index.ts");
-			const indexContent = fs.readFileSync(indexPath, "utf-8");
-
-			// Verify imports
-			expect(indexContent).toContain("PostgresMessRepository");
-			expect(indexContent).toContain("PostgresMessStagingRepository");
-			expect(indexContent).toContain("PostgresDialogueTurnRepository");
-			expect(indexContent).toContain("DialogueTurnContextRetrievalAdapter");
-			expect(indexContent).toContain("HandleIncomingUserMessage");
-			expect(indexContent).toContain("StageIncomingFoodAnnouncement");
-			expect(indexContent).toContain("DisplayMessCardTool");
-			expect(indexContent).toContain("QueryMessDetailsTool");
-			expect(indexContent).toContain("FoodAnnouncementInboundAdapter");
-			expect(indexContent).toContain("DirectMessageInboundAdapter");
-			expect(indexContent).toContain("WhatsAppMessageNormalizer");
-			expect(indexContent).toContain("WhatsAppMessageRouter");
-			expect(indexContent).toContain("CatchAllLoggingHandler");
-			expect(indexContent).toContain("messSchema");
-			expect(indexContent).toContain("dialogueSchema");
-
-			// Verify instantiation & wiring
-			expect(indexContent).toMatch(/new\s+PostgresMessRepository\s*\(/);
-			expect(indexContent).toMatch(/new\s+PostgresMessStagingRepository\s*\(/);
-			expect(indexContent).toMatch(/new\s+PostgresDialogueTurnRepository\s*\(/);
-			expect(indexContent).toMatch(/new\s+DialogueTurnContextRetrievalAdapter\s*\(/);
-			expect(indexContent).toMatch(/new\s+HandleIncomingUserMessage\s*\(/);
-			expect(indexContent).toMatch(/new\s+StageIncomingFoodAnnouncement\s*\(/);
-			expect(indexContent).toMatch(/new\s+DisplayMessCardTool\s*\(/);
-			expect(indexContent).toMatch(/new\s+QueryMessDetailsTool\s*\(/);
-			expect(indexContent).toMatch(/registry\.register\s*\(\s*new\s+DisplayMessCardTool\s*\(/);
-			expect(indexContent).toMatch(/registry\.register\s*\(\s*new\s+QueryMessDetailsTool\s*\(/);
-
-			// Verify router and inbound adapters wiring and startup
-			expect(indexContent).toMatch(/new\s+FoodAnnouncementInboundAdapter\s*\(/);
-			expect(indexContent).toMatch(/new\s+DirectMessageInboundAdapter\s*\(/);
-			expect(indexContent).toMatch(/new\s+WhatsAppMessageNormalizer\s*\(/);
-			expect(indexContent).toMatch(/new\s+WhatsAppMessageRouter\s*\(/);
-			expect(indexContent).toMatch(/(?:router)?\.register\s*\(\s*foodAnnouncementAdapter\s*\)/);
-			expect(indexContent).toMatch(/\.register\s*\(\s*directMessageAdapter\s*\)/);
-			expect(indexContent).toMatch(/\.register\s*\(\s*new\s+CatchAllLoggingHandler\s*\(/);
-			expect(indexContent).toMatch(/FOOD_ANNOUNCEMENTS_GROUP_JID/);
-			expect(indexContent).toMatch(
-				/connectionManager\.subscribe\s*\(\s*["']messages\.upsert["'],\s*\(?upsert\)?\s*=>/,
+		it("bootstraps activation and serial recovery, then waits for active work before SQL closure", async () => {
+			vi.useFakeTimers();
+			const order: string[] = [];
+			const events = ["SIGINT", "SIGTERM", "uncaughtException", "unhandledRejection"] as const;
+			const originalListeners = new Map(
+				events.map((event) => [event, new Set<unknown>(process.listeners(event))]),
 			);
-			expect(indexContent).toMatch(/router\.handleUpsert\s*\(\s*upsert\s*\)/);
+			let finish!: () => void;
+			let connected!: () => void;
+			const ready = new Promise<void>((resolve) => {
+				connected = resolve;
+			});
+			const close = vi.fn(async () => {
+				order.push("close");
+			});
+			const migrate = vi.fn(async () => {
+				order.push("migrate");
+			});
+			const execute = vi
+				.spyOn(ProcessNextFoodAnnouncement.prototype, "execute")
+				.mockImplementation(async () => {
+					await new Promise<void>((resolve) => {
+						finish = resolve;
+					});
+					order.push("processed");
+					return null;
+				});
+			vi.doMock("postgres", () => ({ default: () => ({ end: close }) }));
+			vi.doMock("drizzle-orm/postgres-js", () => ({ drizzle: () => ({}) }));
+			vi.doMock("../../src/adapters/outbound/dialogue-turn-repository/postgres/migrator", () => ({
+				runDatabaseMigrations: migrate,
+			}));
+			vi.stubEnv("DEEPSEEK_API_KEY", "offline-test-only");
+			vi.stubEnv("DATABASE_URL", "postgres://unused:unused@127.0.0.1:1/offline");
+			vi.stubEnv("BOT_PHONE_NUMBER", "919876543210");
+			vi.stubEnv("FOOD_ANNOUNCEMENTS_GROUP_JID", FOOD_GROUP_JID);
+			vi.stubEnv("ALLOWED_USERS", "");
+			vi.stubEnv("ALLOWED_USER_NAMES", "");
+			vi.stubEnv("LOG_LEVEL", "fatal");
+			vi.spyOn(PostgresAccessControlAdapter.prototype, "countActiveUsers").mockImplementation(
+				async () => {
+					order.push("access");
+					return 1;
+				},
+			);
+			const initialize = vi
+				.spyOn(PostgresFoodAdmission.prototype, "initialize")
+				.mockImplementation(async () => {
+					order.push("activate");
+					return new Date();
+				});
+			vi.spyOn(PostgresBaileysSessionManager.prototype, "initSession").mockResolvedValue(
+				{} as never,
+			);
+			const subscribe = vi
+				.spyOn(BaileysConnectionManager.prototype, "subscribe")
+				.mockImplementation(() => {
+					order.push("subscribe");
+					return () => {};
+				});
+			vi.spyOn(BaileysConnectionManager.prototype, "start").mockImplementation(async () => {
+				order.push("connect");
+				connected();
+			});
+			vi.spyOn(BaileysConnectionManager.prototype, "disconnect").mockImplementation(() => {
+				order.push("disconnect");
+			});
+			const originalStart = FoodIngestionWorker.prototype.start;
+			vi.spyOn(FoodIngestionWorker.prototype, "start").mockImplementation(function (
+				this: FoodIngestionWorker,
+			) {
+				order.push("worker");
+				originalStart.call(this);
+			});
+			const exit = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+			try {
+				await import("../../src/index");
+				await ready;
+				expect(order).toEqual(["migrate", "access", "activate", "worker", "subscribe", "connect"]);
+				expect(initialize).toHaveBeenCalledExactlyOnceWith(FOOD_GROUP_JID);
+				expect(subscribe).toHaveBeenCalledWith("messages.upsert", expect.any(Function));
+				await vi.advanceTimersByTimeAsync(1_000);
+				expect(execute).toHaveBeenCalledTimes(1);
+				expect(execute.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
+				const shutdown = process
+					.listeners("SIGTERM")
+					.find((listener) => !originalListeners.get("SIGTERM")!.has(listener))!;
+				const stopping = shutdown("SIGTERM");
+				expect(close).not.toHaveBeenCalled();
+				finish();
+				await stopping;
+				expect(order.slice(-3)).toEqual(["disconnect", "processed", "close"]);
+				expect(exit).toHaveBeenCalledWith(0);
+				await vi.advanceTimersByTimeAsync(5_000);
+				expect(execute).toHaveBeenCalledTimes(1);
+				expect(vi.getTimerCount()).toBe(0);
+			} finally {
+				for (const event of events) {
+					for (const listener of process.listeners(event)) {
+						if (!originalListeners.get(event)!.has(listener))
+							process.removeListener(event, listener);
+					}
+				}
+				vi.doUnmock("postgres");
+				vi.doUnmock("drizzle-orm/postgres-js");
+				vi.doUnmock("../../src/adapters/outbound/dialogue-turn-repository/postgres/migrator");
+				vi.restoreAllMocks();
+				vi.unstubAllEnvs();
+				vi.useRealTimers();
+			}
 		});
 	});
 
@@ -101,6 +185,7 @@ describe("Mess System End-to-End Integration", () => {
 		let chatRepository: PostgresDialogueTurnRepository;
 		let messRepository: PostgresMessRepository;
 		let stagingRepository: PostgresMessStagingRepository;
+		let foodRepository: PostgresFoodIngestionRepository;
 		let registry: InMemoryToolRegistry;
 		let senderMock: MessageSenderPort;
 		let contextRetrievalMock: ContextRetrievalPort;
@@ -109,6 +194,38 @@ describe("Mess System End-to-End Integration", () => {
 			vi.clearAllMocks();
 
 			const memDb = newDb();
+			memDb.public.registerFunction({
+				name: "clock_timestamp",
+				returns: DataType.timestamptz,
+				implementation: () => new Date(),
+				impure: true,
+			});
+			// pg-mem only verifies writer/audit persistence; real PostgreSQL covers guards and locks.
+			memDb.public.registerFunction({
+				name: "gen_random_uuid",
+				returns: DataType.uuid,
+				implementation: randomUUID,
+				impure: true,
+			});
+			memDb.public.registerFunction({
+				name: "length",
+				args: [DataType.text],
+				returns: DataType.integer,
+				implementation: (value: string) => value.length,
+			});
+			const ingestionMigration = fs.readFileSync(
+				path.resolve(__dirname, "../../drizzle/migrations/0006_automated_food_ingestion.sql"),
+				"utf8",
+			);
+			for (const statement of ingestionMigration.split("--> statement-breakpoint").slice(0, 2))
+				memDb.public.none(statement);
+			memDb.public.none(`
+		 CREATE TABLE mess_ingestion_operation_audits (
+		 operation_id uuid PRIMARY KEY DEFAULT gen_random_uuid(), source_message_id text NOT NULL,
+		 original_created_at timestamptz, mode text NOT NULL, affected_fact_keys text[] NOT NULL,
+		 extraction_evidence jsonb, review_evidence jsonb, corrections jsonb, before_images jsonb NOT NULL,
+		 after_images jsonb NOT NULL, created_at timestamptz DEFAULT now(), reversed_at timestamptz, reversal_reason text);
+		`);
 			memDb.public.registerFunction({
 				name: "jsonb_array_length",
 				args: [(memDb.public as any).getType("jsonb")],
@@ -222,9 +339,47 @@ describe("Mess System End-to-End Integration", () => {
 			};
 
 			db = drizzle(pool);
+			const manualAudit = Object.assign(
+				new PostgresMessOperationAudit(new PostgresMessProvenance()),
+				{ manualDisposition: async () => {} },
+			);
+			const manualGuard = Object.assign(new PostgresMessWriteGuard(manualAudit), {
+				lock: async () => {},
+			});
+			const restorer = new PostgresMessAuditRestorer(manualAudit);
+
 			chatRepository = new PostgresDialogueTurnRepository(db, mockLogger);
 			messRepository = new PostgresMessRepository(db, mockLogger);
-			stagingRepository = new PostgresMessStagingRepository(db, mockLogger);
+			const committer = new PostgresMealCommitter(
+				db as any,
+				mockLogger,
+				new PostgresOperationalWriter(),
+				new PostgresSwapWriter(),
+				Object.assign(
+					new PostgresMessWriteGuard(new PostgresMessOperationAudit(new PostgresMessProvenance())),
+					{
+						lock: async () => {},
+						checkOrder: async () => ({ outcome: "accepted" as const }),
+						checkSwapSnapshots: async () => ({ outcome: "accepted" as const }),
+					},
+				),
+				manualAudit,
+				new PostgresMessCommitPreparation(),
+			);
+			stagingRepository = new PostgresMessStagingRepository(
+				new PostgresStagingQueue(db, mockLogger, manualGuard, manualAudit),
+				committer,
+				new PostgresMealRollback(db, mockLogger, manualGuard, restorer, manualAudit),
+			);
+			foodRepository = new PostgresFoodIngestionRepository(
+				new PostgresFoodAdmission(db),
+				new PostgresFoodWorkQueue(db),
+				new PostgresFoodFinalizer(
+					db,
+					new PostgresMessWriteGuard(new PostgresMessOperationAudit(new PostgresMessProvenance())),
+					committer,
+				),
+			);
 
 			// Seed lunch meals and seating allocation for testing
 			await db.insert(messMeals).values([
@@ -332,14 +487,12 @@ describe("Mess System End-to-End Integration", () => {
 			const sentMessageText = (senderMock.sendMessage as any).mock.calls[0][1];
 			expect(sentMessageText).toContain("🍽️ *Lunch Menu*");
 			expect(sentMessageText).toContain(
-				"🍛 *Cheftalk Regular:* Rajma Masala, Jeera Rice, Roti, Boondi Raita",
+				"🍛 *Cheftalk:*\n• Rajma Masala\n• Jeera Rice\n• Roti\n• Boondi Raita",
 			);
 			expect(sentMessageText).toContain(
-				"🥗 *Cheftalk Jain:* Yellow Dal, Jeera Rice, Roti, Cucumber Raita",
+				"🥗 *Cheftalk Jain:*\n• Yellow Dal\n• Jeera Rice\n• Roti\n• Cucumber Raita",
 			);
-			expect(sentMessageText).toContain(
-				"☕ *TCB (Uniworld):* Chole Bhature, Veg Pulao, Gulab Jamun",
-			);
+			expect(sentMessageText).toContain("☕ *TCB:*\n• Chole Bhature\n• Veg Pulao\n• Gulab Jamun");
 			expect(sentMessageText).toContain("📍 *Location:*");
 			expect(sentMessageText).toContain("• *Hostel:* Batches 2027, 2028");
 			expect(sentMessageText).toContain("• *College:* Batches 2025, 2026");
@@ -453,7 +606,7 @@ describe("Mess System End-to-End Integration", () => {
 				.fn()
 				.mockResolvedValue(Buffer.from("test-weekly-menu-pdf-bytes"));
 
-			const useCase = new StageIncomingFoodAnnouncement(stagingRepository, mockLogger);
+			const useCase = new StageIncomingFoodAnnouncement(foodRepository, mockLogger);
 			const adapter = new FoodAnnouncementInboundAdapter({
 				targetGroupJid: FOOD_GROUP_JID,
 				useCase,
@@ -521,7 +674,11 @@ describe("Mess System End-to-End Integration", () => {
 			expect(fetchedById?.status).toBe("pending");
 		});
 
-		it("processes complete composite food announcement lifecycle (ingestion -> extraction -> atomicCommit -> display -> atomicUndo)", async () => {
+		it("processes manually reviewed composite food announcement lifecycle (capture -> manual extraction -> atomicCommit -> display -> atomicUndo)", async () => {
+			const originalMeal = await messRepository.getResolvedMeal({
+				mealDate: TEST_DATE,
+				mealSlot: "lunch",
+			});
 			// 1. Inbound adapter with mock connection manager
 			let registeredHandler: ((upsert: any) => Promise<void>) | null = null;
 			const fakeConnectionManager = {
@@ -532,7 +689,7 @@ describe("Mess System End-to-End Integration", () => {
 				}),
 			};
 
-			const useCase = new StageIncomingFoodAnnouncement(stagingRepository, mockLogger);
+			const useCase = new StageIncomingFoodAnnouncement(foodRepository, mockLogger);
 			const adapter = new FoodAnnouncementInboundAdapter({
 				targetGroupJid: FOOD_GROUP_JID,
 				useCase,
@@ -608,7 +765,7 @@ describe("Mess System End-to-End Integration", () => {
 				},
 			};
 
-			const extractor = new DeepseekTextExtractor(mockOpenAI as any);
+			const extractor = new DeepseekTextExtractor(mockOpenAI as any, "manual-test-model");
 			const extractedEvents = await extractor.extractAnnouncementEvents(
 				staged!.textBody!,
 				staged!.receivedAt,
@@ -672,7 +829,7 @@ describe("Mess System End-to-End Integration", () => {
 				mealDate: TEST_DATE,
 				mealSlot: "lunch",
 			});
-			expect(postUndoResolved.locationDetail).toBeNull();
+			expect(postUndoResolved.locationDetail).toEqual(originalMeal.locationDetail);
 			expect(postUndoResolved.timingExtensions).toHaveLength(0);
 
 			const postUndoCard = await displayTool.execute({
@@ -681,7 +838,7 @@ describe("Mess System End-to-End Integration", () => {
 			});
 			expect(postUndoCard.content).toContain("🍽️ *Lunch Menu*");
 			expect(postUndoCard.content).not.toContain("⏰ *Timings:*");
-			expect(postUndoCard.content).not.toContain("📍 *Location:*");
+			expect(postUndoCard.content).toContain("• *Hostel:* Batches 2027, 2028");
 		});
 	});
 });

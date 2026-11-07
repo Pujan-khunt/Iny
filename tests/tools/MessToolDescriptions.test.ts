@@ -8,13 +8,13 @@ describe("Mess Tool Descriptions and Schemas", () => {
 	const dummyRepo = {} as MessRepositoryPort;
 	const dummyPresenter = {} as MessCardPresenterPort;
 
-	it("DisplayMessCardTool documents 4 quadrants and single-call terminal nature", () => {
+	it("DisplayMessCardTool documents slot and upcoming rollover handling and single-call terminal nature", () => {
 		const tool = new DisplayMessCardTool(dummyRepo, dummyPresenter);
-		expect(tool.description).toContain("4 presentation quadrants");
+		expect(tool.description).toContain("upcoming meal rollover");
 		expect(tool.description).toContain("(1) Slot query");
 		expect(tool.description).toContain("(2) Single-vendor slot");
-		expect(tool.description).toContain("(3) Generic menu");
-		expect(tool.description).toContain("(4) Single-vendor full-day");
+		expect(tool.description).toContain("(3) Generic menu or single-vendor menu");
+		expect(tool.description).toContain("(4) Full day menu");
 		expect(tool.description).toContain("terminal");
 		expect(tool.description).toContain("never call speculatively in parallel");
 	});
@@ -31,10 +31,8 @@ describe("Mess Tool Descriptions and Schemas", () => {
 		expect(schema.properties?.mealDate?.description).toContain(
 			"Provide ONLY when the user explicitly specifies a calendar date",
 		);
-		expect(schema.properties?.mealSlot?.description).toContain("Omit for general queries");
-		expect(schema.properties?.mealSlot?.description).toContain(
-			"trigger automatic cutoff and rollover",
-		);
+		expect(schema.properties?.mealSlot?.description).toContain("all");
+		expect(schema.properties?.mealSlot?.description).toContain("upcoming");
 		expect(schema.properties?.vendor?.description).toContain("The Craving Brew / Uniworld");
 	});
 
@@ -58,9 +56,8 @@ describe("Mess Tool Descriptions and Schemas", () => {
 		expect(schema.properties?.mealDate?.description).toContain(
 			"Omit to query current or upcoming meal date",
 		);
-		expect(schema.properties?.mealSlot?.description).toContain(
-			"Omit to query all slots for the date",
-		);
+		expect(schema.properties?.mealSlot?.description).toContain("all");
+		expect(schema.properties?.mealSlot?.description).toContain("upcoming");
 		expect(schema.properties?.vendor?.description).toContain("Omit to query across all vendors");
 	});
 });

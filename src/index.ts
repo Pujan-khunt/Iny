@@ -1,3 +1,14 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import OpenAI from "openai";
+import { FoodIngestionWorker } from "./adapters/inbound/workers/FoodIngestionWorker";
+import { DeepseekFoodAssessmentAdapter } from "./adapters/outbound/mess/extraction/DeepseekFoodAssessmentAdapter";
+import { PdfRasterizer } from "./adapters/outbound/mess/extraction/PdfRasterizer";
+import { ProcessNextFoodAnnouncement as ProcessFood } from "./core/use-cases/ProcessNextFoodAnnouncement";
+import { MealSwapResolver } from "./core/services/MealSwapResolver";
+import { createMessPersistence } from "./adapters/outbound/mess/postgres/createMessPersistence";
+import { ApplicationLifecycle } from "./runtime/ApplicationLifecycle";
+import { createRuntimeOperations } from "./runtime/RuntimeOperations";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { HandleIncomingUserMessage } from "./core/use-cases/HandleIncomingUserMessage";
@@ -8,16 +19,13 @@ import { loadConfig } from "./config";
 import { DeepseekAdapter } from "./adapters/outbound/llm/DeepseekAdapter";
 import { InMemoryToolRegistry } from "./adapters/outbound/tool-registry/InMemoryToolRegistry";
 import { PinoLoggerAdapter } from "./adapters/outbound/logger/PinoLoggerAdapter";
-import * as dialogueSchema from "./adapters/outbound/dialogue-turn-repository/postgres/schema";
-import * as whatsappSchema from "./adapters/outbound/whatsapp/postgres/schema";
-import * as accessControlSchema from "./adapters/outbound/access-control/postgres/schema";
-import * as messSchema from "./adapters/outbound/mess/postgres/schema";
+import { applicationSchema } from "./adapters/outbound/databaseSchemas";
 import { PostgresDialogueTurnRepository } from "./adapters/outbound/dialogue-turn-repository/postgres/PostgresDialogueTurnRepository";
 import { PostgresMessRepository } from "./adapters/outbound/mess/postgres/PostgresMessRepository";
-import { PostgresMessStagingRepository } from "./adapters/outbound/mess/postgres/PostgresMessStagingRepository";
 import { defaultMessCardPresenter } from "./adapters/outbound/mess/formatting/MessCardRenderer";
 import { DisplayMessCardTool } from "./tools/DisplayMessCardTool";
 import { QueryMessDetailsTool } from "./tools/QueryMessDetailsTool";
+import { SetDefaultMessTool } from "./tools/SetDefaultMessTool";
 import { runDatabaseMigrations } from "./adapters/outbound/dialogue-turn-repository/postgres/migrator";
 import { PostgresAccessControlAdapter } from "./adapters/outbound/access-control/postgres/PostgresAccessControlAdapter";
 import { PostgresBaileysSessionManager } from "./adapters/outbound/whatsapp/PostgresBaileysSessionManager";
@@ -26,13 +34,14 @@ import { BaileysConnectionManager } from "./adapters/outbound/whatsapp/BaileysCo
 import { BaileysMessageSenderAdapter } from "./adapters/outbound/whatsapp/BaileysMessageSenderAdapter";
 import { DirectMessageInboundAdapter } from "./adapters/inbound/whatsapp/DirectMessageInboundAdapter";
 import { FoodAnnouncementInboundAdapter } from "./adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
+import { suppressLibsignalLogs } from "./adapters/outbound/whatsapp/suppressLibsignalLogs";
 import { WhatsAppMessageContentExtractor } from "./adapters/inbound/whatsapp/router/WhatsAppMessageContentExtractor";
 import { WhatsAppMessageNormalizer } from "./adapters/inbound/whatsapp/router/WhatsAppMessageNormalizer";
 import { WhatsAppMessageRouter } from "./adapters/inbound/whatsapp/router/WhatsAppMessageRouter";
 import { CatchAllLoggingHandler } from "./adapters/inbound/whatsapp/router/CatchAllLoggingHandler";
 import { DialogueTurnContextRetrievalAdapter } from "./adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter";
-
 const config = loadConfig();
+suppressLibsignalLogs();
 const logger = PinoLoggerAdapter.createFromConfig(config);
 const logMod = (module: string) => logger.child({ module });
 const registry = new InMemoryToolRegistry(logger);
@@ -40,109 +49,95 @@ const sqlClient = postgres(config.DATABASE_URL, {
 	max: config.DB_MAX_CONNECTIONS,
 	idle_timeout: 20,
 	connect_timeout: 10,
+	onnotice: () => {},
 });
-const db = drizzle(sqlClient, {
-	schema: { ...dialogueSchema, ...whatsappSchema, ...accessControlSchema, ...messSchema },
-});
-const dialogueTurnRepository = new PostgresDialogueTurnRepository(db, logger);
-const messRepository = new PostgresMessRepository(db, logMod("mess-repository"));
-const messStagingRepository = new PostgresMessStagingRepository(db, logMod("mess-staging"));
-registry.register(new DisplayMessCardTool(messRepository, defaultMessCardPresenter));
-registry.register(new QueryMessDetailsTool(messRepository));
-const accessControl = new PostgresAccessControlAdapter(db, logMod("access-control"));
+const db = drizzle(sqlClient, { schema: applicationSchema });
+const turns = new PostgresDialogueTurnRepository(db, logger),
+	messRepository = new PostgresMessRepository(db, logMod("mess-repository"));
+const { food, staging } = createMessPersistence(db, logger);
+const assessment = new DeepseekFoodAssessmentAdapter(
+	new OpenAI({ apiKey: config.DEEPSEEK_API_KEY, baseURL: config.DEEPSEEK_BASE_URL, maxRetries: 0 }),
+	new PdfRasterizer(promisify(execFile)),
+	config.DEEPSEEK_MODEL,
+	logMod("food-assessment"),
+	config.FOOD_ASSESSMENT_TIMEOUT_MS,
+	300,
+);
+const processFood = new ProcessFood(
+	food,
+	assessment,
+	new MealSwapResolver(staging),
+	logMod("food-ingestion"),
+);
+const worker = new FoodIngestionWorker(
+	processFood,
+	logMod("food-worker"),
+	config.FOOD_WORKER_DEADLINE_MS,
+);
+const access = new PostgresAccessControlAdapter(db, logMod("access-control"));
+[
+	new DisplayMessCardTool(messRepository, defaultMessCardPresenter, access),
+	new QueryMessDetailsTool(messRepository, access),
+	new SetDefaultMessTool(access),
+].forEach((tool) => registry.register(tool));
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
 	baseURL: config.DEEPSEEK_BASE_URL,
 	model: config.DEEPSEEK_MODEL,
 	logger,
 });
-const sessionManager = new PostgresBaileysSessionManager(db, logger, "default");
-const pairingManager = new BaileysPairingManager(logger);
-const connectionManager = new BaileysConnectionManager(logger, pairingManager, sessionManager);
-const messageSender = new BaileysMessageSenderAdapter(connectionManager, logger);
-const agentLoop = new AgentLoop(deepseekAdapter, registry, {
+const sessions = new PostgresBaileysSessionManager(db, logger, "default"),
+	pairing = new BaileysPairingManager(logger),
+	connection = new BaileysConnectionManager(logger, pairing, sessions),
+	sender = new BaileysMessageSenderAdapter(connection, logger);
+const loop = new AgentLoop(deepseekAdapter, registry, {
 	maxToolIterations: config.MAX_TOOL_ITERATIONS,
 	systemPrompt: SYSTEM_PROMPT,
 });
-const contextRetrieval = new DialogueTurnContextRetrievalAdapter(dialogueTurnRepository, logger, {
+const context = new DialogueTurnContextRetrievalAdapter(turns, logger, {
 	maxTurns: config.MAX_HISTORY_TURNS,
-	ttlMs: config.HISTORY_TTL_HOURS * 60 * 60 * 1000,
+	ttlMs: config.HISTORY_TTL_HOURS * 3_600_000,
 });
-const useCase = new HandleIncomingUserMessage(
-	messageSender,
-	dialogueTurnRepository,
-	contextRetrieval,
-	agentLoop,
-	registry,
-	logger,
-);
-const foodLog = logMod("food-announcements");
-const stageFoodAnnouncement = new StageIncomingFoodAnnouncement(messStagingRepository, foodLog);
-const directMessageAdapter = new DirectMessageInboundAdapter(
-	useCase,
-	accessControl,
-	logMod("direct-message"),
-);
-const foodAnnouncementAdapter = new FoodAnnouncementInboundAdapter({
-	targetGroupJid: config.FOOD_ANNOUNCEMENTS_GROUP_JID,
-	useCase: stageFoodAnnouncement,
-	logger: foodLog,
-});
-const contentExtractor = new WhatsAppMessageContentExtractor(logMod("content-extractor"));
-const normalizer = new WhatsAppMessageNormalizer(logMod("normalizer"), contentExtractor);
+const handleUser = new HandleIncomingUserMessage(sender, turns, context, loop, registry, logger);
+const foodLog = logMod("food-announcements"),
+	stageFoodAnnouncement = new StageIncomingFoodAnnouncement(food, foodLog),
+	dmAdapter = new DirectMessageInboundAdapter(handleUser, access, logMod("direct-message")),
+	foodAnnouncementAdapter = new FoodAnnouncementInboundAdapter({
+		targetGroupJid: config.FOOD_ANNOUNCEMENTS_GROUP_JID,
+		useCase: stageFoodAnnouncement,
+		logger: foodLog,
+	}),
+	content = new WhatsAppMessageContentExtractor(logMod("content-extractor")),
+	normalizer = new WhatsAppMessageNormalizer(logMod("normalizer"), content);
 const router = new WhatsAppMessageRouter(normalizer, logMod("router"))
 	.register(foodAnnouncementAdapter)
-	.register(directMessageAdapter)
+	.register(dmAdapter)
 	.register(new CatchAllLoggingHandler(logMod("catch-all-handler")));
-
-let isShuttingDown = false;
-async function shutdown(signal: string, exitCode = 0) {
-	if (isShuttingDown) return;
-	isShuttingDown = true;
-	logger.info(`Received ${signal}. Closing connections gracefully...`);
-	try {
-		connectionManager.disconnect();
-	} catch (e) {
-		logger.error("Error closing WhatsApp connection", e);
-	}
-	await sqlClient
-		.end({ timeout: 5 })
-		.catch((e: unknown) => logger.error("Error closing database pool", e));
-	await logger.flush?.();
-	process.exit(exitCode);
-}
-
-const handleFatal = (name: string) => (err: unknown) => {
-	logger.fatal(name, err instanceof Error ? err : new Error(String(err)));
-	shutdown(name, 1);
-};
-["SIGINT", "SIGTERM"].forEach((sig) => process.on(sig, () => shutdown(sig, 0)));
-process.on("uncaughtException", handleFatal("Uncaught exception"));
-process.on("unhandledRejection", handleFatal("Unhandled promise rejection"));
-
-async function start() {
-	await runDatabaseMigrations(db, logger);
-	if (config.ALLOWED_USERS.length > 0) {
-		const seeds = config.ALLOWED_USERS.map((phoneNumber, index) => ({
-			phoneNumber,
-			name: config.ALLOWED_USER_NAMES[index] || null,
-		}));
-		await accessControl.seedUsers(seeds);
-	}
-	const count = await accessControl.countActiveUsers();
-	if (count === 0) {
-		logger.fatal("No active authorized users found. Iny cannot start.");
-		await shutdown("no-users", 1);
-		return;
-	}
-	logger.info("Access control initialized", { activeUsers: count });
-	connectionManager.subscribe("messages.upsert", (upsert) => router.handleUpsert(upsert));
-	logger.info("Subscribed WhatsApp message router to messages.upsert");
-	logger.info("Starting Iny WhatsApp connection...");
-	const session = await sessionManager.initSession();
-	await connectionManager.start({ session, botPhoneNumber: config.BOT_PHONE_NUMBER });
-}
-
-start().catch((err) => {
-	logger.fatal("Fatal application startup failure", err);
-	shutdown("startup-failure", 1);
+const seeds = config.ALLOWED_USERS.map((p, i) => ({
+	phoneNumber: p,
+	name: config.ALLOWED_USER_NAMES[i] || null,
+}));
+const operations = createRuntimeOperations({
+	migrate: () => runDatabaseMigrations(db, logger),
+	initFood: () => food.initialize(config.FOOD_ANNOUNCEMENTS_GROUP_JID),
+	subscribe: (h) => connection.subscribe("messages.upsert", h),
+	handleUpsert: (u) => router.handleUpsert(u as Parameters<typeof router.handleUpsert>[0]),
+	initSession: () => sessions.initSession(),
+	startConnection: (session) =>
+		connection.start({
+			session: session as Parameters<typeof connection.start>[0]["session"],
+			botPhoneNumber: config.BOT_PHONE_NUMBER,
+		}),
+	startWorker: () => worker.start(),
+	stopWorker: () => worker.stop(),
 });
+const lifecycle = new ApplicationLifecycle(
+	logger,
+	() => connection.disconnect(),
+	(timeout) => sqlClient.end({ timeout }),
+	(code) => process.exit(code),
+	access,
+	seeds,
+	operations,
+);
+lifecycle.attachSignalHandlers();
+lifecycle.start().catch((error) => lifecycle.startupFailure(error));

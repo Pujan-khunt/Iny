@@ -1,3 +1,6 @@
+import { PostgresMessProvenance } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessProvenance";
+import { PostgresMessOperationAudit } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessOperationAudit";
+import { PostgresMessWriteGuard } from "../../../../../src/adapters/outbound/mess/postgres/PostgresMessWriteGuard";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { newDb } from "pg-mem";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -60,7 +63,15 @@ describe("PostgresStagingQueue", () => {
 		};
 
 		db = drizzle(pool);
-		queue = new PostgresStagingQueue(db as any, mockLogger);
+		const manualAudit = Object.assign(
+			new PostgresMessOperationAudit(new PostgresMessProvenance()),
+			{ manualDisposition: async () => {} },
+		);
+		const manualGuard = Object.assign(new PostgresMessWriteGuard(manualAudit), {
+			lock: async () => {},
+		});
+
+		queue = new PostgresStagingQueue(db as any, mockLogger, manualGuard, manualAudit);
 	});
 
 	it("stages a message and retrieves it by id", async () => {

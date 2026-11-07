@@ -7,12 +7,19 @@ import {
 	ResolvedMealInfo,
 	isMealEnded,
 } from "../../../../core/entities/MessMeal";
+import { getISTDateString, shiftISODate } from "../../../../core/utils/Temporal";
 import { MessCardPresenterPort } from "../../../../core/ports/MessCardPresenterPort";
 
 export const VENDOR_DISPLAY_NAMES: Record<Vendor, string> = {
-	cheftalk_regular: "Cheftalk Regular",
+	cheftalk_regular: "Cheftalk",
 	cheftalk_jain: "Cheftalk Jain",
-	tcb: "TCB (Uniworld)",
+	tcb: "TCB",
+};
+
+export const VENDOR_TIP_NAMES: Record<Vendor, string> = {
+	cheftalk_regular: "Cheftalk",
+	cheftalk_jain: "Cheftalk Jain",
+	tcb: "TCB",
 };
 
 export const VENDOR_EMOJIS: Record<Vendor, string> = {
@@ -54,9 +61,13 @@ export function sanitizeWhatsAppText(input: string): string {
 }
 
 /**
- * Formats a calendar date 'YYYY-MM-DD' into 'DayOfWeek, D Mon' (e.g. 'Wed, 7 Oct').
+ * Formats a calendar date 'YYYY-MM-DD' into relative date with IST day and month:
+ * - 'Today, Fri, 6 Nov'
+ * - 'Tomorrow, Sat, 7 Nov'
+ * - 'Yesterday, Thu, 5 Nov'
+ * - 'Sun, 8 Nov' (fallback)
  */
-export function formatDateIST(dateStr: string): string {
+export function formatDateIST(dateStr: string, now: Date = new Date()): string {
 	const [y, m, d] = dateStr.split("-").map(Number);
 	const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
 	const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -77,16 +88,35 @@ export function formatDateIST(dateStr: string): string {
 	const weekday = weekdays[date.getUTCDay()];
 	const month = months[date.getUTCMonth()];
 	const day = date.getUTCDate();
-	return `${weekday}, ${day} ${month}`;
+
+	const todayIST = getISTDateString(now);
+	const tomorrowIST = shiftISODate(todayIST, 1);
+	const yesterdayIST = shiftISODate(todayIST, -1);
+
+	let prefix = "";
+	if (dateStr === todayIST) {
+		prefix = "Today, ";
+	} else if (dateStr === tomorrowIST) {
+		prefix = "Tomorrow, ";
+	} else if (dateStr === yesterdayIST) {
+		prefix = "Yesterday, ";
+	}
+
+	return `${prefix}${weekday}, ${day} ${month}`;
 }
 
 /**
- * Formats standard card header with optional (Ended) tag.
+ * Formats standard card header with optional (Ended) tag and date on a new line.
  */
-export function formatCardHeader(title: string, dateStr: string, isEnded: boolean): string {
-	const formattedDate = formatDateIST(dateStr);
+export function formatCardHeader(
+	title: string,
+	dateStr: string,
+	isEnded: boolean,
+	now: Date = new Date(),
+): string {
+	const formattedDate = formatDateIST(dateStr, now);
 	const endedTag = isEnded ? " *(Ended)*" : "";
-	return `🍽️ *${title}*${endedTag} (${formattedDate})`;
+	return `🍽️ *${title}*${endedTag}\n📅 ${formattedDate}`;
 }
 
 /**
@@ -209,46 +239,61 @@ export function renderLocationSection(
 /**
  * Quadrant 1 & 3: Multi-Vendor Slot Digest.
  */
-export function renderMultiVendorSlotDigest(info: ResolvedMealInfo, hasEnded: boolean): string {
+export function renderMultiVendorSlotDigest(
+	info: ResolvedMealInfo,
+	hasEnded: boolean,
+	now: Date = new Date(),
+): string {
 	const slotName = info.mealSlot ? (SLOT_DISPLAY_NAMES[info.mealSlot] ?? "Meal") : "Meal";
-	const header = formatCardHeader(`${slotName} Menu`, info.mealDate, hasEnded);
+	const header = formatCardHeader(`${slotName} Menu`, info.mealDate, hasEnded, now);
+	const banners = [
+		renderActiveUpdatesBanner(info.mealChanges),
+		renderTimingExtensionsSection(info.timingExtensions),
+	].filter(Boolean) as string[];
 
-	const activeUpdates = renderActiveUpdatesBanner(info.mealChanges);
-	const timingExt = renderTimingExtensionsSection(info.timingExtensions);
-
-	let headerBlock = header;
-	const banners: string[] = [];
-	if (activeUpdates) banners.push(activeUpdates);
-	if (timingExt) banners.push(timingExt);
-	if (banners.length > 0) {
-		headerBlock = `${header}\n${banners.join("\n")}`;
-	}
-
-	const sections: string[] = [headerBlock];
-
+	const sections: string[] = [banners.length > 0 ? `${header}\n${banners.join("\n")}` : header];
 	const vendorOrder: Vendor[] = ["cheftalk_regular", "cheftalk_jain", "tcb"];
-	const vendorLines: string[] = [];
 
 	for (const v of vendorOrder) {
 		const meal = info.meals.find((m) => m.vendor === v);
-		if (meal) {
-			const itemsStr = meal.items.map(sanitizeWhatsAppText).join(", ");
-			vendorLines.push(`${VENDOR_EMOJIS[v]} *${VENDOR_DISPLAY_NAMES[v]}:* ${itemsStr}`);
+		if (meal && meal.items.length > 0) {
+			const items = meal.items.map((i) => `• ${sanitizeWhatsAppText(i)}`).join("\n");
+			sections.push(`${VENDOR_EMOJIS[v]} *${VENDOR_DISPLAY_NAMES[v]}:*\n${items}`);
 		}
-	}
-
-	if (vendorLines.length > 0) {
-		sections.push(vendorLines.join("\n"));
 	}
 
 	if (info.mealSlot === "lunch" && info.locationDetail) {
 		const loc = renderLocationSection(info.locationDetail, false);
-		if (loc) {
-			sections.push(loc);
-		}
+		if (loc) sections.push(loc);
 	}
 
 	return sections.join("\n\n");
+}
+
+function buildVendorHeaderBlock(info: ResolvedMealInfo, vendor: Vendor, header: string): string {
+	const activeUpdates = renderActiveUpdatesBanner(
+		info.mealChanges.filter((c) => c.targetVendor === vendor),
+	);
+	const timingExt = renderTimingExtensionsSection(
+		info.timingExtensions.filter((e) => e.targetVendor === vendor || e.targetVendor === null),
+	);
+	const banners = [activeUpdates, timingExt].filter(Boolean);
+	return banners.length > 0 ? `${header}\n${banners.join("\n")}` : header;
+}
+
+function renderFullDayVendorSlots(info: ResolvedMealInfo, vendor: Vendor, now: Date): string[] {
+	const slotOrder: MealSlot[] = ["breakfast", "lunch", "dinner"];
+	return slotOrder.map((slot) => {
+		const meal = info.meals.find((m) => m.mealSlot === slot && m.vendor === vendor);
+		const slotEnded = isMealEnded(info.mealDate, slot, now);
+		const endedTag = slotEnded ? " *(Ended):*" : ":*";
+		const label = `${SLOT_EMOJIS[slot]} *${SLOT_DISPLAY_NAMES[slot]}${slotEnded ? "*" : ""}${endedTag}`;
+		const items =
+			meal && meal.items.length > 0
+				? meal.items.map((i) => `• ${sanitizeWhatsAppText(i)}`).join("\n")
+				: "• Not available";
+		return `${label}\n${items}`;
+	});
 }
 
 /**
@@ -258,39 +303,27 @@ export function renderSingleVendorSlotDetail(
 	info: ResolvedMealInfo,
 	vendor: Vendor,
 	hasEnded: boolean,
+	userDefaultVendor?: Vendor,
+	now: Date = new Date(),
 ): string {
 	const slotName = info.mealSlot ? (SLOT_DISPLAY_NAMES[info.mealSlot] ?? "Meal") : "Meal";
 	const vendorName = VENDOR_DISPLAY_NAMES[vendor] ?? vendor;
-	const header = formatCardHeader(`${slotName} — ${vendorName}`, info.mealDate, hasEnded);
-
-	const activeUpdates = renderActiveUpdatesBanner(
-		info.mealChanges.filter((c) => c.targetVendor === vendor),
-	);
-	const timingExt = renderTimingExtensionsSection(
-		info.timingExtensions.filter((e) => e.targetVendor === vendor || e.targetVendor === null),
-	);
-
-	let headerBlock = header;
-	const banners: string[] = [];
-	if (activeUpdates) banners.push(activeUpdates);
-	if (timingExt) banners.push(timingExt);
-	if (banners.length > 0) {
-		headerBlock = `${header}\n${banners.join("\n")}`;
-	}
-
-	const sections: string[] = [headerBlock];
+	const header = formatCardHeader(`${vendorName} ${slotName}`, info.mealDate, hasEnded, now);
+	const sections: string[] = [buildVendorHeaderBlock(info, vendor, header)];
 
 	const meal = info.meals.find((m) => m.vendor === vendor);
 	if (meal && meal.items.length > 0) {
-		const itemsLines = meal.items.map((i) => `• ${sanitizeWhatsAppText(i)}`);
-		sections.push(itemsLines.join("\n"));
+		sections.push(meal.items.map((i) => `• ${sanitizeWhatsAppText(i)}`).join("\n"));
 	}
 
 	if (info.mealSlot === "lunch" && info.locationDetail) {
 		const loc = renderLocationSection(info.locationDetail, false);
-		if (loc) {
-			sections.push(loc);
-		}
+		if (loc) sections.push(loc);
+	}
+
+	if (userDefaultVendor && userDefaultVendor !== vendor) {
+		const tipVendorName = VENDOR_TIP_NAMES[vendor] ?? vendor;
+		sections.push(`_Tip: Say "set default to ${tipVendorName}" to make this your default vendor._`);
 	}
 
 	return sections.join("\n\n");
@@ -305,58 +338,32 @@ export function renderSingleVendorFullDayDigest(
 	now: Date,
 ): string {
 	const vendorName = VENDOR_DISPLAY_NAMES[vendor] ?? vendor;
-	const header = formatCardHeader(`${vendorName} — Full Day Menu`, info.mealDate, false);
-
-	const activeUpdates = renderActiveUpdatesBanner(
-		info.mealChanges.filter((c) => c.targetVendor === vendor),
-	);
-	const timingExt = renderTimingExtensionsSection(
-		info.timingExtensions.filter((e) => e.targetVendor === vendor || e.targetVendor === null),
-	);
-
-	let headerBlock = header;
-	const banners: string[] = [];
-	if (activeUpdates) banners.push(activeUpdates);
-	if (timingExt) banners.push(timingExt);
-	if (banners.length > 0) {
-		headerBlock = `${header}\n${banners.join("\n")}`;
-	}
-
-	const sections: string[] = [headerBlock];
-
-	const slotOrder: MealSlot[] = ["breakfast", "lunch", "dinner"];
-	const slotLines: string[] = [];
-
-	for (const slot of slotOrder) {
-		const meal = info.meals.find((m) => m.mealSlot === slot && m.vendor === vendor);
-		const slotEnded = isMealEnded(info.mealDate, slot, now);
-		const endedTag = slotEnded ? " *(Ended):*" : ":*";
-		const label = `${SLOT_EMOJIS[slot]} *${SLOT_DISPLAY_NAMES[slot]}${slotEnded ? "*" : ""}${endedTag}`;
-
-		const itemsStr =
-			meal && meal.items.length > 0
-				? meal.items.map(sanitizeWhatsAppText).join(", ")
-				: "Not available";
-
-		slotLines.push(`${label} ${itemsStr}`);
-	}
-
-	if (slotLines.length > 0) {
-		sections.push(slotLines.join("\n"));
-	}
+	const header = formatCardHeader(`${vendorName} Full Day Menu`, info.mealDate, false, now);
+	const sections: string[] = [
+		buildVendorHeaderBlock(info, vendor, header),
+		...renderFullDayVendorSlots(info, vendor, now),
+	];
 
 	if (info.locationDetail) {
 		const loc = renderLocationSection(info.locationDetail, true);
-		if (loc) {
-			sections.push(loc);
-		}
+		if (loc) sections.push(loc);
 	}
 
 	return sections.join("\n\n");
+}
+
+/**
+ * Formats a user-facing notice when no menu data is available for a queried date, vendor, and slot.
+ */
+export function renderEmptyNotice(date: string, vendor?: Vendor, slot?: MealSlot): string {
+	const vendorLabel = vendor ? (VENDOR_DISPLAY_NAMES[vendor] ?? vendor) : "the mess";
+	const slotLabel = slot ? ` ${slot}` : "";
+	return `ℹ️ No menu data is currently loaded for ${vendorLabel}${slotLabel} on ${date}.`;
 }
 
 export const defaultMessCardPresenter: MessCardPresenterPort = {
 	renderMultiVendorSlotDigest,
 	renderSingleVendorSlotDetail,
 	renderSingleVendorFullDayDigest,
+	renderEmptyNotice,
 };

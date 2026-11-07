@@ -6,6 +6,7 @@ import { messMeals, messMealChanges } from "./schema";
 
 /** Handles applying resolved meal swaps and creating surgical undo backups. */
 export class PostgresSwapWriter {
+	/** Applies resolved swaps in the caller's transaction; missing backups or SQL failure throw. */
 	async commitSwaps(tx: any, messageId: string, swaps?: ResolvedMealSwapInput[]): Promise<void> {
 		for (const s of swaps ?? []) {
 			if (!s.previousItems?.length) {
@@ -15,7 +16,7 @@ export class PostgresSwapWriter {
 			}
 			await tx
 				.update(messMeals)
-				.set({ items: Array.from(s.newItems) })
+				.set({ items: Array.from(s.newItems), sourceMessageId: messageId, ingestedAt: new Date() })
 				.where(
 					and(
 						eq(messMeals.mealDate, s.targetMealDate),

@@ -35,6 +35,8 @@ describe("Config", () => {
 		expect(config.MAX_TOOL_ITERATIONS).toBe(5);
 		expect(config.MAX_HISTORY_TURNS).toBe(10);
 		expect(config.HISTORY_TTL_HOURS).toBe(24);
+		expect(config.FOOD_ASSESSMENT_TIMEOUT_MS).toBe(180_000);
+		expect(config.FOOD_WORKER_DEADLINE_MS).toBe(420_000);
 	});
 
 	it("should correctly override defaults with provided custom variables", () => {
@@ -51,12 +53,16 @@ describe("Config", () => {
 			MAX_TOOL_ITERATIONS: "10",
 			MAX_HISTORY_TURNS: "25",
 			HISTORY_TTL_HOURS: "48",
+			FOOD_ASSESSMENT_TIMEOUT_MS: "200000",
+			FOOD_WORKER_DEADLINE_MS: "500000",
 		});
 
 		expect(config.DATABASE_URL).toBe("postgres://custom_user:pass@db.example.com:5432/custom_db");
 		expect(config.FOOD_ANNOUNCEMENTS_GROUP_JID).toBe("120363025343425345@g.us");
 		expect(config.DB_MAX_CONNECTIONS).toBe(25);
 		expect(config.HISTORY_TTL_HOURS).toBe(48);
+		expect(config.FOOD_ASSESSMENT_TIMEOUT_MS).toBe(200_000);
+		expect(config.FOOD_WORKER_DEADLINE_MS).toBe(500_000);
 	});
 
 	it("should default ALLOWED_USERS and ALLOWED_USER_NAMES to empty array when omitted from environment", () => {
@@ -262,6 +268,8 @@ describe("Config", () => {
 		expect(config.MAX_TOOL_ITERATIONS).toBe(5);
 		expect(config.MAX_HISTORY_TURNS).toBe(10);
 		expect(config.HISTORY_TTL_HOURS).toBe(24);
+		expect(config.FOOD_ASSESSMENT_TIMEOUT_MS).toBe(180_000);
+		expect(config.FOOD_WORKER_DEADLINE_MS).toBe(420_000);
 		expect(config.ALLOWED_USERS).toEqual([]);
 	});
 
