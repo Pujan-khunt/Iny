@@ -1,5 +1,5 @@
-import { Message, UserMessage } from "../entities/Message";
-import { DialogueTurnFactory } from "../entities/DialogueTurn";
+import { UserMessage } from "../entities/Message";
+import { DialogueTurn, DialogueTurnFactory } from "../entities/DialogueTurn";
 import { MessageSenderPort } from "../ports/MessageSenderPort";
 import { MessageFeedbackPort } from "../ports/MessageFeedbackPort";
 import { DialogueTurnRepositoryPort } from "../ports/DialogueTurnRepositoryPort";
@@ -55,8 +55,10 @@ export class HandleIncomingUserMessage {
 			return;
 		}
 
+		let completedAt: Date;
 		try {
 			await this.sender.sendMessage(message.userId, loopResult.finalText);
+			completedAt = new Date();
 		} catch (deliveryError) {
 			log.error("Failed to deliver message to user via transport", deliveryError);
 			throw deliveryError;
@@ -64,19 +66,18 @@ export class HandleIncomingUserMessage {
 			await this.safeFinalFeedback(message.userId, message.id, log);
 		}
 
-		await this.safeSaveTurn(message.userId, loopResult.sessionMessages, startedAt, log);
+		const turn = DialogueTurnFactory.create({
+			userId: message.userId,
+			messages: loopResult.sessionMessages,
+			startedAt,
+			completedAt,
+		});
+		await this.safeSaveTurn(turn, log);
 	}
 
-	private async safeSaveTurn(
-		userId: string,
-		messages: Message[],
-		startedAt: Date,
-		log: LoggerPort,
-	): Promise<void> {
+	private async safeSaveTurn(turn: DialogueTurn, log: LoggerPort): Promise<void> {
 		try {
-			await this.dialogueTurnRepository.saveTurn(
-				DialogueTurnFactory.create({ userId, messages, startedAt, completedAt: new Date() }),
-			);
+			await this.dialogueTurnRepository.saveTurn(turn);
 			log.info("Message processed successfully");
 		} catch (persistenceError) {
 			log.error("Failed to persist dialogue turn", persistenceError);
@@ -96,11 +97,10 @@ export class HandleIncomingUserMessage {
 
 	private async safeSendFallback(userId: string, error: unknown, log: LoggerPort): Promise<void> {
 		try {
-			const overloaded =
-				error instanceof LLMRateLimitError || error instanceof LLMServerOverloadedError;
-			const text = overloaded
-				? "Iny is experiencing heavy traffic right now. Please try again in a moment."
-				: "An error occurred during processing.";
+			const text =
+				error instanceof LLMRateLimitError || error instanceof LLMServerOverloadedError
+					? "Iny is experiencing heavy traffic right now. Please try again in a moment."
+					: "An error occurred during processing.";
 			await this.sender.sendMessage(userId, text);
 		} catch (fallbackError) {
 			log.error("Failed to send error notification to user", fallbackError);

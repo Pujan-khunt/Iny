@@ -188,6 +188,31 @@ describe("HandleIncomingUserMessage", () => {
 				vi.useRealTimers();
 			}
 		});
+
+		it("should capture completedAt when sendMessage completes before awaiting final feedback", async () => {
+			vi.useFakeTimers();
+			try {
+				const startTime = new Date("2026-09-29T10:00:00.000Z");
+				const deliveryTime = new Date("2026-09-29T10:00:02.000Z");
+				const cleanupTime = new Date("2026-09-29T10:00:04.000Z");
+				vi.setSystemTime(startTime);
+
+				vi.mocked(mockSender.sendMessage).mockImplementationOnce(async () => {
+					vi.setSystemTime(deliveryTime);
+				});
+				vi.mocked(mockFeedback.sendReaction).mockImplementation(async (_u, _m, reaction) => {
+					if (reaction === "") vi.setSystemTime(cleanupTime);
+				});
+
+				const useCase = createUseCase();
+				await useCase.execute(sampleUserMessage);
+
+				const savedTurn = (mockDialogueTurnRepository.saveTurn as any).mock.calls[0][0];
+				expect(savedTurn.completedAt).toEqual(deliveryTime);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
 	});
 
 	describe("Phase 1: Conversation context retrieval", () => {
