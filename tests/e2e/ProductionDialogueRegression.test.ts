@@ -165,7 +165,11 @@ describe("Production Dialogue Quality Regression Replay", () => {
 			maxTurns: 10,
 			ttlMs: 24 * 60 * 60 * 1000,
 		});
-		displayTool = new DisplayMessCardTool(messRepo, defaultMessCardPresenter);
+		displayTool = new DisplayMessCardTool(
+			messRepo,
+			defaultMessCardPresenter,
+			() => new Date(Date.now()),
+		);
 		registry = new InMemoryToolRegistry(mockLogger);
 		registry.register(displayTool);
 		deepseekAdapter = new DeepseekAdapter("mock-key", { logger: mockLogger });
@@ -296,7 +300,7 @@ describe("Production Dialogue Quality Regression Replay", () => {
 
 			expect(result.isTerminal).toBe(true);
 			expect(result.content).toBe(
-				"ℹ️ No menu data is currently loaded for Cheftalk breakfast on 2026-11-01.",
+				"ℹ️ No menu data is currently loaded for Cheftalk breakfast on Tomorrow, Sunday, 1st Nov.",
 			);
 			expect(result.content.toLowerCase()).not.toContain("not serving");
 			expect(result.content.toLowerCase()).not.toContain("cancelled");
@@ -341,7 +345,7 @@ describe("Production Dialogue Quality Regression Replay", () => {
 			expect(senderMock.sendMessage).toHaveBeenCalledTimes(1);
 			const sentText = (senderMock.sendMessage as any).mock.calls[0][1];
 			expect(sentText).toBe(
-				"ℹ️ No menu data is currently loaded for Cheftalk breakfast on 2026-11-01.",
+				"ℹ️ No menu data is currently loaded for Cheftalk breakfast on Tomorrow, Sunday, 1st Nov.",
 			);
 			expect(sentText.toLowerCase()).not.toContain("not serving");
 			expect(sentText.toLowerCase()).not.toContain("cancelled");

@@ -7,7 +7,11 @@ import {
 	ResolvedMealInfo,
 	isMealEnded,
 } from "../../../../core/entities/MessMeal";
-import { getISTDateString, shiftISODate } from "../../../../core/utils/Temporal";
+import {
+	getISTDateString,
+	shiftISODate,
+	formatDateISTNatural,
+} from "../../../../core/utils/Temporal";
 import { MessCardPresenterPort } from "../../../../core/ports/MessCardPresenterPort";
 
 export const VENDOR_DISPLAY_NAMES: Record<Vendor, string> = {
@@ -128,7 +132,10 @@ export function renderActiveUpdatesBanner(changes: readonly MessMealChange[]): s
 	}
 
 	const formatSingleChange = (change: MessMealChange): string => {
-		const affected = sanitizeWhatsAppText(change.affectedItem);
+		const rawAffected = change.affectedItem.replace(/\b\d{4}-\d{2}-\d{2}\b/g, (match) =>
+			formatDateISTNatural(match, null),
+		);
+		const affected = sanitizeWhatsAppText(rawAffected);
 		const vendorName = VENDOR_DISPLAY_NAMES[change.targetVendor] ?? change.targetVendor;
 
 		switch (change.changeType) {
@@ -351,10 +358,16 @@ export function renderSingleVendorFullDayDigest(
 /**
  * Formats a user-facing notice when no menu data is available for a queried date, vendor, and slot.
  */
-export function renderEmptyNotice(date: string, vendor?: Vendor, slot?: MealSlot): string {
+export function renderEmptyNotice(
+	date: string,
+	vendor?: Vendor,
+	slot?: MealSlot,
+	now: Date = new Date(),
+): string {
 	const vendorLabel = vendor ? (VENDOR_DISPLAY_NAMES[vendor] ?? vendor) : "the mess";
 	const slotLabel = slot ? ` ${slot}` : "";
-	return `ℹ️ No menu data is currently loaded for ${vendorLabel}${slotLabel} on ${date}.`;
+	const formattedDate = formatDateISTNatural(date, now);
+	return `ℹ️ No menu data is currently loaded for ${vendorLabel}${slotLabel} on ${formattedDate}.`;
 }
 
 export const defaultMessCardPresenter: MessCardPresenterPort = {

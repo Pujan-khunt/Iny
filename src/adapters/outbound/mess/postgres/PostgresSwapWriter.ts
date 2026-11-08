@@ -2,6 +2,7 @@
 import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { ResolvedMealSwapInput } from "../../../../core/ports/MessStagingRepositoryPort";
+import { formatDateISTNatural } from "../../../../core/utils/Temporal";
 import { messMeals, messMealChanges } from "./schema";
 
 /** Handles applying resolved meal swaps and creating surgical undo backups. */
@@ -30,7 +31,7 @@ export class PostgresSwapWriter {
 				mealSlot: s.targetMealSlot,
 				targetVendor: s.vendor,
 				changeType: "replacement",
-				affectedItem: `${s.sourceMealDate} ${s.sourceMealSlot} Menu (${s.newItems.join(", ")})`,
+				affectedItem: `${formatDateISTNatural(s.sourceMealDate, null)} ${s.sourceMealSlot} Menu (${s.newItems.join(", ")})`,
 				originalItem: JSON.stringify(Array.from(s.previousItems)),
 				sourceMessageId: messageId,
 				ingestedAt: new Date(),

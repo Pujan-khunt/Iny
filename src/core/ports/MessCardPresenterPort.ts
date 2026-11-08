@@ -29,5 +29,5 @@ export interface MessCardPresenterPort {
 	/**
 	 * Formats a user-facing notice when no menu data is available for a queried date, vendor, and slot.
 	 */
-	renderEmptyNotice(date: string, vendor?: Vendor, slot?: MealSlot): string;
+	renderEmptyNotice(date: string, vendor?: Vendor, slot?: MealSlot, now?: Date): string;
 }

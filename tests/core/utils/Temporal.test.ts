@@ -7,6 +7,7 @@ import {
 	getISTMinutes,
 	buildTemporallyGroundedSystemPrompt,
 	formatHistoricalMessageTimeIST,
+	formatDateISTNatural,
 } from "../../../src/core/utils/Temporal";
 
 describe("Temporal Utility", () => {
@@ -133,6 +134,51 @@ describe("Temporal Utility", () => {
 			// 2026-05-04 03:05:00 UTC = 2026-05-04 08:35:00 IST
 			const utcDate = new Date("2026-05-04T03:05:00.000Z");
 			expect(formatHistoricalMessageTimeIST(utcDate)).toBe("2026-05-04 08:35 IST");
+		});
+	});
+
+	describe("formatDateISTNatural", () => {
+		const refNow = new Date("2026-11-08T12:00:00.000Z"); // 2026-11-08 (Sunday) IST
+
+		it("formats today with relative prefix and ordinal day", () => {
+			expect(formatDateISTNatural("2026-11-08", refNow)).toBe("Today, Sunday, 8th Nov");
+		});
+
+		it("formats tomorrow with relative prefix and ordinal day", () => {
+			expect(formatDateISTNatural("2026-11-09", refNow)).toBe("Tomorrow, Monday, 9th Nov");
+		});
+
+		it("formats yesterday with relative prefix and ordinal day", () => {
+			expect(formatDateISTNatural("2026-11-07", refNow)).toBe("Yesterday, Saturday, 7th Nov");
+		});
+
+		it("formats distant dates without relative prefix", () => {
+			expect(formatDateISTNatural("2026-11-13", refNow)).toBe("Friday, 13th Nov");
+			expect(formatDateISTNatural("2026-11-15", refNow)).toBe("Sunday, 15th Nov");
+		});
+
+		it("correctly handles all ordinal endings (1st, 2nd, 3rd, 4th, 11th-13th, 21st-23rd, 31st)", () => {
+			expect(formatDateISTNatural("2026-10-01", refNow)).toBe("Thursday, 1st Oct");
+			expect(formatDateISTNatural("2026-10-02", refNow)).toBe("Friday, 2nd Oct");
+			expect(formatDateISTNatural("2026-10-03", refNow)).toBe("Saturday, 3rd Oct");
+			expect(formatDateISTNatural("2026-10-04", refNow)).toBe("Sunday, 4th Oct");
+			expect(formatDateISTNatural("2026-10-11", refNow)).toBe("Sunday, 11th Oct");
+			expect(formatDateISTNatural("2026-10-12", refNow)).toBe("Monday, 12th Oct");
+			expect(formatDateISTNatural("2026-10-13", refNow)).toBe("Tuesday, 13th Oct");
+			expect(formatDateISTNatural("2026-10-21", refNow)).toBe("Wednesday, 21st Oct");
+			expect(formatDateISTNatural("2026-10-22", refNow)).toBe("Thursday, 22nd Oct");
+			expect(formatDateISTNatural("2026-10-23", refNow)).toBe("Friday, 23rd Oct");
+			expect(formatDateISTNatural("2026-10-31", refNow)).toBe("Saturday, 31st Oct");
+		});
+
+		it("defaults to current time if now parameter is omitted", () => {
+			const result = formatDateISTNatural("2026-11-08");
+			expect(typeof result).toBe("string");
+			expect(result.length).toBeGreaterThan(0);
+		});
+
+		it("omits relative prefix when now is explicitly null", () => {
+			expect(formatDateISTNatural("2026-11-08", null)).toBe("Sunday, 8th Nov");
 		});
 	});
 });
