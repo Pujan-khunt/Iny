@@ -1129,3 +1129,56 @@ it("accepts location allocation when relative date clause includes Today with nu
 	const result = OperationalAnnouncementValidator.validate(cand, src, ev);
 	expect(result).toEqual({ ok: true, value: cand.announcement });
 });
+
+it("rejects section shorthand when letter is not associated with the candidate cohort", () => {
+	const body =
+		"📢 Today (8/11/26), lunch for 2029 A, B, C, D and 2030 will be arranged in college.";
+	const cand: Candidate = {
+		kind: "operational_announcement",
+		announcement: {
+			locations: [
+				{
+					mealDate: "2026-11-08",
+					mealSlot: "lunch",
+					hostelBatches: [],
+					collegeBatches: ["2030 D"],
+				},
+			],
+			timings: [],
+			changes: [],
+			swaps: [],
+		},
+	};
+	const ev: SourceEvidence[] = [
+		{
+			fieldPath: "/announcement/locations/0/mealDate",
+			rawValue: "8/11/26",
+			clause: body,
+			location: { kind: "text", start: 10, end: 17 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/mealSlot",
+			rawValue: "lunch",
+			clause: body,
+			location: { kind: "text", start: 20, end: 25 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/collegeBatches/0",
+			rawValue: "D",
+			clause: body,
+			location: { kind: "text", start: 44, end: 45 },
+		},
+	];
+	const src: FoodAnnouncementSource = {
+		...source,
+		textBody: body,
+		originalCreatedAt: new Date("2026-11-08T06:51:25Z"),
+	};
+
+	const result = OperationalAnnouncementValidator.validate(cand, src, ev);
+	expect(result).toMatchObject({
+		ok: false,
+		reason: "ambiguous_content",
+		detail: "Invalid source support for /announcement/locations/0/collegeBatches/0.",
+	});
+});

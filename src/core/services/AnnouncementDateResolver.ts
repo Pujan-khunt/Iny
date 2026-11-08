@@ -56,7 +56,7 @@ function resolveReference(reference: string, sourceDate: string): (string | null
 	);
 	if (weekdays.test(remaining) || monthDate.test(remaining)) return [null];
 	const tokens = remaining.match(
-		/\d+(?:\s*[/.-]\s*\d+)+|\b\d{1,2},\d{1,2},(?:20\d{2}|\d{2})\b|\b(?:today|yesterday|tomorrow|tommorow|tmrw)\b/gi,
+		/\d+(?:\s*[/.-]\s*\d+)+|\b\d{1,2}\s*,\s*\d{1,2}\s*,\s*(?:20\d{2}|\d{2})\b|\b(?:today|yesterday|tomorrow|tommorow|tmrw)\b/gi,
 	);
 	const numericDates = tokens ? tokens.map((token) => resolveToken(token, sourceDate)) : [];
 	return [...writtenDates, ...numericDates];

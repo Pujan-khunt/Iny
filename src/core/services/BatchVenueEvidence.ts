@@ -49,7 +49,8 @@ export function batchAgrees(value: string, raw: string, path: string, clause: st
 	if (value.toLowerCase() === raw.toLowerCase()) return true;
 	const parts = value.split(" ");
 	if (parts.length === 2 && parts[1].toLowerCase() === raw.toLowerCase()) {
-		return new RegExp(`\\b${parts[0]}\\b`).test(clause);
+		const pattern = `\\b${parts[0]}\\b(?:[\\s,;/&()-]|and|to|[A-E])*?\\b${parts[1]}\\b`;
+		return new RegExp(pattern, "i").test(clause);
 	}
 	return false;
 }

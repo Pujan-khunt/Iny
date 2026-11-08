@@ -170,4 +170,18 @@ describe("date references in source prose", () => {
 			),
 		).toEqual({ ok: true, value: "2026-11-01" });
 	});
+	it("detects and rejects spaced comma dates alongside relative dates", () => {
+		expect(
+			AnnouncementDateResolver.resolve(["today (9, 11, 26)"], originalCreatedAt),
+		).toMatchObject({ ok: false, reason: "invalid_date" });
+		expect(
+			AnnouncementDateResolver.resolve(["today (1, 11, 26)"], originalCreatedAt),
+		).toMatchObject({ ok: false, reason: "invalid_date" });
+	});
+	it("rejects standalone spaced comma date references", () => {
+		expect(AnnouncementDateResolver.resolve(["9, 11, 26"], originalCreatedAt)).toMatchObject({
+			ok: false,
+			reason: "invalid_date",
+		});
+	});
 });
