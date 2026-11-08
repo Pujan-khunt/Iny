@@ -1,6 +1,7 @@
-import { UserMessage } from "../entities/Message";
+import { Message, UserMessage } from "../entities/Message";
 import { DialogueTurnFactory } from "../entities/DialogueTurn";
 import { MessageSenderPort } from "../ports/MessageSenderPort";
+import { MessageFeedbackPort } from "../ports/MessageFeedbackPort";
 import { DialogueTurnRepositoryPort } from "../ports/DialogueTurnRepositoryPort";
 import { ContextRetrievalPort } from "../ports/ContextRetrievalPort";
 import { ToolRegistryPort } from "../ports/ToolRegistryPort";
@@ -15,23 +16,13 @@ import {
 } from "../errors/LLMErrors";
 
 /**
- * Orchestrating use case that coordinates processing an incoming user message.
- * Coordinates conversation context retrieval, agent reasoning loop execution,
- * transport delivery, and dialogue turn persistence.
+ * Orchestrating use case coordinating context retrieval, interactive feedback,
+ * agent reasoning loop execution, transport delivery, and turn persistence.
  */
 export class HandleIncomingUserMessage {
-	/**
-	 * Initializes the use case with its required ports and collaborators.
-	 *
-	 * @param sender Transport port used to transmit outbound text responses.
-	 * @param dialogueTurnRepository Persistence port used to store completed dialogue turns.
-	 * @param contextRetrieval Port used to retrieve historical context messages for the user.
-	 * @param agentLoop Domain service executing the ReAct agent reasoning loop.
-	 * @param toolRegistry Registry providing active tool definitions to the LLM.
-	 * @param logger Leveled structured logger port.
-	 */
 	constructor(
 		private readonly sender: MessageSenderPort,
+		private readonly feedback: MessageFeedbackPort,
 		private readonly dialogueTurnRepository: DialogueTurnRepositoryPort,
 		private readonly contextRetrieval: ContextRetrievalPort,
 		private readonly agentLoop: AgentLoop,
@@ -40,19 +31,17 @@ export class HandleIncomingUserMessage {
 	) {}
 
 	/**
-	 * Executes the end-to-end processing pipeline for an incoming user message:
-	 * 1. Context Retrieval: Loads historical messages via ContextRetrievalPort.
-	 * 2. Reasoning: Runs the autonomous AgentLoop with active tools.
-	 * 3. Delivery: Dispatches the assistant's final response via MessageSenderPort.
-	 * 4. Persistence: Saves the completed dialogue turn to DialogueTurnRepositoryPort.
+	 * Executes the end-to-end processing pipeline for an incoming user message.
 	 *
 	 * @param message The verified inbound user message.
+	 * @returns Promise resolving once processing and dispatch complete.
 	 */
 	async execute(message: UserMessage): Promise<void> {
 		const startedAt = new Date();
 		const log = this.logger.child({ userId: message.userId, messageId: message.id });
 		log.info("Processing incoming message");
 
+		await this.safeInitialFeedback(message.userId, message.id, log);
 		const history = await this.contextRetrieval.retrieveContext(message.userId);
 
 		let loopResult: AgentLoopResult;
@@ -61,6 +50,7 @@ export class HandleIncomingUserMessage {
 			loopResult = await this.agentLoop.run(message, history, tools, log);
 		} catch (reasoningError) {
 			this.handleReasoningError(reasoningError, log);
+			await this.safeFinalFeedback(message.userId, message.id, log);
 			await this.safeSendFallback(message.userId, reasoningError, log);
 			return;
 		}
@@ -70,62 +60,90 @@ export class HandleIncomingUserMessage {
 		} catch (deliveryError) {
 			log.error("Failed to deliver message to user via transport", deliveryError);
 			throw deliveryError;
+		} finally {
+			await this.safeFinalFeedback(message.userId, message.id, log);
 		}
-		const completedAt = new Date();
 
+		await this.safeSaveTurn(message.userId, loopResult.sessionMessages, startedAt, log);
+	}
+
+	private async safeSaveTurn(
+		userId: string,
+		messages: Message[],
+		startedAt: Date,
+		log: LoggerPort,
+	): Promise<void> {
 		try {
-			const turn = DialogueTurnFactory.create({
-				userId: message.userId,
-				messages: loopResult.sessionMessages,
-				startedAt,
-				completedAt,
-			});
-			await this.dialogueTurnRepository.saveTurn(turn);
+			await this.dialogueTurnRepository.saveTurn(
+				DialogueTurnFactory.create({ userId, messages, startedAt, completedAt: new Date() }),
+			);
 			log.info("Message processed successfully");
 		} catch (persistenceError) {
 			log.error("Failed to persist dialogue turn", persistenceError);
 		}
 	}
 
-	/**
-	 * Categorizes and logs reasoning-phase errors with appropriate severity levels.
-	 * Logs fatal for unrecoverable authentication/balance failures, and error for general LLM failures.
-	 *
-	 * @param error The error thrown during the reasoning loop.
-	 * @param log Contextual logger instance.
-	 */
 	private handleReasoningError(error: unknown, log: LoggerPort): void {
-		if (error instanceof LLMAuthenticationError || error instanceof LLMInsufficientBalanceError) {
-			log.fatal("Unrecoverable LLM account or authentication failure", error, {
-				status: error.status,
-				code: error.code,
-			});
+		const isAuth =
+			error instanceof LLMAuthenticationError || error instanceof LLMInsufficientBalanceError;
+		const ctx = error instanceof LLMError ? { status: error.status, code: error.code } : undefined;
+		if (isAuth) {
+			log.fatal("Unrecoverable LLM account or authentication failure", error, ctx);
 		} else {
-			log.error("Failed during reasoning loop", error, {
-				status: error instanceof LLMError ? error.status : undefined,
-				code: error instanceof LLMError ? error.code : undefined,
-			});
+			log.error("Failed during reasoning loop", error, ctx);
 		}
 	}
 
-	/**
-	 * Attempts to transmit a user-friendly error notification when the reasoning phase fails.
-	 * Suppresses secondary transport failures to avoid masking the primary error.
-	 *
-	 * @param userId Unique identifier of the user to notify.
-	 * @param error The original error that triggered fallback notification.
-	 * @param log Contextual logger instance.
-	 */
 	private async safeSendFallback(userId: string, error: unknown, log: LoggerPort): Promise<void> {
 		try {
-			const userMessage =
-				error instanceof LLMRateLimitError || error instanceof LLMServerOverloadedError
-					? "Iny is experiencing heavy traffic right now. Please try again in a moment."
-					: "An error occurred during processing.";
-			await this.sender.sendMessage(userId, userMessage);
+			const overloaded =
+				error instanceof LLMRateLimitError || error instanceof LLMServerOverloadedError;
+			const text = overloaded
+				? "Iny is experiencing heavy traffic right now. Please try again in a moment."
+				: "An error occurred during processing.";
+			await this.sender.sendMessage(userId, text);
 		} catch (fallbackError) {
 			log.error("Failed to send error notification to user", fallbackError);
 			throw fallbackError;
+		}
+	}
+
+	private async safeInitialFeedback(
+		userId: string,
+		messageId: string,
+		log: LoggerPort,
+	): Promise<void> {
+		const results = await Promise.allSettled([
+			this.feedback.sendReadReceipt(userId, messageId),
+			this.feedback.sendTypingIndicator(userId, "composing"),
+			this.feedback.sendReaction(userId, messageId, "👀"),
+		]);
+		this.logSettledErrors(results, "Auxiliary initial message feedback failed", log);
+	}
+
+	private async safeFinalFeedback(
+		userId: string,
+		messageId: string,
+		log: LoggerPort,
+	): Promise<void> {
+		const results = await Promise.allSettled([
+			this.feedback.sendTypingIndicator(userId, "paused"),
+			this.feedback.sendReaction(userId, messageId, ""),
+		]);
+		this.logSettledErrors(results, "Auxiliary final message feedback failed", log);
+	}
+
+	private logSettledErrors(
+		results: PromiseSettledResult<void>[],
+		message: string,
+		log: LoggerPort,
+	): void {
+		for (const res of results) {
+			if (res.status === "rejected") {
+				log.info(message, {
+					error: res.reason instanceof Error ? res.reason.message : String(res.reason),
+				});
+			}
 		}
 	}
 }

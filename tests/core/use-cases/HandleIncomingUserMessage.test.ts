@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { HandleIncomingUserMessage } from "../../../src/core/use-cases/HandleIncomingUserMessage";
 import { MessageSenderPort } from "../../../src/core/ports/MessageSenderPort";
+import { MessageFeedbackPort } from "../../../src/core/ports/MessageFeedbackPort";
 import { DialogueTurnRepositoryPort } from "../../../src/core/ports/DialogueTurnRepositoryPort";
 import { ContextRetrievalPort } from "../../../src/core/ports/ContextRetrievalPort";
 import { ToolRegistryPort, ToolDefinition } from "../../../src/core/ports/ToolRegistryPort";
@@ -17,6 +18,7 @@ import {
 
 describe("HandleIncomingUserMessage", () => {
 	let mockSender: MessageSenderPort;
+	let mockFeedback: MessageFeedbackPort;
 	let mockDialogueTurnRepository: DialogueTurnRepositoryPort;
 	let mockContextRetrieval: ContextRetrievalPort;
 	let mockAgentLoop: AgentLoop;
@@ -61,6 +63,7 @@ describe("HandleIncomingUserMessage", () => {
 	const createUseCase = (): HandleIncomingUserMessage => {
 		return new HandleIncomingUserMessage(
 			mockSender,
+			mockFeedback,
 			mockDialogueTurnRepository,
 			mockContextRetrieval,
 			mockAgentLoop,
@@ -71,6 +74,11 @@ describe("HandleIncomingUserMessage", () => {
 
 	beforeEach(() => {
 		mockSender = { sendMessage: vi.fn().mockResolvedValue(undefined) };
+		mockFeedback = {
+			sendReadReceipt: vi.fn().mockResolvedValue(undefined),
+			sendTypingIndicator: vi.fn().mockResolvedValue(undefined),
+			sendReaction: vi.fn().mockResolvedValue(undefined),
+		};
 		mockDialogueTurnRepository = {
 			getRecentTurns: vi.fn().mockResolvedValue([]),
 			saveTurn: vi.fn().mockResolvedValue(undefined),
@@ -326,6 +334,8 @@ describe("HandleIncomingUserMessage", () => {
 			);
 			// Turn must NOT be saved when delivery fails
 			expect(mockDialogueTurnRepository.saveTurn).not.toHaveBeenCalled();
+			expect(mockFeedback.sendTypingIndicator).toHaveBeenCalledWith("user1", "paused");
+			expect(mockFeedback.sendReaction).toHaveBeenCalledWith("user1", "msg-1", "");
 		});
 	});
 
@@ -349,6 +359,97 @@ describe("HandleIncomingUserMessage", () => {
 				"Failed to persist dialogue turn",
 				dbError,
 			);
+		});
+	});
+
+	describe("Auxiliary interactive feedback", () => {
+		it("should dispatch read receipt, typing indicator, and reaction concurrently on message receipt", async () => {
+			const useCase = createUseCase();
+			await useCase.execute(sampleUserMessage);
+
+			expect(mockFeedback.sendReadReceipt).toHaveBeenCalledWith("user1", "msg-1");
+			expect(mockFeedback.sendTypingIndicator).toHaveBeenCalledWith("user1", "composing");
+			expect(mockFeedback.sendReaction).toHaveBeenCalledWith("user1", "msg-1", "👀");
+		});
+
+		it("should catch and log auxiliary initial feedback errors at info level without interrupting execution", async () => {
+			const feedbackError = new Error("WhatsApp rate limited reaction");
+			vi.mocked(mockFeedback.sendReadReceipt).mockRejectedValueOnce(feedbackError);
+
+			const useCase = createUseCase();
+			await useCase.execute(sampleUserMessage);
+
+			expect(mockFeedback.sendTypingIndicator).toHaveBeenCalledWith("user1", "composing");
+			expect(mockFeedback.sendReaction).toHaveBeenCalledWith("user1", "msg-1", "👀");
+			expect(mockSender.sendMessage).toHaveBeenCalledWith(
+				"user1",
+				"Hello! How can I help you today?",
+			);
+			expect(mockChildLogger.info).toHaveBeenCalledWith(
+				"Auxiliary initial message feedback failed",
+				{ error: "WhatsApp rate limited reaction" },
+			);
+		});
+
+		it("should catch and log each failure when multiple initial feedback operations fail concurrently", async () => {
+			const receiptError = new Error("Receipt failure");
+			const reactionError = new Error("Reaction failure");
+			vi.mocked(mockFeedback.sendReadReceipt).mockRejectedValueOnce(receiptError);
+			vi.mocked(mockFeedback.sendReaction).mockRejectedValueOnce(reactionError);
+
+			const useCase = createUseCase();
+			await useCase.execute(sampleUserMessage);
+
+			expect(mockFeedback.sendTypingIndicator).toHaveBeenCalledWith("user1", "composing");
+			expect(mockSender.sendMessage).toHaveBeenCalledWith(
+				"user1",
+				"Hello! How can I help you today?",
+			);
+			expect(mockChildLogger.info).toHaveBeenCalledWith(
+				"Auxiliary initial message feedback failed",
+				{ error: "Receipt failure" },
+			);
+			expect(mockChildLogger.info).toHaveBeenCalledWith(
+				"Auxiliary initial message feedback failed",
+				{ error: "Reaction failure" },
+			);
+		});
+
+		it("should clean up reaction and pause typing upon successful response delivery", async () => {
+			const useCase = createUseCase();
+			await useCase.execute(sampleUserMessage);
+
+			expect(mockFeedback.sendTypingIndicator).toHaveBeenCalledWith("user1", "paused");
+			expect(mockFeedback.sendReaction).toHaveBeenCalledWith("user1", "msg-1", "");
+		});
+
+		it("should clean up reaction and pause typing when reasoning loop fails", async () => {
+			const reasoningError = new LLMServerOverloadedError("Overloaded", { status: 503 });
+			vi.mocked(mockAgentLoop.run).mockRejectedValueOnce(reasoningError);
+
+			const useCase = createUseCase();
+			await useCase.execute(sampleUserMessage);
+
+			expect(mockFeedback.sendTypingIndicator).toHaveBeenCalledWith("user1", "paused");
+			expect(mockFeedback.sendReaction).toHaveBeenCalledWith("user1", "msg-1", "");
+			expect(mockSender.sendMessage).toHaveBeenCalledWith(
+				"user1",
+				"Iny is experiencing heavy traffic right now. Please try again in a moment.",
+			);
+		});
+
+		it("should log info and continue when final feedback cleanup fails", async () => {
+			const cleanupError = new Error("Network blip on cleanup");
+			vi.mocked(mockFeedback.sendReaction).mockResolvedValueOnce(undefined); // initial succeeds
+			vi.mocked(mockFeedback.sendReaction).mockRejectedValueOnce(cleanupError); // final fails
+
+			const useCase = createUseCase();
+			await useCase.execute(sampleUserMessage);
+
+			expect(mockSender.sendMessage).toHaveBeenCalled();
+			expect(mockChildLogger.info).toHaveBeenCalledWith("Auxiliary final message feedback failed", {
+				error: "Network blip on cleanup",
+			});
 		});
 	});
 });

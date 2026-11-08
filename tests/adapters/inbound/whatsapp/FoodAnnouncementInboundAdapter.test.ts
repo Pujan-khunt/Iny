@@ -27,6 +27,7 @@ import { PostgresSwapWriter } from "../../../../src/adapters/outbound/mess/postg
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
 import { FoodAnnouncementInboundAdapter } from "../../../../src/adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
 import { NormalizedWhatsAppMessage } from "../../../../src/adapters/inbound/whatsapp/router/NormalizedWhatsAppMessage";
+import type { MessageFeedbackPort } from "../../../../src/core/ports/MessageFeedbackPort";
 
 describe("FoodAnnouncementInboundAdapter", () => {
 	const targetGroupJid = "120363045678901234@g.us";
@@ -511,8 +512,14 @@ describe.skipIf(!databaseUrl)("food transport provenance through atomic admissio
 			logger,
 		});
 		const registry = new InMemoryToolRegistry(logger);
+		const feedback: MessageFeedbackPort = {
+			sendReadReceipt: async () => {},
+			sendTypingIndicator: async () => {},
+			sendReaction: async () => {},
+		};
 		const directUseCase = new HandleIncomingUserMessage(
 			sender,
+			feedback,
 			{ saveTurn: async () => {} } as unknown as DialogueTurnRepositoryPort,
 			{ retrieveContext: async () => [] },
 			new AgentLoop(

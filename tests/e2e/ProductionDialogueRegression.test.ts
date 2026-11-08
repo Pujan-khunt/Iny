@@ -7,6 +7,7 @@ import { HandleIncomingUserMessage } from "../../src/core/use-cases/HandleIncomi
 import { MessageFactory } from "../../src/core/entities/Message";
 import { DialogueTurnFactory } from "../../src/core/entities/DialogueTurn";
 import { MessageSenderPort } from "../../src/core/ports/MessageSenderPort";
+import { MessageFeedbackPort } from "../../src/core/ports/MessageFeedbackPort";
 import { LoggerPort } from "../../src/core/ports/LoggerPort";
 import { DialogueTurnContextRetrievalAdapter } from "../../src/adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter";
 import { DeepseekAdapter } from "../../src/adapters/outbound/llm/DeepseekAdapter";
@@ -153,6 +154,7 @@ describe("Production Dialogue Quality Regression Replay", () => {
 	let deepseekAdapter: DeepseekAdapter;
 	let agentLoop: AgentLoop;
 	let senderMock: MessageSenderPort;
+	let feedbackMock: MessageFeedbackPort;
 	let useCase: HandleIncomingUserMessage;
 
 	beforeEach(async () => {
@@ -180,8 +182,14 @@ describe("Production Dialogue Quality Regression Replay", () => {
 		senderMock = {
 			sendMessage: vi.fn().mockResolvedValue({ id: "msg-out-1" }),
 		};
+		feedbackMock = {
+			sendReadReceipt: vi.fn().mockResolvedValue(undefined),
+			sendTypingIndicator: vi.fn().mockResolvedValue(undefined),
+			sendReaction: vi.fn().mockResolvedValue(undefined),
+		};
 		useCase = new HandleIncomingUserMessage(
 			senderMock,
+			feedbackMock,
 			chatRepo,
 			contextRetrieval,
 			agentLoop,
