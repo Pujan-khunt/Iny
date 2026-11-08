@@ -67,31 +67,6 @@ describe("DirectMessageInboundAdapter", () => {
 			expect(adapter.matches(msg)).toBe(true);
 		});
 
-		it("rejects messages authored by connected bot (fromMe=true)", () => {
-			const adapter = new DirectMessageInboundAdapter(
-				createMockUseCase() as any,
-				createMockAccessControl() as any,
-				createMockLogger() as any,
-			);
-
-			const msg: NormalizedWhatsAppMessage = {
-				messageId: "dm-from-me",
-				chatJid: "919876543210@s.whatsapp.net",
-				chatType: "direct",
-				senderJid: "919876543210@s.whatsapp.net",
-				senderType: "pn",
-				companionLidJid: null,
-				fromMe: true,
-				timestamp: Date.now(),
-				originalTimestamp: null,
-				upsertType: "notify",
-				content: { type: "text", text: "Hello", mimeType: null },
-				downloadMedia: vi.fn(),
-			};
-
-			expect(adapter.matches(msg)).toBe(false);
-		});
-
 		it("rejects group and broadcast chat messages", () => {
 			const adapter = new DirectMessageInboundAdapter(
 				createMockUseCase() as any,

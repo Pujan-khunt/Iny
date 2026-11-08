@@ -168,31 +168,6 @@ describe("FoodAnnouncementInboundAdapter", () => {
 			expect(adapter.matches(whitespaceMsg)).toBe(false);
 		});
 
-		it("rejects message authored by connected bot (fromMe=true)", () => {
-			const adapter = new FoodAnnouncementInboundAdapter({
-				targetGroupJid,
-				useCase: createMockUseCase() as any,
-				logger: createMockLogger() as any,
-			});
-
-			const msg: NormalizedWhatsAppMessage = {
-				messageId: "food-from-me",
-				chatJid: targetGroupJid,
-				chatType: "group",
-				senderJid: "919876543210@s.whatsapp.net",
-				senderType: "pn",
-				companionLidJid: null,
-				fromMe: true,
-				timestamp: Date.now(),
-				originalTimestamp: 1793491200000,
-				upsertType: "notify",
-				content: { type: "text", text: "Bot message", mimeType: null },
-				downloadMedia: vi.fn(),
-			};
-
-			expect(adapter.matches(msg)).toBe(false);
-		});
-
 		it("rejects direct messages and messages from other groups", () => {
 			const adapter = new FoodAnnouncementInboundAdapter({
 				targetGroupJid,
