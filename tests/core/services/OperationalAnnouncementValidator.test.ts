@@ -995,3 +995,137 @@ it("accepts multi-day date range location expansion for holiday announcements", 
 		expect(res.value.locations).toHaveLength(7);
 	}
 });
+
+it("accepts location allocation with section shorthand and whole-batch exceptions", () => {
+	const body =
+		"📢 Today (8/11/26), lunch will be arranged in the hostel for all batches except 2029 , 2030 C , D their lunch will be arranged in college.";
+	const cand: Candidate = {
+		kind: "operational_announcement",
+		announcement: {
+			locations: [
+				{
+					mealDate: "2026-11-08",
+					mealSlot: "lunch",
+					hostelBatches: ["ALL_OTHER_BATCHES"],
+					collegeBatches: ["2029", "2030 C", "2030 D"],
+				},
+			],
+			timings: [],
+			changes: [],
+			swaps: [],
+		},
+	};
+	const ev: SourceEvidence[] = [
+		{
+			fieldPath: "/announcement/locations/0/mealDate",
+			rawValue: "8/11/26",
+			clause: body,
+			location: { kind: "text", start: 10, end: 17 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/mealSlot",
+			rawValue: "lunch",
+			clause: body,
+			location: { kind: "text", start: 20, end: 25 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/hostelBatches/0",
+			rawValue: "all batches except 2029 , 2030 C , D",
+			clause: body,
+			location: { kind: "text", start: 61, end: 97 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/collegeBatches/0",
+			rawValue: "2029",
+			clause: body,
+			location: { kind: "text", start: 80, end: 84 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/collegeBatches/1",
+			rawValue: "2030 C",
+			clause: body,
+			location: { kind: "text", start: 87, end: 93 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/collegeBatches/2",
+			rawValue: "D",
+			clause: body,
+			location: { kind: "text", start: 96, end: 97 },
+		},
+	];
+	const src: FoodAnnouncementSource = {
+		...source,
+		textBody: body,
+		originalCreatedAt: new Date("2026-11-08T05:07:41Z"),
+	};
+
+	const result = OperationalAnnouncementValidator.validate(cand, src, ev);
+	expect(result).toEqual({ ok: true, value: cand.announcement });
+});
+
+it("accepts location allocation when relative date clause includes Today with numeric date", () => {
+	const body =
+		"📢 Today (8/11/26), lunch will be arranged in the hostel for all batches except 2029 , 2030 C , D their lunch will be arranged in college.";
+	const cand: Candidate = {
+		kind: "operational_announcement",
+		announcement: {
+			locations: [
+				{
+					mealDate: "2026-11-08",
+					mealSlot: "lunch",
+					hostelBatches: ["ALL_OTHER_BATCHES"],
+					collegeBatches: ["2029", "2030 C", "2030 D"],
+				},
+			],
+			timings: [],
+			changes: [],
+			swaps: [],
+		},
+	};
+	const ev: SourceEvidence[] = [
+		{
+			fieldPath: "/announcement/locations/0/mealDate",
+			rawValue: "Today (8/11/26)",
+			clause: body.slice(3),
+			location: { kind: "text", start: 3, end: 18 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/mealSlot",
+			rawValue: "lunch",
+			clause: body.slice(3),
+			location: { kind: "text", start: 20, end: 25 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/hostelBatches/0",
+			rawValue: "all batches except 2029 , 2030 C , D",
+			clause: body.slice(3),
+			location: { kind: "text", start: 61, end: 97 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/collegeBatches/0",
+			rawValue: "2029",
+			clause: body.slice(3),
+			location: { kind: "text", start: 80, end: 84 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/collegeBatches/1",
+			rawValue: "2030 C",
+			clause: body.slice(3),
+			location: { kind: "text", start: 87, end: 93 },
+		},
+		{
+			fieldPath: "/announcement/locations/0/collegeBatches/2",
+			rawValue: "D",
+			clause: body.slice(3),
+			location: { kind: "text", start: 96, end: 97 },
+		},
+	];
+	const src: FoodAnnouncementSource = {
+		...source,
+		textBody: body,
+		originalCreatedAt: new Date("2026-11-08T06:51:25Z"),
+	};
+
+	const result = OperationalAnnouncementValidator.validate(cand, src, ev);
+	expect(result).toEqual({ ok: true, value: cand.announcement });
+});

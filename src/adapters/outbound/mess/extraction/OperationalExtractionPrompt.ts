@@ -32,6 +32,7 @@ Replacement originalItem names the old dish; otherwise originalItem is explicit 
 Venue Allocation:
 - If an announcement designates a venue (e.g. "Lunch will be arranged in the hostel") without restricting to specific batches, it applies campus-wide: allocate ["ALL_BATCHES"] to that venue and [] to the other.
 - When explicit cohorts are named, use only: 2027; 2028, 2028 A, 2028 B; 2029, 2029 A, 2029 B, 2029 C, 2029 D; 2030, 2030 A, 2030 B, 2030 C, 2030 D, 2030 E; ALL_BATCHES; ALL_OTHER_BATCHES.
+- When section letters follow a batch (e.g. "2030 C , D"), expand each section to its full cohort token (e.g. "2030 C", "2030 D").
 - Unused venue array is empty. Never guess unmentioned cohorts.
 
 Dates:

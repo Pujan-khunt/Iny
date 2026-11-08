@@ -494,8 +494,8 @@ describe("Mess System End-to-End Integration", () => {
 			);
 			expect(sentMessageText).toContain("☕ *TCB:*\n• Chole Bhature\n• Veg Pulao\n• Gulab Jamun");
 			expect(sentMessageText).toContain("📍 *Location:*");
-			expect(sentMessageText).toContain("• *Hostel:* Batches 2027, 2028");
-			expect(sentMessageText).toContain("• *College:* Batches 2025, 2026");
+			expect(sentMessageText).toContain("• *Hostel:* 2027, 2028");
+			expect(sentMessageText).toContain("• *College:* 2025, 2026");
 
 			// 3. Database persistence & check constraint verification
 			const turns = await db.select().from(dialogueTurns);
@@ -815,7 +815,7 @@ describe("Mess System End-to-End Integration", () => {
 			expect(cardResult.content).toContain("🍽️ *Lunch Menu*");
 			expect(cardResult.content).toContain("⏰ *Timings:* Extended till 15:30");
 			expect(cardResult.content).toContain("📍 *Location:*");
-			expect(cardResult.content).toContain("• *Hostel:* Batches 2028, 2029");
+			expect(cardResult.content).toContain("• *Hostel:* 2028, 2029");
 			expect(cardResult.content).toContain("• *College:* All other batches");
 
 			// 6. Execute atomicUndo and verify clean rollback
@@ -838,7 +838,7 @@ describe("Mess System End-to-End Integration", () => {
 			});
 			expect(postUndoCard.content).toContain("🍽️ *Lunch Menu*");
 			expect(postUndoCard.content).not.toContain("⏰ *Timings:*");
-			expect(postUndoCard.content).toContain("• *Hostel:* Batches 2027, 2028");
+			expect(postUndoCard.content).toContain("• *Hostel:* 2027, 2028");
 		});
 	});
 });

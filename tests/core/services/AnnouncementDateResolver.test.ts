@@ -97,6 +97,14 @@ describe("AnnouncementDateResolver", () => {
 			AnnouncementDateResolver.resolve(["Today (1/11/26), lunch in hostel"], originalCreatedAt),
 		).toEqual({ ok: true, value: "2026-11-01" });
 	});
+	it("does not treat comma-separated batch years as date tokens", () => {
+		const text =
+			"📢 Today (8/11/26), lunch will be arranged in the hostel for all batches except 2029 , 2030 C , D their lunch will be arranged in college.";
+		expect(AnnouncementDateResolver.resolve([text], new Date("2026-11-08T05:00:00Z"))).toEqual({
+			ok: true,
+			value: "2026-11-08",
+		});
+	});
 	it("detects conflicting relative words inside the same raw reference", () => {
 		expect(
 			AnnouncementDateResolver.resolve(["today or tomorrow"], originalCreatedAt),
@@ -153,5 +161,13 @@ describe("date references in source prose", () => {
 		expect(AnnouncementDateResolver.resolve(["today (31.11.26)"], originalCreatedAt)).toMatchObject(
 			{ ok: false, reason: "invalid_date" },
 		);
+	});
+	it("does not treat unspaced cohort list as a date token", () => {
+		expect(
+			AnnouncementDateResolver.resolve(
+				["today lunch for batches 2028,2029,2030 in hostel"],
+				originalCreatedAt,
+			),
+		).toEqual({ ok: true, value: "2026-11-01" });
 	});
 });

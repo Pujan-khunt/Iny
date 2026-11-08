@@ -23,6 +23,7 @@ Verify each dish spelling faithfully against the image, including Frycrums and u
 Operational media and captions as independent operational updates are unsupported.
 Venue updates belong exclusively in locations (hostelBatches/collegeBatches); the changes array is strictly for dish changes (replacements/additions/cancellations of dishes), never for venue changes.
 When a venue is stated for a meal without restricting to specific batches, campus-wide allocation to ALL_BATCHES for that venue is valid and supported by the venue clause.
+When a cohort year is followed by section letters (e.g. "2030 C , D"), expanding shorthand section letters into full batch tokens (e.g. "2030 D" supported by evidence "D") is valid and supported; do not reject this as a conflict.
 Every operational event needs stated dates/slots/scope; null vendor is only explicit general
 scope, not a way to erase a named vendor. Swaps require both correctly assigned endpoints.
 Harmless greetings, emoji, signoffs and separately labeled snacks may be ignored;

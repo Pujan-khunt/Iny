@@ -10,6 +10,7 @@ description: Use when fetching, triaging, selecting, or brainstorming tasks from
 This skill connects tasks captured in your **Iny** Todoist project directly into the agent development workspace. It handles triage, full context ingestion (descriptions, motivation, caveats, and comment threads), guides an exhaustive brainstorming and grilling session, and proactively suggests updates (decision comments, subtasks) while strictly enforcing an explicit approval gate before any Todoist mutations.
 
 **Complementary Roles:**
+
 - **`todoist-cli`**: Reference skill for raw `td` command flags, subcommands, and syntax.
 - **`iny-todoist-workflow`**: Process playbook governing task selection, context loading, deep brainstorming, decision grilling, and the proactive suggestion/approval lifecycle.
 
@@ -72,22 +73,27 @@ digraph todoist_flow {
 ### Phase 1: Authentication & Task Discovery
 
 1. **Verify Auth**:
+
    ```bash
    td auth status --json
    ```
+
    If unauthenticated, alert the user to run `td auth login` and stop.
 
 2. **Discover / Select Task**:
    - **If a task title or ID was provided**: Jump straight to step 3.
    - **If no task was specified**: Query open tasks in the Iny project:
+
      ```bash
      td task list --project "Iny" --json
      ```
+
      Render a clean, numbered Markdown table:
-     | # | Task | Priority | Labels | Due / Deadline | ID |
-     |---|---|---|---|---|---|
-     | 1 | Automate the ingestion pipeline | p1 | `feat`, `deep` | 2026-11-07 | `id:...` |
-     | 2 | ... | ... | ... | ... | `id:...` |
+
+     | #   | Task                            | Priority | Labels         | Due / Deadline | ID       |
+     | --- | ------------------------------- | -------- | -------------- | -------------- | -------- |
+     | 1   | Automate the ingestion pipeline | p1       | `feat`, `deep` | 2026-11-07     | `id:...` |
+     | 2   | ...                             | ...      | ...            | ...            | `id:...` |
 
      Prompt the user to select a task by number, name, or ID.
 
@@ -107,6 +113,7 @@ digraph todoist_flow {
 ### Phase 2: Exhaustive Brainstorming
 
 Once context is displayed, open the brainstorming dialogue:
+
 1. **Analyze Seed Details**: Ground the discussion in the captured motivation, high-level ideas, and caveats.
 2. **One Question at a Time**: Ask focused, high-leverage questions (prefer multiple choice with a recommended option when clear alternatives exist).
 3. **Architecture & Technology Options**:
@@ -120,8 +127,9 @@ Once context is displayed, open the brainstorming dialogue:
 ### Phase 3: The Grilling Session (Decision Stress-Testing)
 
 Following brainstorming consensus, transition to grilling:
+
 1. **Adopt Devil's Advocate Posture**:
-   - Actively challenge decisions: *"What happens if an announcement is edited 30 seconds after posting while a job is running?"*, *"How does this handle Baileys 515 restart loops?"*, *"What prevents memory leaks in this queue?"*
+   - Actively challenge decisions: _"What happens if an announcement is edited 30 seconds after posting while a job is running?"_, _"How does this handle Baileys 515 restart loops?"_, _"What prevents memory leaks in this queue?"_
 2. **Probe Hidden Assumptions**: Uncover unstated constraints, single points of failure, or unhandled database rollbacks.
 3. **Conclude Alignment**: Close the grilling session once all critical edge cases and architectural trade-offs are satisfactorily resolved.
 
@@ -134,6 +142,7 @@ Following brainstorming consensus, transition to grilling:
    - **Decision Summary Comment**:
      ```markdown
      ### Brainstorming & Architecture Decisions
+
      - **Domain Core**: ...
      - **Adapters**: ...
      - **Key Decisions**: ...
@@ -147,11 +156,12 @@ Following brainstorming consensus, transition to grilling:
 
 2. **Iterative Refinement**:
    Ask the user:
-   > *"Here are the suggested updates for Todoist. Would you like to refine the comment or subtask list before I push them, or are they good to go?"*
-   Iterate until the user is satisfied.
+
+   > _"Here are the suggested updates for Todoist. Would you like to refine the comment or subtask list before I push them, or are they good to go?"_
+   > Iterate until the user is satisfied.
 
 3. **Execute Writes (Only on Explicit Approval)**:
-   Once the user explicitly confirms (e.g., *"Looks good, push them"*):
+   Once the user explicitly confirms (e.g., _"Looks good, push them"_):
    ```bash
    # Add summary comment
    td comment add id:<task-id> --content "<final_comment_markdown>"
@@ -168,25 +178,25 @@ Following brainstorming consensus, transition to grilling:
 
 ## Quick Command Reference
 
-| Action | Command |
-|---|---|
-| Check Auth | `td auth status --json` |
-| List Iny Tasks | `td task list --project "Iny" --json` |
-| View Task | `td task view <ref> --json` |
-| List Comments | `td comment list <ref> --json` |
-| Add Comment (Approved only) | `td comment add id:<id> --content "<markdown>"` |
-| Add Subtask (Approved only) | `td task add "<title>" --parent id:<id>` |
-| Update Task (Approved only) | `td task update id:<id> --description "<markdown>"` |
-| Complete Task (Approved only) | `td task complete id:<id>` |
+| Action                        | Command                                             |
+| ----------------------------- | --------------------------------------------------- |
+| Check Auth                    | `td auth status --json`                             |
+| List Iny Tasks                | `td task list --project "Iny" --json`               |
+| View Task                     | `td task view <ref> --json`                         |
+| List Comments                 | `td comment list <ref> --json`                      |
+| Add Comment (Approved only)   | `td comment add id:<id> --content "<markdown>"`     |
+| Add Subtask (Approved only)   | `td task add "<title>" --parent id:<id>`            |
+| Update Task (Approved only)   | `td task update id:<id> --description "<markdown>"` |
+| Complete Task (Approved only) | `td task complete id:<id>`                          |
 
 ---
 
 ## Common Mistakes & Red Flags
 
-| Mistake | Correction |
-|---|---|
-| **Autonomous Todoist Writes** | STOP. Never run `td task add`, `td comment add`, or `td task update` without explicit user confirmation. |
-| **Forcing 7-Step Pipeline** | STOP. Brainstorming is decoupled from code implementation. Do not write specs or plans unless explicitly told to build. |
-| **Ignoring Existing Comments** | Always run `td comment list` when fetching a task. Captured comments often contain vital context or earlier decisions. |
-| **Skipping Grilling** | Do not accept the first idea uncritically. Always challenge edge cases, concurrency, and failure modes. |
-| **Forgetting to Suggest Updates** | Always proactively draft comments and subtasks at the end of the session so the user doesn't forget to sync. |
+| Mistake                           | Correction                                                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Autonomous Todoist Writes**     | STOP. Never run `td task add`, `td comment add`, or `td task update` without explicit user confirmation.                |
+| **Forcing 7-Step Pipeline**       | STOP. Brainstorming is decoupled from code implementation. Do not write specs or plans unless explicitly told to build. |
+| **Ignoring Existing Comments**    | Always run `td comment list` when fetching a task. Captured comments often contain vital context or earlier decisions.  |
+| **Skipping Grilling**             | Do not accept the first idea uncritically. Always challenge edge cases, concurrency, and failure modes.                 |
+| **Forgetting to Suggest Updates** | Always proactively draft comments and subtasks at the end of the session so the user doesn't forget to sync.            |

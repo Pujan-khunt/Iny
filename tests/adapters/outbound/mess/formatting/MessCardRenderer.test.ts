@@ -71,7 +71,22 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 			};
 			const rendered = renderLocationSection(detail);
 			expect(rendered).toBe(
-				"📍 *Location:*\n• *Hostel:* Batches 2027, 2028, 2029 A\n• *College:* All other batches",
+				"📍 *Location:*\n• *Hostel:* 2027, 2028, 2029 A\n• *College:* All other batches",
+			);
+		});
+
+		it("renders cohorts without Batches prefix for sectioned cohorts", () => {
+			const detail = {
+				id: "loc-5",
+				mealDate: "2026-11-08",
+				mealSlot: "lunch" as const,
+				hostelBatches: ["ALL_OTHER_BATCHES"],
+				collegeBatches: ["2029", "2030 C", "2030 D"],
+				ingestedAt: new Date(),
+			};
+			const rendered = renderLocationSection(detail);
+			expect(rendered).toBe(
+				"📍 *Location:*\n• *Hostel:* All other batches\n• *College:* 2029, 2030 C, 2030 D",
 			);
 		});
 
