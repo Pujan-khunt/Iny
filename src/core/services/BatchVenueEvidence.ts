@@ -8,7 +8,10 @@ export function batchAtVenue(raw: string, venue: string, clause: string): boolea
 	if (new RegExp(`\\b${venue}\\b`, "i").test(raw)) return true;
 	const direct = directVenue(raw, clause);
 	if (direct) return direct === venue;
-	const start = clause.toLowerCase().indexOf(raw.toLowerCase());
+	const bStart = /^\w/.test(raw) ? "\\b" : "";
+	const bEnd = /\w$/.test(raw) ? "\\b" : "";
+	const match = new RegExp(`${bStart}${escapeEvidenceToken(raw)}${bEnd}`, "i").exec(clause);
+	const start = match ? match.index : clause.toLowerCase().indexOf(raw.toLowerCase());
 	if (start < 0) return false;
 	const remainder = clause.slice(start + raw.length);
 	if (/^\s+[A-E]\b/i.test(remainder)) return false;
@@ -34,7 +37,7 @@ function campusBatchAgrees(raw: string, path: string, clause: string): boolean {
 	return hasVenue && !restrictive;
 }
 
-/** Checks whether evidence for campus-wide batch groups agrees with source text. */
+/** Checks whether evidence for batch cohorts or campus groups agrees with source text. */
 export function batchAgrees(value: string, raw: string, path: string, clause: string): boolean {
 	if (value === "ALL_BATCHES") return campusBatchAgrees(raw, path, clause);
 	if (value === "ALL_OTHER_BATCHES") {
@@ -42,6 +45,12 @@ export function batchAgrees(value: string, raw: string, path: string, clause: st
 			/^(?:all\s+)?(?:other|remaining)(?:\s+(?:batches|students))?$/i.test(raw) ||
 			/^all\s+(?:batches|students)\s+except\s+.+$/i.test(raw)
 		);
+	}
+	if (value.toLowerCase() === raw.toLowerCase()) return true;
+	const parts = value.split(" ");
+	if (parts.length === 2 && parts[1].toLowerCase() === raw.toLowerCase()) {
+		const pattern = `\\b${parts[0]}\\b(?:[\\s,;/&()-]|and|to|[A-E])*?\\b${parts[1]}\\b`;
+		return new RegExp(pattern, "i").test(clause);
 	}
 	return false;
 }

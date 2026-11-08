@@ -34,5 +34,9 @@ mean NO dish is served for that category/slot; omit them from items.
 Evidence:
 - For weekly_menu, emit evidence ONLY for root anchors (/dateRange/start, /dateRange/end,
 and /menu/vendor if labeled). Omit all evidence under /menu/meals (dates, slots, dish items).
-- Location is {"kind":"text","start":number,"end":number} for captions, or
-{"kind":"image","page":1,"row":"specific row","column":"specific column"} for image cells.`;
+- Each evidence item must include:
+  - fieldPath: "/dateRange/start", "/dateRange/end", or "/menu/vendor"
+  - rawValue: exact literal text string from the cell or label (e.g. "11/02/26", "THE CRAVING BREW")
+  - clause: full header text or date cell string containing the anchor
+  - location: {"kind":"text","start":number,"end":number} for captions, or
+    {"kind":"image","page":1,"row":"specific row","column":"specific column"} for image cells.`;

@@ -77,7 +77,9 @@ function agrees(value: string, entry: Evidence, source: Source, required: Fields
 	if (/\/(?:mealDate|sourceMealDate|targetMealDate|start|end)$/.test(path)) {
 		return dateAgrees(value, entry, source.originalCreatedAt ?? new Date(NaN), required);
 	}
-	if (value.startsWith("ALL_")) return batchAgrees(value, raw, path, entry.clause);
+	if (/\/(?:hostel|college)Batches\//.test(path)) {
+		return batchAgrees(value, raw, path, entry.clause);
+	}
 	if (path.endsWith("/changeType")) return changeTypeAgrees(value, raw);
 	return value.trim().toLowerCase() === raw.toLowerCase();
 }

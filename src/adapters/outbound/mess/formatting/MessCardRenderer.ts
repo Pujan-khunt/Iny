@@ -195,11 +195,7 @@ function formatBatchList(batches: readonly string[]): string {
 	) {
 		return "All other batches";
 	}
-	const joined = batches.map((b) => sanitizeWhatsAppText(b)).join(", ");
-	if (!joined.toLowerCase().startsWith("batch")) {
-		return `Batches ${joined}`;
-	}
-	return joined;
+	return batches.map((b) => sanitizeWhatsAppText(b).replace(/^batches?\s+/i, "")).join(", ");
 }
 
 /**
