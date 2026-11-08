@@ -37,3 +37,4 @@ Thumbs.db
 
 # WhatsApp Session
 .baileys_auth/
+nohup.out
