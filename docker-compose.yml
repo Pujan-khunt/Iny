@@ -3,18 +3,18 @@ services:
     image: ghcr.io/drizzle-team/gateway:latest
     container_name: iny-prod-drizzle-gateway
     restart: always
-    ports:
-      - "100.85.239.53:4983:4983"
     environment:
       - PORT=4983
-      - MASTERPASS=admin123
+      - MASTERPASS=${DRIZZLE_GATEWAY_MASTERPASS}
       - DATABASE_URL_Production=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-iny}
+    depends_on:
+      db:
+        condition: service_healthy
     volumes:
       - iny-prod-drizzle-gateway:/app
     networks:
       - iny-network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - proxy
 
   db:
     image: postgres:16-alpine
@@ -62,6 +62,8 @@ volumes:
     name: iny_postgres_data
 
 networks:
+  proxy:
+    external: true
   iny-network:
     name: iny_network
     driver: bridge
