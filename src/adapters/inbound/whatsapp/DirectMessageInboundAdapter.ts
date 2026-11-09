@@ -25,7 +25,6 @@ export class DirectMessageInboundAdapter implements WhatsAppMessageHandler {
 
 	matches(message: NormalizedWhatsAppMessage): boolean {
 		return Boolean(
-			!message.fromMe &&
 			message.chatType === "direct" &&
 			message.content.type === "text" &&
 			message.content.text &&

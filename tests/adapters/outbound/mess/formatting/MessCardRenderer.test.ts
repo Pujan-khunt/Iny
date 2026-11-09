@@ -144,6 +144,25 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 			const banner = renderActiveUpdatesBanner(changes);
 			expect(banner).toBe("📢 *Active Updates:* Ice Cream added at TCB");
 		});
+
+		it("formats raw ISO dates inside affectedItem to natural English format", () => {
+			const changes = [
+				{
+					id: "c-swap",
+					mealDate: "2026-10-08",
+					mealSlot: "lunch" as const,
+					targetVendor: "cheftalk_regular" as const,
+					changeType: "replacement" as const,
+					affectedItem: "2026-10-04 breakfast Menu (Poha)",
+					originalItem: null,
+					ingestedAt: new Date(),
+				},
+			];
+			const banner = renderActiveUpdatesBanner(changes);
+			expect(banner).toBe(
+				"📢 *Active Updates:* Sunday, 4th Oct breakfast Menu (Poha) replaced at Cheftalk",
+			);
+		});
 	});
 
 	describe("renderTimingExtensionsSection", () => {
@@ -521,19 +540,32 @@ describe("MessCardRenderer & WhatsApp Formatting", () => {
 	});
 
 	describe("renderEmptyNotice", () => {
+		const refNow = new Date("2026-11-08T12:00:00.000Z");
+
 		it("formats empty notice for general mess query when vendor and slot are omitted", () => {
-			const notice = renderEmptyNotice("2026-11-08");
-			expect(notice).toBe("ℹ️ No menu data is currently loaded for the mess on 2026-11-08.");
+			const notice = renderEmptyNotice("2026-11-08", undefined, undefined, refNow);
+			expect(notice).toBe(
+				"ℹ️ No menu data is currently loaded for the mess on Today, Sunday, 8th Nov.",
+			);
 		});
 
 		it("formats empty notice with vendor and slot when both are provided", () => {
-			const notice = renderEmptyNotice("2026-11-08", "tcb", "lunch");
-			expect(notice).toBe("ℹ️ No menu data is currently loaded for TCB lunch on 2026-11-08.");
+			const notice = renderEmptyNotice("2026-11-08", "tcb", "lunch", refNow);
+			expect(notice).toBe(
+				"ℹ️ No menu data is currently loaded for TCB lunch on Today, Sunday, 8th Nov.",
+			);
 		});
 
 		it("formats empty notice with vendor only when slot is omitted", () => {
-			const notice = renderEmptyNotice("2026-11-08", "cheftalk_regular");
-			expect(notice).toBe("ℹ️ No menu data is currently loaded for Cheftalk on 2026-11-08.");
+			const notice = renderEmptyNotice("2026-11-08", "cheftalk_regular", undefined, refNow);
+			expect(notice).toBe(
+				"ℹ️ No menu data is currently loaded for Cheftalk on Today, Sunday, 8th Nov.",
+			);
+		});
+
+		it("formats empty notice for distant dates without relative prefix", () => {
+			const notice = renderEmptyNotice("2026-11-13", undefined, undefined, refNow);
+			expect(notice).toBe("ℹ️ No menu data is currently loaded for the mess on Friday, 13th Nov.");
 		});
 	});
 });

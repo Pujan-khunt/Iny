@@ -18,7 +18,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/core/prompts/SystemPrompt.ts`: Pure domain system prompt composition module defining SST campus persona, official WhatsApp markdown formatting invariants, live food facts lookup mandate, response brevity contracts (<=25 words direct, <=45 words info), negative boundaries (no nutritional/taste/cancellation speculation, no unsolicited closers), 4-quadrant routing guidelines, and the canonical non-empty `SYSTEM_PROMPT` constant.
   - `src/core/utils/Temporal.ts`: Pure domain utilities encapsulating IST timezone offset arithmetic (`Asia/Kolkata`), date resolution (`getISTDateString`, `getCurrentMealSlot`, `resolveTargetMealDate`), historical message timestamp formatting (`formatHistoricalMessageTimeIST`), and temporal prompt formatting.
 - **Use Cases & Domain Services**: Application-specific business rules:
-  - `src/core/use-cases/HandleIncomingUserMessage.ts`: 4-phase orchestrator separating Conversation Context Retrieval, Reasoning, Delivery, and Persistence phases. Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
+  - `src/core/use-cases/HandleIncomingUserMessage.ts`: 4-phase orchestrator separating Conversation Context Retrieval, Reasoning, Delivery, and Persistence phases with auxiliary interactive feedback (read receipts, typing presence, emoji reactions). Captures turn entry (`startedAt`) and transport completion (`completedAt`) timestamps, isolates dead transport failures, and prevents ghost turns in conversation memory.
   - `src/core/use-cases/StageIncomingFoodAnnouncement.ts`: Staging orchestrator validating incoming food announcements against zero-trust domain invariants, delegating persistence to `MessStagingRepositoryPort` and admitting them into `food_announcement_ingestions`.
   - `src/core/use-cases/ProcessNextFoodAnnouncement.ts`: Serial background work processor claiming leased queue items, executing multi-pass assessment, validating campus evidence, applying spelling aliases/deduplication, and committing or rejecting.
   - `src/core/services/AgentLoop.ts`: Pure domain service executing the ReAct (Reasoning + Acting) loop. Manages concurrent tool execution via `Promise.all`, circuit breaker forced synthesis, malformed tool error injection, temporal IST grounding injection, and terminal tool early termination.
@@ -40,6 +40,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/core/ports/ContextRetrievalPort.ts`: Outbound port for retrieving contextual conversation history for a user.
   - `src/core/ports/LoggerPort.ts`: Structured, leveled logging.
   - `src/core/ports/MessageSenderPort.ts`: Outbound messaging transport.
+  - `src/core/ports/MessageFeedbackPort.ts`: Outbound port for transient chat interaction feedback (read receipts, typing presence, emoji reactions).
   - `src/core/ports/MessCardPresenterPort.ts`: Outbound presentation port defining card rendering contracts, decoupling tools from concrete text/ANSI formatters.
   - `src/core/ports/MessRepositoryPort.ts`: Read port for student meal queries (`getResolvedMeal`).
   - `src/core/ports/MessStagingRepositoryPort.ts`: Staging and transaction rollback port (`listStagedMessages`, `getMessageById`, `stageMessage`, `atomicCommit`, `atomicCommitComposite`, `markIgnored`, `atomicUndo`, `atomicReset`), decoupling inbound adapters from database drivers.
@@ -56,7 +57,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/tools/SetDefaultMessTool.ts`: Terminal preference tool (`isTerminal: true`) allowing users to persist their default mess caterer preference (`cheftalk_regular`, `cheftalk_jain`, `tcb`) backed by `AccessControlPort`.
 - **Inbound Adapters**: Entry points that trigger core use cases:
   - `src/adapters/inbound/workers/FoodIngestionWorker.ts`: Autonomous background worker driving serial execution of `ProcessNextFoodAnnouncement` with bounded invocation deadlines.
-  - `src/adapters/inbound/whatsapp/router/WhatsAppMessageRouter.ts`: Multi-handler priority router dispatching normalized messages to first-matching registered handlers with error isolation and configurable upsert mode filtering (`notify`, `append`).
+  - `src/adapters/inbound/whatsapp/router/WhatsAppMessageRouter.ts`: Multi-handler priority router dispatching normalized messages to first-matching registered handlers with early dropping of outgoing stanzas (`fromMe: true`), error isolation, and configurable upsert mode filtering (`notify`, `append`).
   - `src/adapters/inbound/whatsapp/router/WhatsAppMessageNormalizer.ts`: Pure normalizer transforming raw Baileys `WAMessage` stanzas into uniform domain `NormalizedWhatsAppMessage` instances with bidirectional JID/LID resolution, IST timestamps, and lazy media downloading closures.
   - `src/adapters/inbound/whatsapp/router/WhatsAppMessageContentExtractor.ts`: Collaborator resolving and unwrapping message content (ephemeral, view-once) into strongly-typed text, image, and document payloads with exponential download retries.
   - `src/adapters/inbound/whatsapp/router/CatchAllLoggingHandler.ts`: Terminal fallback handler logging diagnostic metadata for unhandled incoming messages.
@@ -69,6 +70,7 @@ Iny serves as a highly modular, zero-trust WhatsApp bot engine powered by LLMs. 
   - `src/adapters/outbound/access-control/postgres/PostgresAccessControlAdapter.ts`: Driven adapter implementing `AccessControlPort` and `AccessControlAdminPort` backed by PostgreSQL (`users` table) with O(1) indexed lookups, status gating, background asynchronous LID caching, and idempotent seeding.
   - `src/adapters/outbound/access-control/postgres/schema.ts`: Drizzle ORM schema defining `users` table with canonical `phone_number` PK, unique `pn_jid` and partial unique `lid_jid` indexes, and PostgreSQL check constraints.
   - `src/adapters/outbound/whatsapp/BaileysMessageSenderAdapter.ts`: Driven adapter implementing `MessageSenderPort` to transmit text payloads over the active WhatsApp socket.
+  - `src/adapters/outbound/whatsapp/BaileysMessageFeedbackAdapter.ts`: Driven adapter implementing `MessageFeedbackPort` to emit non-blocking read receipts, typing presence, and emoji reactions with socket readiness checks.
   - `src/adapters/outbound/whatsapp/BaileysConnectionManager.ts`: Coordinates Baileys WebSocket lifecycle, connection updates, reconnection policies (515 restart, 408/428 transient disconnects), device logout (401), and incoming message distribution via concurrent, fault-isolated subscriber dispatch (`Promise.allSettled`). Accepts `BaileysSessionManagerPort`.
   - `src/adapters/outbound/whatsapp/PostgresBaileysSessionManager.ts`: Implements `BaileysSessionManagerPort` managing WhatsApp credentials and Signal Protocol keys in PostgreSQL (`whatsapp_auth` table) with in-memory caching (`makeCacheableSignalKeyStore`), `BufferJSON` buffer preservation, batch operations, and atomic purge upon logout.
   - `src/adapters/outbound/whatsapp/postgres/schema.ts`: Drizzle ORM table schema defining `whatsapp_auth` with composite primary key `(session_id, key)`.
@@ -140,6 +142,7 @@ src/
 │   │   ├── LLMPort.ts                      # Language model reasoning & tool call port
 │   │   ├── LoggerPort.ts                   # Structured logging port
 │   │   ├── MessageSenderPort.ts            # Outbound messaging transport port
+│   │   ├── MessageFeedbackPort.ts          # Outbound transient chat feedback port
 │   │   ├── MessCardPresenterPort.ts        # Mess card rendering port
 │   │   ├── MessRepositoryPort.ts           # Meal querying and resolved view port
 │   │   ├── MessStagingRepositoryPort.ts    # Staged messages & surgical undo repository port
@@ -248,6 +251,7 @@ src/
 │           │   └── schema.ts               # Drizzle ORM schema for whatsapp_auth table
 │           ├── BaileysConnectionManager.ts # WebSocket lifecycle & reconnection coordinator
 │           ├── BaileysMessageSenderAdapter.ts # Outbound transport implementing MessageSenderPort
+│           ├── BaileysMessageFeedbackAdapter.ts # Outbound feedback implementing MessageFeedbackPort
 │           ├── BaileysPairingManager.ts    # First-time device pairing code coordinator
 │           └── PostgresBaileysSessionManager.ts # PostgreSQL auth credentials & Signal key manager
 ├── runtime/
@@ -278,6 +282,7 @@ sequenceDiagram
     participant DMAdapter as DirectMessageInboundAdapter.ts
     participant AccessControl as AccessControlPort / PostgresAccessControlAdapter.ts
     participant UCUser as HandleIncomingUserMessage.ts
+    participant Feedback as MessageFeedbackPort / BaileysMessageFeedbackAdapter.ts
     participant Loop as AgentLoop.ts
     participant Repo as DialogueTurnRepositoryPort.ts
     participant Reg as ToolRegistryPort.ts
@@ -289,80 +294,99 @@ sequenceDiagram
     Conn->>Router: handleUpsert(upsertPayload)
 
     loop For each message in batch
-        Router->>Normalizer: normalize(rawMessage)
-        alt Malformed Message (Missing ID or remoteJid)
-            Normalizer-->>Router: null
-            Note over Router: Discard & log debug (zero cost)
-        else Normalized Message
-            Normalizer-->>Router: normalizedMessage
+        alt Outgoing Message (fromMe = true)
+            Note over Router: Drop outgoing loopback & log debug
+        else Inbound Stanza
+            Router->>Normalizer: normalize(rawMessage)
+            alt Malformed Message (Missing ID or remoteJid)
+                Normalizer-->>Router: null
+                Note over Router: Discard & log debug (zero cost)
+            else Normalized Message
+                Normalizer-->>Router: normalizedMessage
 
-            alt Direct User Message Match
-                Router->>DMAdapter: matches(normalizedMessage)
-                DMAdapter-->>Router: true
-                Router->>DMAdapter: handle(normalizedMessage)
-                DMAdapter->>AccessControl: authenticate(senderJid, companionLidJid)
-                alt Unauthorized or Inactive Sender
-                    AccessControl-->>DMAdapter: null
-                    Note over DMAdapter: Discard & log debug
-                else Authorized & Active User
-                    AccessControl-->>DMAdapter: UserRecord
-                    Note over DMAdapter: user.pnJid is verified canonical identity
-                    DMAdapter->>UCUser: execute(userMessage)
-                    UCUser->>Log: logger.child({ userId, messageId })
-                    UCUser->>Log: log.info("Processing incoming message")
+                alt Direct User Message Match
+                    Router->>DMAdapter: matches(normalizedMessage)
+                    DMAdapter-->>Router: true
+                    Router->>DMAdapter: handle(normalizedMessage)
+                    DMAdapter->>AccessControl: authenticate(senderJid, companionLidJid)
+                    alt Unauthorized or Inactive Sender
+                        AccessControl-->>DMAdapter: null
+                        Note over DMAdapter: Discard & log debug
+                    else Authorized & Active User
+                        AccessControl-->>DMAdapter: UserRecord
+                        Note over DMAdapter: user.pnJid is verified canonical identity
+                        DMAdapter->>UCUser: execute(userMessage)
+                        UCUser->>Log: logger.child({ userId, messageId })
+                        UCUser->>Log: log.info("Processing incoming message")
 
-                    rect rgb(245, 245, 255)
-                        Note over UCUser,Repo: Phase 1: Conversation Context Retrieval
-                        UCUser->>Repo: dialogueTurnRepository.getRecentTurns(userId, maxHistoryTurns)
-                        Repo-->>UCUser: DialogueTurn[] (history)
-                    end
+                        rect rgb(255, 250, 230)
+                            Note over UCUser,Feedback: Initial Transient Interactive Feedback
+                            UCUser->>Feedback: markRead(userId, messageId)
+                            UCUser->>Feedback: sendPresence(userId, 'composing')
+                            UCUser->>Feedback: sendReaction(userId, messageId, '👀')
+                        end
 
-                    rect rgb(240, 248, 255)
-                        Note over UCUser,Loop: Phase 2: Reasoning Phase
-                        UCUser->>Reg: toolRegistry.getToolDefinitions()
-                        Reg-->>UCUser: ToolDefinition[]
-                        UCUser->>Loop: loop.run(userMessage, history, tools, log)
+                        rect rgb(245, 245, 255)
+                            Note over UCUser,Repo: Phase 1: Conversation Context Retrieval
+                            UCUser->>Repo: dialogueTurnRepository.getRecentTurns(userId, maxHistoryTurns)
+                            Repo-->>UCUser: DialogueTurn[] (history)
+                        end
 
-                        loop ReAct Tool Loop (up to maxToolIterations)
-                            Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools)
-                            alt Response: Text
+                        rect rgb(240, 248, 255)
+                            Note over UCUser,Loop: Phase 2: Reasoning Phase
+                            UCUser->>Reg: toolRegistry.getToolDefinitions()
+                            Reg-->>UCUser: ToolDefinition[]
+                            UCUser->>Loop: loop.run(userMessage, history, tools, log)
+
+                            loop ReAct Tool Loop (up to maxToolIterations)
+                                Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools)
+                                alt Response: Text
+                                    LLM-->>Loop: { type: 'text', content, reasoning }
+                                    Note over Loop: Break loop
+                                else Response: Tool Calls
+                                    Loop->>Reg: Promise.all(toolCalls.map(executeTool))
+                                    Reg-->>Loop: Tool results / reflected error strings
+                                    Note over Loop: Append tool messages to workingHistory & iterate
+                                end
+                            end
+
+                            opt Circuit Breaker (if max iterations reached without text)
+                                Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools, { forcedSynthesis: true })
                                 LLM-->>Loop: { type: 'text', content, reasoning }
-                                Note over Loop: Break loop
-                            else Response: Tool Calls
-                                Loop->>Reg: Promise.all(toolCalls.map(executeTool))
-                                Reg-->>Loop: Tool results / reflected error strings
-                                Note over Loop: Append tool messages to workingHistory & iterate
+                            end
+                            Loop-->>UCUser: loopResult (finalText, reasoning, sessionMessages)
+                        end
+
+                        rect rgb(240, 255, 240)
+                            Note over UCUser,Sender: Phase 3: Delivery Phase
+                            UCUser->>Sender: sender.sendMessage(userId, finalText)
+                            Sender->>Conn: getSocket()
+                            Conn-->>Sender: activeSocket
+                            Sender->>WA: sock.sendMessage(userId, { text: finalText })
+                            alt Delivery Succeeds
+                                Note over UCUser: Capture completedAt timestamp immediately
+                            else Delivery Fails
+                                Sender-->>UCUser: Transport Error
+                                UCUser->>Log: log.error("Failed to deliver message...")
+                                Note over UCUser: Abort (do not retry over dead transport; do not save turn)
                             end
                         end
 
-                        opt Circuit Breaker (if max iterations reached without text)
-                            Loop->>LLM: llm.generateResponse(systemPrompt, workingHistory, tools, { forcedSynthesis: true })
-                            LLM-->>Loop: { type: 'text', content, reasoning }
+                        rect rgb(255, 240, 245)
+                            Note over UCUser,Feedback: Auxiliary Feedback Cleanup (finally block)
+                            UCUser->>Feedback: sendPresence(userId, 'paused')
+                            UCUser->>Feedback: sendReaction(userId, messageId, '')
                         end
-                        Loop-->>UCUser: loopResult (finalText, reasoning, sessionMessages)
-                    end
 
-                    rect rgb(240, 255, 240)
-                        Note over UCUser,Sender: Phase 3: Delivery Phase
-                        UCUser->>Sender: sender.sendMessage(userId, finalText)
-                        Sender->>Conn: getSocket()
-                        Conn-->>Sender: activeSocket
-                        Sender->>WA: sock.sendMessage(userId, { text: finalText })
-                        alt Delivery Fails
-                            Sender-->>UCUser: Transport Error
-                            UCUser->>Log: log.error("Failed to deliver message...")
-                            Note over UCUser: Abort (do not retry over dead transport; do not save turn)
+                        rect rgb(255, 250, 240)
+                            Note over UCUser,Repo: Phase 4: Persistence Phase
+                            UCUser->>Repo: dialogueTurnRepository.saveTurn(turn)
+                            UCUser->>Log: log.info("Message processed successfully")
                         end
                     end
-
-                    rect rgb(255, 250, 240)
-                        Note over UCUser,Repo: Phase 4: Persistence Phase
-                        UCUser->>Repo: dialogueTurnRepository.saveTurn(turn)
-                        UCUser->>Log: log.info("Message processed successfully")
-                    end
+                else Catch-All Fallback Match
+                    Router->>Log: CatchAllLoggingHandler: log unhandled message
                 end
-            else Catch-All Fallback Match
-                Router->>Log: CatchAllLoggingHandler: log unhandled message
             end
         end
     end
@@ -449,6 +473,7 @@ sequenceDiagram
 - **Three-Layer Dev Reset Safety Guards**: `scripts/reset-mess.ts` (`npm run mess:reset`) enforces three independent safety checks (`NODE_ENV !== 'production'`, target host display, and exact database name confirmation challenge) before executing `atomicReset`.
 - **Development Layer & Mechanical Quality Gates**: All production code adheres to the 10 rules of `.agents/constitution.md` (maximum 150 lines per file, maximum 40 lines per function, maximum nesting depth 3, zero speculative abstraction, uniform constructor dependency injection). Static checks are mechanically enforced across `src/`, `tests/`, and `scripts/` via ESLint 9 Flat Config (`eslint.config.mjs`), Prettier (`.prettierrc`, tabs, double quotes, semicolons), Knip (`knip.json`), and git pre-commit hooks (`scripts/pre-commit.sh`). Extensionless imports are strictly enforced with zero `.js` or `.ts` specifiers.
 - **Low-Level Design Gate**: Mandatory protocol step between specification approval and implementation plan drafting, enforced via `.agents/skills/design-gate/`. Produces a persisted design artifact in `docs/designs/` defining module boundaries, exported types, inward dependencies, and constitution compliance before code changes are planned.
+- **Transient Chat Feedback & Early Outgoing Drop**: Outbound WhatsApp stanzas (`fromMe: true`) are dropped early at `WhatsAppMessageRouter` with debug logging, preventing redundant processing across all handlers. Transient feedback (read receipts, typing presence, and emoji reactions) is isolated behind `MessageFeedbackPort` and `BaileysMessageFeedbackAdapter`. Socket feedback failures are non-fatal, logged at warn level, and never impede domain reasoning, response delivery, or turn persistence.
 
 ## 6. "How Do I..." Recipe Guide
 

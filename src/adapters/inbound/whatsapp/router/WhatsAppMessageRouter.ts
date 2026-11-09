@@ -38,18 +38,13 @@ export class WhatsAppMessageRouter {
 	}
 
 	private isDuplicate(messageId: string): boolean {
-		if (this.inFlightMessageIds.has(messageId)) {
-			this.logger.debug("Dropping duplicate incoming WhatsApp stanza", {
-				messageId,
-				inFlight: true,
-			});
-			return true;
-		}
+		const inFlight = this.inFlightMessageIds.has(messageId);
 		const processedAt = this.processedMessageIds.get(messageId);
-		if (processedAt && Date.now() - processedAt < DEDUPLICATION_TTL_MS) {
+		const isCompleted = Boolean(processedAt && Date.now() - processedAt < DEDUPLICATION_TTL_MS);
+		if (inFlight || isCompleted) {
 			this.logger.debug("Dropping duplicate incoming WhatsApp stanza", {
 				messageId,
-				inFlight: false,
+				inFlight,
 			});
 			return true;
 		}
@@ -72,6 +67,13 @@ export class WhatsAppMessageRouter {
 	}
 
 	private async dispatchMessage(raw: WAMessage, upsertType: WhatsAppUpsertType): Promise<void> {
+		if (raw.key?.fromMe) {
+			this.logger.debug("Dropping outgoing/self WhatsApp stanza", {
+				messageId: raw.key?.id,
+			});
+			return;
+		}
+
 		const messageId = raw.key?.id;
 		if (messageId && this.isDuplicate(messageId)) return;
 		if (messageId) this.inFlightMessageIds.add(messageId);

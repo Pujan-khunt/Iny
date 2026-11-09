@@ -116,3 +116,30 @@ export function daysBetweenISODates(from: string, to: string): number {
 		throw new RangeError("Expected valid ISO dates.");
 	return (Date.parse(`${to}T00:00:00.000Z`) - Date.parse(`${from}T00:00:00.000Z`)) / 86400000;
 }
+
+function formatOrdinal(day: number): string {
+	const mod100 = day % 100;
+	if (mod100 >= 11 && mod100 <= 13) return `${day}th`;
+	const suffixes: Record<number, string> = { 1: "st", 2: "nd", 3: "rd" };
+	return `${day}${suffixes[day % 10] ?? "th"}`;
+}
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Formats an ISO calendar date into natural conversational IST text (e.g. 'Today, Friday, 8th Nov'). */
+export function formatDateISTNatural(dateStr: string, now: Date | null = new Date()): string {
+	const [y, m, d] = dateStr.split("-").map(Number);
+	const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+	const weekday = WEEKDAYS[date.getUTCDay()];
+	const month = MONTHS[date.getUTCMonth()];
+	const dayOrdinal = formatOrdinal(date.getUTCDate());
+	let prefix = "";
+	if (now) {
+		const todayIST = getISTDateString(now);
+		if (dateStr === todayIST) prefix = "Today, ";
+		else if (dateStr === shiftISODate(todayIST, 1)) prefix = "Tomorrow, ";
+		else if (dateStr === shiftISODate(todayIST, -1)) prefix = "Yesterday, ";
+	}
+	return `${prefix}${weekday}, ${dayOrdinal} ${month}`;
+}

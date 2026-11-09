@@ -32,6 +32,7 @@ import { PostgresBaileysSessionManager } from "./adapters/outbound/whatsapp/Post
 import { BaileysPairingManager } from "./adapters/outbound/whatsapp/BaileysPairingManager";
 import { BaileysConnectionManager } from "./adapters/outbound/whatsapp/BaileysConnectionManager";
 import { BaileysMessageSenderAdapter } from "./adapters/outbound/whatsapp/BaileysMessageSenderAdapter";
+import { BaileysMessageFeedbackAdapter } from "./adapters/outbound/whatsapp/BaileysMessageFeedbackAdapter";
 import { DirectMessageInboundAdapter } from "./adapters/inbound/whatsapp/DirectMessageInboundAdapter";
 import { FoodAnnouncementInboundAdapter } from "./adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
 import { suppressLibsignalLogs } from "./adapters/outbound/whatsapp/suppressLibsignalLogs";
@@ -42,19 +43,19 @@ import { CatchAllLoggingHandler } from "./adapters/inbound/whatsapp/router/Catch
 import { DialogueTurnContextRetrievalAdapter } from "./adapters/outbound/context-retrieval/DialogueTurnContextRetrievalAdapter";
 const config = loadConfig();
 suppressLibsignalLogs();
-const logger = PinoLoggerAdapter.createFromConfig(config);
-const logMod = (module: string) => logger.child({ module });
-const registry = new InMemoryToolRegistry(logger);
+const logger = PinoLoggerAdapter.createFromConfig(config),
+	logMod = (module: string) => logger.child({ module }),
+	registry = new InMemoryToolRegistry(logger);
 const sqlClient = postgres(config.DATABASE_URL, {
-	max: config.DB_MAX_CONNECTIONS,
-	idle_timeout: 20,
-	connect_timeout: 10,
-	onnotice: () => {},
-});
-const db = drizzle(sqlClient, { schema: applicationSchema });
+		max: config.DB_MAX_CONNECTIONS,
+		idle_timeout: 20,
+		connect_timeout: 10,
+		onnotice: () => {},
+	}),
+	db = drizzle(sqlClient, { schema: applicationSchema });
 const turns = new PostgresDialogueTurnRepository(db, logger),
-	messRepository = new PostgresMessRepository(db, logMod("mess-repository"));
-const { food, staging } = createMessPersistence(db, logger);
+	messRepository = new PostgresMessRepository(db, logMod("mess-repository")),
+	{ food, staging } = createMessPersistence(db, logger);
 const assessment = new DeepseekFoodAssessmentAdapter(
 	new OpenAI({ apiKey: config.DEEPSEEK_API_KEY, baseURL: config.DEEPSEEK_BASE_URL, maxRetries: 0 }),
 	new PdfRasterizer(promisify(execFile)),
@@ -64,22 +65,20 @@ const assessment = new DeepseekFoodAssessmentAdapter(
 	300,
 );
 const processFood = new ProcessFood(
-	food,
-	assessment,
-	new MealSwapResolver(staging),
-	logMod("food-ingestion"),
-);
-const worker = new FoodIngestionWorker(
-	processFood,
-	logMod("food-worker"),
-	config.FOOD_WORKER_DEADLINE_MS,
-);
+		food,
+		assessment,
+		new MealSwapResolver(staging),
+		logMod("food-ingestion"),
+	),
+	worker = new FoodIngestionWorker(
+		processFood,
+		logMod("food-worker"),
+		config.FOOD_WORKER_DEADLINE_MS,
+	);
 const access = new PostgresAccessControlAdapter(db, logMod("access-control"));
-[
-	new DisplayMessCardTool(messRepository, defaultMessCardPresenter, access),
-	new QueryMessDetailsTool(messRepository, access),
-	new SetDefaultMessTool(access),
-].forEach((tool) => registry.register(tool));
+registry.register(new DisplayMessCardTool(messRepository, defaultMessCardPresenter, access));
+registry.register(new QueryMessDetailsTool(messRepository, access));
+registry.register(new SetDefaultMessTool(access));
 const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
 	baseURL: config.DEEPSEEK_BASE_URL,
 	model: config.DEEPSEEK_MODEL,
@@ -88,7 +87,8 @@ const deepseekAdapter = new DeepseekAdapter(config.DEEPSEEK_API_KEY, {
 const sessions = new PostgresBaileysSessionManager(db, logger, "default"),
 	pairing = new BaileysPairingManager(logger),
 	connection = new BaileysConnectionManager(logger, pairing, sessions),
-	sender = new BaileysMessageSenderAdapter(connection, logger);
+	sender = new BaileysMessageSenderAdapter(connection, logger),
+	feedback = new BaileysMessageFeedbackAdapter(connection, logger);
 const loop = new AgentLoop(deepseekAdapter, registry, {
 	maxToolIterations: config.MAX_TOOL_ITERATIONS,
 	systemPrompt: SYSTEM_PROMPT,
@@ -97,7 +97,15 @@ const context = new DialogueTurnContextRetrievalAdapter(turns, logger, {
 	maxTurns: config.MAX_HISTORY_TURNS,
 	ttlMs: config.HISTORY_TTL_HOURS * 3_600_000,
 });
-const handleUser = new HandleIncomingUserMessage(sender, turns, context, loop, registry, logger);
+const handleUser = new HandleIncomingUserMessage(
+	sender,
+	feedback,
+	turns,
+	context,
+	loop,
+	registry,
+	logger,
+);
 const foodLog = logMod("food-announcements"),
 	stageFoodAnnouncement = new StageIncomingFoodAnnouncement(food, foodLog),
 	dmAdapter = new DirectMessageInboundAdapter(handleUser, access, logMod("direct-message")),
@@ -112,10 +120,6 @@ const router = new WhatsAppMessageRouter(normalizer, logMod("router"))
 	.register(foodAnnouncementAdapter)
 	.register(dmAdapter)
 	.register(new CatchAllLoggingHandler(logMod("catch-all-handler")));
-const seeds = config.ALLOWED_USERS.map((p, i) => ({
-	phoneNumber: p,
-	name: config.ALLOWED_USER_NAMES[i] || null,
-}));
 const operations = createRuntimeOperations({
 	migrate: () => runDatabaseMigrations(db, logger),
 	initFood: () => food.initialize(config.FOOD_ANNOUNCEMENTS_GROUP_JID),
@@ -134,9 +138,12 @@ const lifecycle = new ApplicationLifecycle(
 	logger,
 	() => connection.disconnect(),
 	(timeout) => sqlClient.end({ timeout }),
-	(code) => process.exit(code),
+	process.exit,
 	access,
-	seeds,
+	config.ALLOWED_USERS.map((p, i) => ({
+		phoneNumber: p,
+		name: config.ALLOWED_USER_NAMES[i] || null,
+	})),
 	operations,
 );
 lifecycle.attachSignalHandlers();

@@ -387,4 +387,32 @@ describe("WhatsAppMessageRouter", () => {
 			contentPreview: "Tomorrow lunch menu",
 		});
 	});
+
+	it("drops outgoing/self stanzas early when fromMe is true without normalizing or dispatching", async () => {
+		const mockLogger = createMockLogger();
+		const normalizer = createNormalizer(mockLogger);
+		const spyNormalize = vi.spyOn(normalizer, "normalize");
+		const router = new WhatsAppMessageRouter(normalizer, mockLogger);
+
+		const handler: WhatsAppMessageHandler = {
+			name: "test-handler",
+			matches: vi.fn().mockReturnValue(true),
+			handle: vi.fn().mockResolvedValue(undefined),
+		};
+		router.register(handler);
+
+		const raw = {
+			key: { id: "self-msg-1", remoteJid: "919876543210@s.whatsapp.net", fromMe: true },
+			message: { conversation: "bot message" },
+		};
+
+		await router.handleUpsert({ type: "notify", messages: [raw as any] });
+
+		expect(mockLogger.debug).toHaveBeenCalledWith("Dropping outgoing/self WhatsApp stanza", {
+			messageId: "self-msg-1",
+		});
+		expect(spyNormalize).not.toHaveBeenCalled();
+		expect(handler.matches).not.toHaveBeenCalled();
+		expect(handler.handle).not.toHaveBeenCalled();
+	});
 });

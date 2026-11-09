@@ -76,7 +76,10 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 		const targetDate = date ?? getISTDateString(now);
 		const res = await this.messRepository.getResolvedMeal({ mealDate: targetDate, vendor });
 		if (res.meals.length === 0 || !res.meals.some((m) => m.vendor === vendor)) {
-			return { content: this.presenter.renderEmptyNotice(targetDate, vendor), isTerminal: true };
+			return {
+				content: this.presenter.renderEmptyNotice(targetDate, vendor, undefined, now),
+				isTerminal: true,
+			};
 		}
 		const content = this.presenter.renderSingleVendorFullDayDigest(res, vendor, now);
 		return { content, isTerminal: true };
@@ -101,7 +104,7 @@ export class DisplayMessCardTool extends BaseTool<typeof displayMessCardSchema> 
 
 		if (res.meals.length === 0 || (vendor && !res.meals.some((m) => m.vendor === vendor))) {
 			return {
-				content: this.presenter.renderEmptyNotice(targetDate, vendor, targetSlot),
+				content: this.presenter.renderEmptyNotice(targetDate, vendor, targetSlot, now),
 				isTerminal: true,
 			};
 		}

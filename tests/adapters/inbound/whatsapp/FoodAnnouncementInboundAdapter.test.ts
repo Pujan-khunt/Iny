@@ -27,6 +27,7 @@ import { PostgresSwapWriter } from "../../../../src/adapters/outbound/mess/postg
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from "vitest";
 import { FoodAnnouncementInboundAdapter } from "../../../../src/adapters/inbound/whatsapp/FoodAnnouncementInboundAdapter";
 import { NormalizedWhatsAppMessage } from "../../../../src/adapters/inbound/whatsapp/router/NormalizedWhatsAppMessage";
+import type { MessageFeedbackPort } from "../../../../src/core/ports/MessageFeedbackPort";
 
 describe("FoodAnnouncementInboundAdapter", () => {
 	const targetGroupJid = "120363045678901234@g.us";
@@ -165,31 +166,6 @@ describe("FoodAnnouncementInboundAdapter", () => {
 
 			expect(adapter.matches(emptyMsg)).toBe(false);
 			expect(adapter.matches(whitespaceMsg)).toBe(false);
-		});
-
-		it("rejects message authored by connected bot (fromMe=true)", () => {
-			const adapter = new FoodAnnouncementInboundAdapter({
-				targetGroupJid,
-				useCase: createMockUseCase() as any,
-				logger: createMockLogger() as any,
-			});
-
-			const msg: NormalizedWhatsAppMessage = {
-				messageId: "food-from-me",
-				chatJid: targetGroupJid,
-				chatType: "group",
-				senderJid: "919876543210@s.whatsapp.net",
-				senderType: "pn",
-				companionLidJid: null,
-				fromMe: true,
-				timestamp: Date.now(),
-				originalTimestamp: 1793491200000,
-				upsertType: "notify",
-				content: { type: "text", text: "Bot message", mimeType: null },
-				downloadMedia: vi.fn(),
-			};
-
-			expect(adapter.matches(msg)).toBe(false);
 		});
 
 		it("rejects direct messages and messages from other groups", () => {
@@ -511,8 +487,14 @@ describe.skipIf(!databaseUrl)("food transport provenance through atomic admissio
 			logger,
 		});
 		const registry = new InMemoryToolRegistry(logger);
+		const feedback: MessageFeedbackPort = {
+			sendReadReceipt: async () => {},
+			sendTypingIndicator: async () => {},
+			sendReaction: async () => {},
+		};
 		const directUseCase = new HandleIncomingUserMessage(
 			sender,
+			feedback,
 			{ saveTurn: async () => {} } as unknown as DialogueTurnRepositoryPort,
 			{ retrieveContext: async () => [] },
 			new AgentLoop(

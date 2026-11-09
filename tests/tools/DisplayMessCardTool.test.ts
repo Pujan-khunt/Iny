@@ -426,7 +426,7 @@ describe("DisplayMessCardTool", () => {
 
 			expect(result.isTerminal).toBe(true);
 			expect(result.content).toBe(
-				"ℹ️ No menu data is currently loaded for Cheftalk on 2026-10-08.",
+				"ℹ️ No menu data is currently loaded for Cheftalk on Today, Thursday, 8th Oct.",
 			);
 		});
 	});
@@ -452,7 +452,7 @@ describe("DisplayMessCardTool", () => {
 
 			expect(result.isTerminal).toBe(true);
 			expect(result.content).toBe(
-				"ℹ️ No menu data is currently loaded for the mess lunch on 2026-10-08.",
+				"ℹ️ No menu data is currently loaded for the mess lunch on Today, Thursday, 8th Oct.",
 			);
 		});
 
@@ -479,7 +479,7 @@ describe("DisplayMessCardTool", () => {
 
 			expect(result.isTerminal).toBe(true);
 			expect(result.content).toBe(
-				"ℹ️ No menu data is currently loaded for Cheftalk breakfast on 2026-11-01.",
+				"ℹ️ No menu data is currently loaded for Cheftalk breakfast on Tomorrow, Sunday, 1st Nov.",
 			);
 		});
 
@@ -505,7 +505,7 @@ describe("DisplayMessCardTool", () => {
 
 			expect(result.isTerminal).toBe(true);
 			expect(result.content).toBe(
-				"ℹ️ No menu data is currently loaded for TCB breakfast on 2026-11-01.",
+				"ℹ️ No menu data is currently loaded for TCB breakfast on Tomorrow, Sunday, 1st Nov.",
 			);
 		});
 

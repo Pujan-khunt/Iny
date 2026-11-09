@@ -38,7 +38,7 @@ export class FoodAnnouncementInboundAdapter implements WhatsAppMessageHandler {
 		this.logger = options.logger;
 	}
 
-	/** Accepts non-bot supported content exclusively from the configured group. */
+	/** Accepts supported content exclusively from the configured group. */
 	matches(message: NormalizedWhatsAppMessage): boolean {
 		if (message.chatJid !== this.targetGroupJid) return false;
 		if (message.chatType !== "group") return false;
@@ -58,7 +58,6 @@ export class FoodAnnouncementInboundAdapter implements WhatsAppMessageHandler {
 	}
 
 	private resolveFilterReason(message: NormalizedWhatsAppMessage): string | null {
-		if (message.fromMe) return "authored_by_bot";
 		if (message.content.type === "unsupported") return "unsupported_content_type";
 		if (message.content.type === "text") {
 			if (!message.content.text || message.content.text.trim().length === 0) return "empty_text";

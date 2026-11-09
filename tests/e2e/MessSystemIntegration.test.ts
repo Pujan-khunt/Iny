@@ -29,6 +29,7 @@ import { HandleIncomingUserMessage } from "../../src/core/use-cases/HandleIncomi
 import { MessageFactory, UserMessage } from "../../src/core/entities/Message";
 import { LLMPort, LLMResponse } from "../../src/core/ports/LLMPort";
 import { MessageSenderPort } from "../../src/core/ports/MessageSenderPort";
+import { MessageFeedbackPort } from "../../src/core/ports/MessageFeedbackPort";
 import { ContextRetrievalPort } from "../../src/core/ports/ContextRetrievalPort";
 import { LoggerPort } from "../../src/core/ports/LoggerPort";
 import { InMemoryToolRegistry } from "../../src/adapters/outbound/tool-registry/InMemoryToolRegistry";
@@ -188,6 +189,7 @@ describe("Mess System End-to-End Integration", () => {
 		let foodRepository: PostgresFoodIngestionRepository;
 		let registry: InMemoryToolRegistry;
 		let senderMock: MessageSenderPort;
+		let feedbackMock: MessageFeedbackPort;
 		let contextRetrievalMock: ContextRetrievalPort;
 
 		beforeEach(async () => {
@@ -434,6 +436,12 @@ describe("Mess System End-to-End Integration", () => {
 				sendMessage: vi.fn().mockResolvedValue({ id: "msg-out-1" }),
 			};
 
+			feedbackMock = {
+				sendReadReceipt: vi.fn().mockResolvedValue(undefined),
+				sendTypingIndicator: vi.fn().mockResolvedValue(undefined),
+				sendReaction: vi.fn().mockResolvedValue(undefined),
+			};
+
 			contextRetrievalMock = {
 				retrieveContext: vi.fn().mockResolvedValue([]),
 			};
@@ -464,6 +472,7 @@ describe("Mess System End-to-End Integration", () => {
 
 			const useCase = new HandleIncomingUserMessage(
 				senderMock,
+				feedbackMock,
 				chatRepository,
 				contextRetrievalMock,
 				agentLoop,
@@ -561,6 +570,7 @@ describe("Mess System End-to-End Integration", () => {
 
 			const useCase = new HandleIncomingUserMessage(
 				senderMock,
+				feedbackMock,
 				chatRepository,
 				contextRetrievalMock,
 				agentLoop,
